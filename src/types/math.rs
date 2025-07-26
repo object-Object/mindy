@@ -1,0 +1,47 @@
+use std::{hash::Hash, num::TryFromIntError};
+
+use binrw::prelude::*;
+
+#[binrw]
+#[brw(big)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub struct Point2 {
+    pub x: i32,
+    pub y: i32,
+}
+
+impl From<PackedPoint2> for Point2 {
+    fn from(value: PackedPoint2) -> Self {
+        Self {
+            x: value.x as i32,
+            y: value.y as i32,
+        }
+    }
+}
+
+#[binrw]
+#[brw(big)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub struct PackedPoint2 {
+    pub x: i16,
+    pub y: i16,
+}
+
+impl TryFrom<Point2> for PackedPoint2 {
+    type Error = TryFromIntError;
+
+    fn try_from(value: Point2) -> Result<Self, Self::Error> {
+        Ok(Self {
+            x: value.x.try_into()?,
+            y: value.y.try_into()?,
+        })
+    }
+}
+
+#[binrw]
+#[brw(big)]
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct Vec2 {
+    x: f32,
+    y: f32,
+}
