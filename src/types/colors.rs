@@ -104,10 +104,8 @@ lazy_static! {
     };
 }
 
-pub fn to_double_bits(r: u8, g: u8, b: u8, a: u8) -> f64 {
-    rgba8888_to_double_bits(
-        ((r as u32) << 24) | ((g as u32) << 16) | ((b as u32) << 8) | (a as u32),
-    )
+pub fn to_double_bits(r: i32, g: i32, b: i32, a: i32) -> f64 {
+    rgba8888_to_double_bits(((r << 24) | (g << 16) | (b << 8) | a) as u32)
 }
 
 pub fn rgba8888_to_double_bits(value: u32) -> f64 {

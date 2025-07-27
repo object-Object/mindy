@@ -117,15 +117,10 @@ mod tests {
             ("%[GREEN]", number(COLORS["GREEN"])),
             ("%[foo]", variable("%[foo]")),
             ("%DeadbeeF", number(rgba8888_to_double_bits(0xdeadbeef))),
-            (
-                "%-1+2-3+4",
-                number(to_double_bits(-1i8 as u8, 2, -3i8 as u8, 4)),
-            ),
+            ("%-1+2-3+4", number(to_double_bits(-1, 2, -3, 4))),
+            ("%-f-f-f-f", number(rgba8888_to_double_bits(0xfffffff1))),
             ("%123aBc", number(rgba8888_to_double_bits(0x123abcff))),
-            (
-                "%+A-b+c",
-                number(to_double_bits(0xa, -0xbi8 as u8, 0xc, 0xff)),
-            ),
+            ("%+A-b+c", number(to_double_bits(0xa, -0xb, 0xc, 0xff))),
         ] {
             let input = format!("print {input}");
             println!("{input}");
