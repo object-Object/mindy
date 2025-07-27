@@ -1,3 +1,5 @@
+// -*- mode: Rust; -*-
+
 use super::ast::{Statement, Value, number_to_value, parse_number};
 use crate::types::colors::{COLORS, rgba8888_to_double_bits};
 
