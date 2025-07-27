@@ -104,6 +104,12 @@ lazy_static! {
     };
 }
 
+pub fn to_double_bits(r: u8, g: u8, b: u8, a: u8) -> f64 {
+    rgba8888_to_double_bits(
+        ((r as u32) << 24) | ((g as u32) << 16) | ((b as u32) << 8) | (a as u32),
+    )
+}
+
 pub fn rgba8888_to_double_bits(value: u32) -> f64 {
     f64::from_bits(value as u64)
 }

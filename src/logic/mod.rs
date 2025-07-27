@@ -8,7 +8,7 @@ pub use grammar::LogicParser;
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::types::colors::{COLORS, rgba8888_to_double_bits};
+    use crate::types::colors::{COLORS, rgba8888_to_double_bits, to_double_bits};
 
     macro_rules! assert_ast {
         ($input:expr, $($x:expr),* $(,)?) => {
@@ -111,15 +111,24 @@ mod tests {
             ("-1.5", number(-1.5)),
             ("0b101", number(5)),
             ("-0b1111", number(-15)),
-            ("0xdeadbeef", number(0xdeadbeefu32)),
+            ("0xDeadbeeF", number(0xdeadbeefu32)),
             ("-0x123abc", number(-0x123abc)),
             ("%[red]", number(COLORS["red"])),
             ("%[GREEN]", number(COLORS["GREEN"])),
             ("%[foo]", variable("%[foo]")),
-            ("%deadbeef", number(rgba8888_to_double_bits(0xdeadbeef))),
-            ("%123abc", number(rgba8888_to_double_bits(0x123abcff))),
+            ("%DeadbeeF", number(rgba8888_to_double_bits(0xdeadbeef))),
+            (
+                "%-1+2-3+4",
+                number(to_double_bits(-1i8 as u8, 2, -3i8 as u8, 4)),
+            ),
+            ("%123aBc", number(rgba8888_to_double_bits(0x123abcff))),
+            (
+                "%+A-b+c",
+                number(to_double_bits(0xa, -0xbi8 as u8, 0xc, 0xff)),
+            ),
         ] {
             let input = format!("print {input}");
+            println!("{input}");
             assert_ast!(&input, instruction!("print", value));
         }
     }
