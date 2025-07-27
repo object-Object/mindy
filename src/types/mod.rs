@@ -1,5 +1,7 @@
 #![allow(deprecated)]
 
+pub mod colors;
+
 mod enums;
 mod java;
 mod logic;

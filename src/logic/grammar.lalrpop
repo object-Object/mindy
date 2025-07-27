@@ -1,0 +1,86 @@
+use super::ast::{Statement, Value, number_to_value, parse_number};
+use crate::types::colors::{COLORS, rgba8888_to_double_bits};
+
+grammar;
+
+extern {
+    type Error = String;
+}
+
+match {
+    r#""[^\n"]*""# => STRING,
+
+    // https://github.com/Anuken/Arc/blob/071fdffaf220cd57cf971a0ee58db2f321f92ee1/arc-core/src/arc/util/Strings.java#L495
+    // for example, -+1.--0. is a valid number literal
+    r"(?x)
+        [+-]?
+        (?:
+            # decimal
+            (?: [+-]?[0-9]+ )?       # integer (optional)
+            \. (?: \+?[0-9]+ | -0+ ) # fraction
+            |
+            # integer or scientific notation
+            [+-]?[0-9]+             # integer
+            (?: [eE] [+-]?[0-9]+ )? # exponent (optional)
+        )
+        [fF.]?
+    " => NUMBER_DEC,
+
+    r"[+-]?0b[01]+" => NUMBER_BIN,
+    r"[+-]?0x[0-9a-fA-F]+" => NUMBER_HEX,
+
+    r"%\[(?:[a-z_]+|[A-Z_]+)\]" => COLOR_NAME,
+    r"%(?:[0-9a-fA-F]{2}){3,4}" => COLOR_HEX,
+
+    r"(?:\r?\n|;)+" => EOL,
+
+    r"[ \t]+" => {}, // whitespace
+    r"#[^\n]*" => {}, // comment
+} else {
+    r"[^\r\n #\t;]+" => SYMBOL,
+}
+
+pub Logic: Vec<Statement> =
+    EOL* <v:(<Statement> EOL+)*> <e:Statement?> =>
+        v.into_iter().chain(e).collect();
+
+Statement: Statement = {
+    <i:SYMBOL> <v:Value+> =>
+        Statement::Instruction(i.into(), v),
+
+    <i:SYMBOL> =>
+        if let Some(label) = i.strip_suffix(":") {
+            Statement::Label(label.into())
+        } else {
+            Statement::Instruction(i.into(), vec![])
+        },
+};
+
+Value: Value = {
+    <s:STRING> =>
+        Value::String(s[1..s.len() - 1].replace(r"\n", "\n")),
+
+    <n:NUMBER_DEC> =>
+        number_to_value(n, parse_number(n)),
+
+    // FIXME: this doesn't actually match how mindustry treats large numbers
+    <n:NUMBER_BIN> =>
+        number_to_value(n, i64::from_str_radix(&n.replace("0b", ""), 2)),
+
+    <n:NUMBER_HEX> =>
+        number_to_value(n, i64::from_str_radix(&n.replace("0x", ""), 16)),
+
+    <c:COLOR_NAME> =>
+        number_to_value(c, COLORS.get(&c[2..c.len() - 1]).cloned().ok_or("")),
+
+    <c:COLOR_HEX> => {
+        let mut rgba = u32::from_str_radix(&c[1..], 16).expect("failed to parse hex color");
+        if c.len() == 7 {
+            rgba = (rgba << 8) | 0xff;
+        }
+        Value::Number(rgba8888_to_double_bits(rgba))
+    },
+
+    <v:SYMBOL> =>
+        Value::Variable(v.into()),
+};
