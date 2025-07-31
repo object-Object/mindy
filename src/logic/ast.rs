@@ -6,8 +6,17 @@ use regex::Regex;
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum Statement {
-    Instruction(String, Vec<Value>),
     Label(String),
+    /// `1` contains any extra unused arguments.
+    Instruction(Instruction, Vec<Value>),
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub enum Instruction {
+    Noop,
+    Stop,
+    Print { value: Value },
+    Unknown(String),
 }
 
 #[derive(Debug, Clone, PartialEq)]

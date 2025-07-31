@@ -10,35 +10,27 @@ use crate::logic::ast;
 const MAX_TEXT_BUFFER: usize = 400;
 
 pub fn parse_instruction(
-    name: &str,
-    mut args: Vec<ast::Value>,
+    instruction: ast::Instruction,
     variables: &mut HashMap<String, LVarPtr>,
     labels: &HashMap<String, usize>,
 ) -> VMLoadResult<Box<dyn Instruction>> {
-    Ok(match name {
-        "noop" => Box::new(Noop),
-        "stop" => Box::new(Stop),
-        "print" => Box::new(Print {
-            value: lvar(name, &mut args, variables, 0)?,
+    Ok(match instruction {
+        ast::Instruction::Noop => Box::new(Noop),
+        ast::Instruction::Stop => Box::new(Stop),
+        ast::Instruction::Print { value } => Box::new(Print {
+            value: lvar(value, variables),
         }),
-        _ => panic!(),
+
+        ast::Instruction::Unknown(name) => {
+            return Err(VMLoadError::BadProcessorCode(format!(
+                "unknown instruction: {name}"
+            )));
+        }
     })
 }
 
-/// Must be called in reverse order.
-fn lvar(
-    name: &str,
-    args: &mut Vec<ast::Value>,
-    variables: &mut HashMap<String, LVarPtr>,
-    idx: usize,
-) -> VMLoadResult<LVar> {
-    if idx >= args.len() {
-        return Err(VMLoadError::BadProcessorCode(format!(
-            "{name}: missing argument {idx}"
-        )));
-    }
-
-    Ok(match args.swap_remove(idx) {
+fn lvar(value: ast::Value, variables: &mut HashMap<String, LVarPtr>) -> LVar {
+    match value {
         ast::Value::Variable(name) => {
             LVar::Variable(variables.get(&name).map(Rc::clone).unwrap_or_else(|| {
                 let ptr = Rc::new(RefCell::new(LValue::Null));
@@ -48,7 +40,7 @@ fn lvar(
         }
         ast::Value::String(value) => LVar::Constant(LValue::String(value.into())),
         ast::Value::Number(value) => LVar::Constant(value.into()),
-    })
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

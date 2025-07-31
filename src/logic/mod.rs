@@ -8,7 +8,10 @@ pub use vm::*;
 
 #[cfg(test)]
 mod tests {
-    use super::{ast::*, *};
+    use super::{
+        ast::{Instruction::*, *},
+        *,
+    };
     use crate::types::colors::{COLORS, rgba8888_to_double_bits, to_double_bits};
 
     macro_rules! assert_ast {
@@ -23,11 +26,11 @@ mod tests {
     }
 
     macro_rules! instruction {
-        ($name:expr) => {
-            instruction!($name,)
+        ($i:expr) => {
+            instruction!($i,)
         };
-        ($name:expr, $($x:expr),* $(,)?) => {
-            Statement::Instruction($name.into(), vec![$($x),*])
+        ($i:expr, $($x:expr),* $(,)?) => {
+            Statement::Instruction($i, vec![$($x),*])
         };
     }
 
@@ -45,6 +48,8 @@ mod tests {
     {
         Value::Number(value.into())
     }
+
+    // general syntax
 
     #[test]
     fn test_empty() {
@@ -67,17 +72,12 @@ mod tests {
     }
 
     #[test]
-    fn test_noop() {
-        assert_ast!["noop", instruction!("noop")];
-    }
-
-    #[test]
     fn test_semicolon() {
         assert_ast![
             "noop;noop ; noop",
-            instruction!("noop"),
-            instruction!("noop"),
-            instruction!("noop"),
+            instruction!(Noop),
+            instruction!(Noop),
+            instruction!(Noop),
         ];
     }
 
@@ -90,10 +90,16 @@ mod tests {
             print "#"
             print "\"
             "##,
-            instruction!("print", string("foo")),
-            instruction!("print", string("a\nb")),
-            instruction!("print", string("#")),
-            instruction!("print", string(r"\")),
+            instruction!(Print {
+                value: string("foo")
+            }),
+            instruction!(Print {
+                value: string("a\nb")
+            }),
+            instruction!(Print { value: string("#") }),
+            instruction!(Print {
+                value: string(r"\")
+            }),
         ];
     }
 
@@ -125,7 +131,99 @@ mod tests {
         ] {
             let input = format!("print {input}");
             println!("{input}");
-            assert_ast!(&input, instruction!("print", value));
+            assert_ast![&input, instruction!(Print { value })];
         }
+    }
+
+    #[test]
+    fn test_extra() {
+        assert_ast![
+            "
+            print foo bar baz
+            print 1 2
+            noop a
+            ",
+            instruction!(
+                Print {
+                    value: variable("foo")
+                },
+                variable("bar"),
+                variable("baz"),
+            ),
+            instruction!(Print { value: number(1) }, number(2),),
+            instruction!(Noop, variable("a")),
+        ];
+    }
+
+    #[test]
+    fn test_unknown() {
+        assert_ast![
+            "
+            foo
+            bar baz 1
+            ",
+            instruction!(Unknown("foo".into())),
+            instruction!(Unknown("bar".into()), variable("baz"), number(1)),
+        ];
+    }
+
+    #[test]
+    fn test_keyword_as_value() {
+        assert_ast![
+            "
+            print noop
+            print stop
+            print print
+            print label:
+            ",
+            instruction!(Print {
+                value: variable("noop")
+            }),
+            instruction!(Print {
+                value: variable("stop")
+            }),
+            instruction!(Print {
+                value: variable("print")
+            }),
+            instruction!(Print {
+                value: variable("label:")
+            }),
+        ];
+    }
+
+    #[test]
+    fn test_label() {
+        assert_ast![
+            r#"
+            foo:
+            bar"a":
+            :a:
+            "#,
+            Statement::Label("foo".into()),
+            Statement::Label(r#"bar"a""#.into()),
+            Statement::Label(":a".into()),
+        ];
+    }
+
+    // instruction-specific tests
+
+    #[test]
+    fn test_noop() {
+        assert_ast!["noop", instruction!(Noop)];
+    }
+
+    #[test]
+    fn test_stop() {
+        assert_ast!["stop", instruction!(Stop)];
+    }
+
+    #[test]
+    fn test_print() {
+        assert_ast![
+            "print foo",
+            instruction!(Print {
+                value: variable("foo")
+            }),
+        ];
     }
 }

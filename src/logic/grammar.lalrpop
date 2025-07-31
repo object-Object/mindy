@@ -1,6 +1,6 @@
 // -*- mode: Rust; -*-
 
-use super::ast::{Statement, Value, number_to_value, parse_number};
+use super::ast::{Instruction, Statement, Value, number_to_value, parse_number};
 use crate::types::colors::{COLORS, to_double_bits};
 
 grammar;
@@ -11,6 +11,12 @@ extern {
 
 match {
     r#""[^\n"]*""# => STRING,
+
+    r"[^\r\n #\t;]+:" => LABEL,
+
+    "noop",
+    "stop",
+    "print",
 
     // https://github.com/Anuken/Arc/blob/071fdffaf220cd57cf971a0ee58db2f321f92ee1/arc-core/src/arc/util/Strings.java#L495
     // for example, -+1.--0. is a valid number literal
@@ -47,15 +53,25 @@ pub Logic: Vec<Statement> =
         v.into_iter().chain(e).collect();
 
 Statement: Statement = {
-    <i:SYMBOL> <v:Value+> =>
-        Statement::Instruction(i.into(), v),
+    <l:LABEL> =>
+        Statement::Label(l[..l.len() - 1].into()),
 
+    <i:Instruction> <v:Value*> =>
+        Statement::Instruction(i, v),
+};
+
+Instruction: Instruction = {
+    "noop" =>
+        Instruction::Noop,
+
+    "stop" =>
+        Instruction::Stop,
+
+    "print" <value:Value> =>
+        Instruction::Print {<>},
+    
     <i:SYMBOL> =>
-        if let Some(label) = i.strip_suffix(":") {
-            Statement::Label(label.into())
-        } else {
-            Statement::Instruction(i.into(), vec![])
-        },
+        Instruction::Unknown(i.into()),
 };
 
 Value: Value = {
@@ -88,6 +104,14 @@ Value: Value = {
         ))
     },
 
-    <v:SYMBOL> =>
+    <v:Symbol> =>
         Value::Variable(v.into()),
+};
+
+Symbol = {
+    SYMBOL,
+    LABEL,
+    "noop",
+    "stop",
+    "print",
 };

@@ -168,8 +168,8 @@ impl ProcessorBuilder<'_> {
         let mut instructions = Vec::with_capacity(line);
         let mut variables = HashMap::new();
         for statement in code.into_iter() {
-            if let ast::Statement::Instruction(name, args) = statement {
-                instructions.push(parse_instruction(&name, args, &mut variables, &labels)?);
+            if let ast::Statement::Instruction(instruction, _) = statement {
+                instructions.push(parse_instruction(instruction, &mut variables, &labels)?);
             }
         }
 
