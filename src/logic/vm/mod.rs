@@ -249,6 +249,8 @@ mod tests {
             print 10
             print "\n"
             print 1.5
+            print null
+            print foo
             stop
             "#,
         );
@@ -256,6 +258,6 @@ mod tests {
         run(&mut vm, 1, true);
 
         let processor = take_processor(&mut vm, 0);
-        assert_eq!(processor.state.printbuffer, "foobar\n10\n1.5")
+        assert_eq!(processor.state.printbuffer, "foobar\n10\n1.5nullnull")
     }
 }
