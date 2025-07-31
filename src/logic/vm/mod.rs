@@ -385,6 +385,18 @@ mod tests {
         set source null
 
         set canary 0xdeadbeef
+
+        # test 'always' manually
+
+        jump test_always_0 always
+            set canary "test_always_0 not taken: always"
+            stop
+        test_always_0:
+
+        jump test_always_1 always 1
+            set canary "test_always_1 not taken: always 1"
+            stop
+        test_always_1:
         "#
         .to_string();
 
@@ -439,6 +451,11 @@ mod tests {
             ("strictEqual", "0", "0.000001", false),
             ("strictEqual", "0", "1", false),
             ("strictEqual", "1", "null", false),
+            // always
+            ("always", "0", "0", true),
+            ("always", "0", "1", true),
+            ("always", "1", "0", true),
+            ("always", "1", "1", true),
         ]
         .into_iter()
         .enumerate()
