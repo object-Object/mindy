@@ -461,6 +461,8 @@ mod tests {
             ("greaterThanEq", "1", "0", true),
             // strictEqual
             ("strictEqual", "0", "0", true),
+            ("strictEqual", "0.5", "0.5", true),
+            ("strictEqual", "@pi", "3.1415927", true),
             ("strictEqual", "null", "null", true),
             ("strictEqual", r#""""#, r#""""#, true),
             ("strictEqual", r#""abc""#, r#""abc""#, true),
