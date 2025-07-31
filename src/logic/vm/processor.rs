@@ -44,11 +44,11 @@ impl Processor {
 
     /// Do not call if the processor is disabled.
     fn step(&mut self, vm: &LogicVM) -> InstructionResult {
-        let counter = if (0..self.instructions.len()).contains(&self.state.counter) {
-            self.state.counter
-        } else {
-            0
-        };
+        let mut counter = self.state.counter;
+        if counter >= self.instructions.len() {
+            counter = 0;
+        }
+
         self.state.counter = counter + 1;
         self.instructions[counter].execute(&mut self.state, vm)
     }
@@ -59,10 +59,10 @@ pub struct ProcessorState {
     enabled: bool,
     /// True if we're currently at a `stop` instruction.
     stopped: bool,
-    has_instructions: bool,
+    pub(super) num_instructions: usize,
 
     pub(super) counter: usize,
-    pub(super) accumulator: usize,
+    accumulator: usize,
     pub(super) ipt: usize,
 
     running_processors: Rc<Cell<usize>>,
@@ -85,7 +85,7 @@ impl ProcessorState {
             // if transitioning from disabled to enabled, increment running_processors
             // but don't enable if we don't have any instructions to execute
             // or if we would just stop again immediately
-            (false, true) if self.has_instructions && !self.stopped => {
+            (false, true) if self.num_instructions > 0 && !self.stopped => {
                 self.running_processors.update(|n| n + 1);
             }
             _ => return,
@@ -176,17 +176,14 @@ impl ProcessorBuilder<'_> {
         // TODO: implement, late-init after adding all blocks
         let links = Vec::new();
 
-        let has_instructions = !instructions.is_empty();
-
         Ok(Processor {
             range,
             privileged,
-            instructions,
             links,
             state: ProcessorState {
-                enabled: has_instructions,
+                enabled: !instructions.is_empty(),
                 stopped: false,
-                has_instructions,
+                num_instructions: instructions.len(),
                 counter: 0,
                 accumulator: 0,
                 ipt,
@@ -195,6 +192,7 @@ impl ProcessorBuilder<'_> {
                 printbuffer: String::new(),
                 variables,
             },
+            instructions,
         })
     }
 }
