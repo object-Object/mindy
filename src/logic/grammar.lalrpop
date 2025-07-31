@@ -1,6 +1,6 @@
 // -*- mode: Rust; -*-
 
-use super::ast::{Instruction, Statement, Value, number_to_value, parse_number};
+use super::ast::*;
 use crate::types::colors::{COLORS, to_double_bits};
 
 grammar;
@@ -17,9 +17,19 @@ match {
     "noop",
     "end",
     "stop",
+    "jump",
     "set",
     "print",
     "setrate",
+
+    "equal",
+    "notEqual",
+    "lessThan",
+    "lessThanEq",
+    "greaterThan",
+    "greaterThanEq",
+    "strictEqual",
+    "always",
 
     // https://github.com/Anuken/Arc/blob/071fdffaf220cd57cf971a0ee58db2f321f92ee1/arc-core/src/arc/util/Strings.java#L495
     // for example, -+1.--0. is a valid number literal
@@ -73,6 +83,12 @@ Instruction: Instruction = {
     "stop" =>
         Instruction::Stop,
 
+    "jump" <target:JumpTarget> <op:ConditionOp0> =>
+        Instruction::Jump { <>, x: Value::None, y: Value::None },
+
+    "jump" <target:JumpTarget> <op:ConditionOp2> <x:Value> <y:Value> =>
+        Instruction::Jump {<>},
+
     "set" <to:Value> <from:Value> =>
         Instruction::Set {<>},
 
@@ -86,15 +102,40 @@ Instruction: Instruction = {
         Instruction::Unknown(i.into()),
 };
 
+ConditionOp0: ConditionOp = {
+    "always" => ConditionOp::Always,
+};
+
+ConditionOp2: ConditionOp = {
+    "equal"         => ConditionOp::Equal,
+    "notEqual"      => ConditionOp::NotEqual,
+    "lessThan"      => ConditionOp::LessThan,
+    "lessThanEq"    => ConditionOp::LessThanEq,
+    "greaterThan"   => ConditionOp::GreaterThan,
+    "greaterThanEq" => ConditionOp::GreaterThanEq,
+    "strictEqual"   => ConditionOp::StrictEqual,
+};
+
 Symbol = {
     SYMBOL,
     LABEL,
+
     "noop",
     "end",
     "stop",
+    "jump",
     "set",
     "print",
     "setrate",
+
+    "equal",
+    "notEqual",
+    "lessThan",
+    "lessThanEq",
+    "greaterThan",
+    "greaterThanEq",
+    "strictEqual",
+    "always",
 };
 
 Value: Value = {
@@ -126,6 +167,27 @@ Value: Value = {
             },
         ))
     },
+
+    <v:Symbol> =>
+        Value::Variable(v.into()),
+};
+
+// strings are not legal label names
+JumpTarget: Value = {
+    <n:NUMBER_DEC> =>
+        number_to_value(n, parse_number(n)),
+
+    <n:NUMBER_BIN> =>
+        Value::Variable(n.into()),
+
+    <n:NUMBER_HEX> =>
+        Value::Variable(n.into()),
+
+    <c:COLOR_NAME> =>
+        Value::Variable(c.into()),
+
+    <c:COLOR_HEX> =>
+        Value::Variable(c.into()),
 
     <v:Symbol> =>
         Value::Variable(v.into()),

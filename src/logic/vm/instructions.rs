@@ -5,29 +5,68 @@ use super::{
     processor::ProcessorState,
     variables::{LValue, LVar},
 };
-use crate::logic::ast;
+use crate::logic::ast::{self, ConditionOp};
 
 const MAX_TEXT_BUFFER: usize = 400;
 const MAX_IPT: usize = 1000;
+const EQUALITY_EPSILON: f64 = 0.000001;
+const PRINT_EPSILON: f64 = 0.00001;
 
 pub fn parse_instruction(
     instruction: ast::Instruction,
     variables: &mut HashMap<String, LVar>,
-    _labels: &HashMap<String, usize>,
+    labels: &HashMap<String, usize>,
     privileged: bool,
+    num_instructions: usize,
 ) -> VMLoadResult<Box<dyn Instruction>> {
+    let mut lvar = |value| match value {
+        ast::Value::Variable(name) => variables.get(&name).cloned().unwrap_or_else(|| {
+            let var = LVar::new_variable();
+            variables.insert(name, LVar::clone(&var));
+            var
+        }),
+        ast::Value::String(value) => LVar::Constant(LValue::String(value.into())),
+        ast::Value::Number(value) => LVar::Constant(value.into()),
+        ast::Value::None => LVar::Constant(LValue::Null),
+    };
+
+    let jump_target = |value| match value {
+        ast::Value::Variable(name) => labels
+            .get(&name)
+            .copied()
+            .ok_or_else(|| VMLoadError::BadProcessorCode(format!("label not found: {name}"))),
+
+        ast::Value::Number(address) => {
+            let counter = address as usize;
+            if (0..num_instructions).contains(&counter) {
+                Ok(counter)
+            } else {
+                Err(VMLoadError::BadProcessorCode(format!(
+                    "jump out of range: {}",
+                    address.trunc()
+                )))
+            }
+        }
+
+        _ => unreachable!(),
+    };
+
     Ok(match instruction {
-        // unprivileged
+        // unprivileged instructions
         ast::Instruction::Noop => Box::new(Noop),
         ast::Instruction::End => Box::new(End),
         ast::Instruction::Stop => Box::new(Stop),
+        ast::Instruction::Jump { target, op, x, y } => Box::new(Jump {
+            target: jump_target(target)?,
+            op,
+            x: lvar(x),
+            y: lvar(y),
+        }),
         ast::Instruction::Set { to, from } => Box::new(Set {
-            to: lvar(to, variables),
-            from: lvar(from, variables),
+            to: lvar(to),
+            from: lvar(from),
         }),
-        ast::Instruction::Print { value } => Box::new(Print {
-            value: lvar(value, variables),
-        }),
+        ast::Instruction::Print { value } => Box::new(Print { value: lvar(value) }),
 
         // unknown
         // do this here so it isn't ignored for unprivileged procs
@@ -37,24 +76,12 @@ pub fn parse_instruction(
             )));
         }
 
-        // privileged
+        // convert privileged instructions to noops if the proc is unprivileged
         _ if !privileged => Box::new(Noop),
-        ast::Instruction::SetRate { value } => Box::new(SetRate {
-            value: lvar(value, variables),
-        }),
-    })
-}
 
-fn lvar(value: ast::Value, variables: &mut HashMap<String, LVar>) -> LVar {
-    match value {
-        ast::Value::Variable(name) => variables.get(&name).cloned().unwrap_or_else(|| {
-            let var = LVar::new_variable();
-            variables.insert(name, LVar::clone(&var));
-            var
-        }),
-        ast::Value::String(value) => LVar::Constant(LValue::String(value.into())),
-        ast::Value::Number(value) => LVar::Constant(value.into()),
-    }
+        // privileged instructions
+        ast::Instruction::SetRate { value } => Box::new(SetRate { value: lvar(value) }),
+    })
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -106,6 +133,49 @@ impl Instruction for Stop {
     }
 }
 
+struct Jump {
+    target: usize,
+    op: ConditionOp,
+    x: LVar,
+    y: LVar,
+}
+
+impl Jump {
+    fn test(op: ConditionOp, x: LValue, y: LValue) -> bool {
+        match op {
+            ConditionOp::Equal => {
+                if x.isobj() && y.isobj() {
+                    x == y
+                } else {
+                    (x.num() - y.num()).abs() < EQUALITY_EPSILON
+                }
+            }
+            ConditionOp::NotEqual => {
+                if x.isobj() && y.isobj() {
+                    x != y
+                } else {
+                    (x.num() - y.num()).abs() >= EQUALITY_EPSILON
+                }
+            }
+            ConditionOp::LessThan => x.num() < y.num(),
+            ConditionOp::LessThanEq => x.num() <= y.num(),
+            ConditionOp::GreaterThan => x.num() > y.num(),
+            ConditionOp::GreaterThanEq => x.num() >= y.num(),
+            ConditionOp::StrictEqual => x == y,
+            ConditionOp::Always => true,
+        }
+    }
+}
+
+impl SimpleInstruction for Jump {
+    fn execute(&self, state: &mut ProcessorState, _: &LogicVM) {
+        if Jump::test(self.op, self.x.get(state), self.y.get(state)) {
+            // we do the bounds check while parsing
+            state.counter = self.target;
+        }
+    }
+}
+
 struct Set {
     to: LVar,
     from: LVar,
@@ -127,7 +197,7 @@ impl Print {
             LValue::Null => Cow::from("null"),
             LValue::Number(n) => {
                 let rounded = n.round() as u64;
-                Cow::from(if (n - (rounded as f64)).abs() < 0.00001 {
+                Cow::from(if (n - (rounded as f64)).abs() < PRINT_EPSILON {
                     rounded.to_string()
                 } else {
                     n.to_string()

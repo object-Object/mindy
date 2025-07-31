@@ -16,10 +16,35 @@ pub enum Instruction {
     Noop,
     End,
     Stop,
-    Set { to: Value, from: Value },
-    Print { value: Value },
-    SetRate { value: Value },
+    Jump {
+        target: Value,
+        op: ConditionOp,
+        x: Value,
+        y: Value,
+    },
+    Set {
+        to: Value,
+        from: Value,
+    },
+    Print {
+        value: Value,
+    },
+    SetRate {
+        value: Value,
+    },
     Unknown(String),
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum ConditionOp {
+    Equal,
+    NotEqual,
+    LessThan,
+    LessThanEq,
+    GreaterThan,
+    GreaterThanEq,
+    StrictEqual,
+    Always,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -27,6 +52,8 @@ pub enum Value {
     Variable(String),
     String(String),
     Number(f64),
+    /// Placeholder for unused arguments, eg. `Jump.x` and `Jump.y` with `ConditionOp::Always`.
+    None,
 }
 
 lazy_static! {

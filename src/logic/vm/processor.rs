@@ -153,14 +153,14 @@ impl ProcessorBuilder<'_> {
 
         // TODO: this could be more efficient
         let mut labels = HashMap::new();
-        let mut line = 0;
+        let mut num_instructions = 0;
         for statement in &code {
             match statement {
                 ast::Statement::Label(label) => {
-                    labels.insert(label.clone(), line);
+                    labels.insert(label.clone(), num_instructions);
                 }
                 ast::Statement::Instruction(_, _) => {
-                    line += 1;
+                    num_instructions += 1;
                 }
             }
         }
@@ -168,7 +168,7 @@ impl ProcessorBuilder<'_> {
         let mut variables = HashMap::new();
         LVar::init_globals(&mut variables);
 
-        let mut instructions = Vec::with_capacity(line);
+        let mut instructions = Vec::with_capacity(num_instructions);
         for statement in code.into_iter() {
             if let ast::Statement::Instruction(instruction, _) = statement {
                 instructions.push(parse_instruction(
@@ -176,6 +176,7 @@ impl ProcessorBuilder<'_> {
                     &mut variables,
                     &labels,
                     privileged,
+                    num_instructions,
                 )?);
             }
         }
@@ -190,7 +191,7 @@ impl ProcessorBuilder<'_> {
             state: ProcessorState {
                 enabled: !instructions.is_empty(),
                 stopped: false,
-                num_instructions: instructions.len(),
+                num_instructions,
                 counter: 0,
                 accumulator: 0,
                 ipt,

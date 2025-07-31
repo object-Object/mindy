@@ -106,8 +106,13 @@ impl LValue {
     pub fn num(&self) -> f64 {
         match *self {
             Self::Number(n) if !invalid(n) => n,
-            _ => 0.,
+            Self::Null => 0.,
+            _ => 1.,
         }
+    }
+
+    pub fn isobj(&self) -> bool {
+        !matches!(self, Self::Number(_))
     }
 }
 

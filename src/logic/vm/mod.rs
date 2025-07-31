@@ -373,4 +373,124 @@ mod tests {
         let processor = take_processor(&mut vm, 0);
         assert_eq!(processor.state.ipt, 2);
     }
+
+    #[test]
+    fn test_jump() {
+        let mut code = r#"
+        setrate 1000
+
+        # detect reentry
+        set source "reentered init"
+        jump oops notEqual canary null
+        set source null
+
+        set canary 0xdeadbeef
+        "#
+        .to_string();
+
+        for (i, (x, y, cond, want_jump)) in [
+            // equal
+            ("0", "0", "equal", true),
+            ("0", "null", "equal", true),
+            ("1", r#""""#, "equal", true),
+            ("1", r#""foo""#, "equal", true),
+            (r#""""#, r#""""#, "equal", true),
+            (r#""abc""#, r#""abc""#, "equal", true),
+            ("null", "null", "equal", true),
+            ("0", "0.0000009", "equal", true),
+            ("0", "0.000001", "equal", false),
+            ("0", "1", "equal", false),
+            ("1", "null", "equal", false),
+            (r#""abc""#, r#""def""#, "equal", false),
+            // notEqual
+            ("0", "0", "notEqual", false),
+            ("0", "null", "notEqual", false),
+            ("null", "null", "notEqual", false),
+            ("0", "0.0000009", "notEqual", false),
+            ("0", "0.000001", "notEqual", true),
+            ("0", "1", "notEqual", true),
+            ("1", "null", "notEqual", true),
+            // lessThan
+            ("0", "1", "lessThan", true),
+            ("0", "0", "lessThan", false),
+            ("1", "0", "lessThan", false),
+            // lessThanEq
+            ("0", "1", "lessThanEq", true),
+            ("0", "0", "lessThanEq", true),
+            ("1", "0", "lessThanEq", false),
+            // greaterThan
+            ("0", "1", "greaterThan", false),
+            ("0", "0", "greaterThan", false),
+            ("1", "0", "greaterThan", true),
+            // greaterThanEq
+            ("0", "1", "greaterThanEq", false),
+            ("0", "0", "greaterThanEq", true),
+            ("1", "0", "greaterThanEq", true),
+            // strictEqual
+            ("0", "0", "strictEqual", true),
+            ("null", "null", "strictEqual", true),
+            (r#""""#, r#""""#, "strictEqual", true),
+            (r#""abc""#, r#""abc""#, "strictEqual", true),
+            ("0", "null", "strictEqual", false),
+            ("1", r#""""#, "strictEqual", false),
+            ("1", r#""foo""#, "strictEqual", false),
+            (r#""abc""#, r#""def""#, "strictEqual", false),
+            ("0", "0.0000009", "strictEqual", false),
+            ("0", "0.000001", "strictEqual", false),
+            ("0", "1", "strictEqual", false),
+            ("1", "null", "strictEqual", false),
+        ]
+        .into_iter()
+        .enumerate()
+        {
+            let err = format!("{cond} {x} {y}").replace('"', "'");
+            if want_jump {
+                code.push_str(&format!(
+                    "
+                    jump test{i}_0 {cond} {x} {y}
+                        set canary \"test{i}_0 not taken: {err}\"
+                        stop
+                    test{i}_0:
+
+                    set x {x}
+                    set y {y}
+                    jump test{i}_1 {cond} x y
+                        set canary \"test{i}_1 not taken: {err}\"
+                        stop
+                    test{i}_1:
+                    "
+                ));
+            } else {
+                code.push_str(&format!(
+                    "
+                    set source \"test{i}_0 taken: {err}\"
+                    jump oops {cond} {x} {y}
+                    set x {x}
+                    set y {y}
+                    set source \"test{i}_1 taken: {err}\"
+                    jump oops {cond} x y
+                    set source null
+                    "
+                ));
+            }
+        }
+
+        code += "
+        stop
+
+        oops:
+        set canary source
+        stop
+        ";
+
+        let mut vm = single_processor_vm(BlockType::WorldProcessor, &code);
+
+        run(&mut vm, 2, true);
+
+        let state = take_processor(&mut vm, 0).state;
+        assert_eq!(
+            state.variables["canary"].get(&state),
+            LValue::Number(0xdeadbeefu64 as f64)
+        );
+    }
 }
