@@ -116,12 +116,66 @@ impl LValue {
     }
 }
 
-impl<T: AsPrimitive<f64>> From<T> for LValue {
+impl<T: AsPrimitive<f64> + Numeric> From<T> for LValue {
     fn from(value: T) -> Self {
         Self::Number(value.as_())
+    }
+}
+
+impl From<bool> for LValue {
+    fn from(value: bool) -> Self {
+        Self::Number(if value { 1. } else { 0. })
+    }
+}
+
+impl From<Rc<str>> for LValue {
+    fn from(value: Rc<str>) -> Self {
+        Self::String(value)
+    }
+}
+
+impl From<String> for LValue {
+    fn from(value: String) -> Self {
+        Self::String(value.into())
+    }
+}
+
+impl From<&str> for LValue {
+    fn from(value: &str) -> Self {
+        Self::String(value.into())
+    }
+}
+
+impl<T> From<Option<T>> for LValue
+where
+    LValue: From<T>,
+{
+    fn from(value: Option<T>) -> Self {
+        match value {
+            Some(value) => value.into(),
+            None => Self::Null,
+        }
     }
 }
 
 fn invalid(n: f64) -> bool {
     n.is_nan() || n.is_infinite()
 }
+
+// https://stackoverflow.com/a/66537661
+trait Numeric {}
+impl Numeric for u8 {}
+impl Numeric for i8 {}
+impl Numeric for u16 {}
+impl Numeric for i16 {}
+impl Numeric for u32 {}
+impl Numeric for i32 {}
+impl Numeric for u64 {}
+impl Numeric for i64 {}
+impl Numeric for u128 {}
+impl Numeric for i128 {}
+impl Numeric for usize {}
+impl Numeric for isize {}
+impl Numeric for f32 {}
+impl Numeric for f64 {}
+impl Numeric for char {}
