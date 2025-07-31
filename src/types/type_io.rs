@@ -76,7 +76,7 @@ pub enum Object {
         #[bw(try_calc = values.len().try_into())]
         count: i32,
         #[br(count = count)]
-        values: Vec<i8>,
+        values: Vec<u8>,
     },
 
     #[deprecated]
@@ -162,7 +162,7 @@ impl_object_from! { Vec<PackedPoint2>, Point2Array }
 impl_object_from! { bool, Bool }
 impl_object_from! { f64, Double }
 impl_object_from! { LAccess }
-impl_object_from! { Vec<i8>, ByteArray }
+impl_object_from! { Vec<u8>, ByteArray }
 impl_object_from! { Vec<bool>, BoolArray }
 impl_object_from! { Vec<Vec2>, Vec2Array }
 impl_object_from! { Vec2 }

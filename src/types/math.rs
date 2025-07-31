@@ -1,4 +1,4 @@
-use std::{hash::Hash, num::TryFromIntError};
+use std::{fmt::Display, hash::Hash, num::TryFromIntError};
 
 use binrw::prelude::*;
 
@@ -19,6 +19,12 @@ impl From<PackedPoint2> for Point2 {
     }
 }
 
+impl Display for Point2 {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "({}, {})", self.x, self.y)
+    }
+}
+
 #[binrw]
 #[brw(big)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -35,6 +41,12 @@ impl TryFrom<Point2> for PackedPoint2 {
             x: value.x.try_into()?,
             y: value.y.try_into()?,
         })
+    }
+}
+
+impl Display for PackedPoint2 {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "({}, {})", self.x, self.y)
     }
 }
 

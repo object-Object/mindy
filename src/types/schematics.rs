@@ -74,6 +74,10 @@ impl Schematic {
         self.tiles.push(tile);
         self
     }
+
+    pub fn tiles(&self) -> &Vec<SchematicTile> {
+        &self.tiles
+    }
 }
 
 fn minmax_range<T, R>(mm: MinMaxResult<T>) -> R

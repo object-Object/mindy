@@ -1,13 +1,14 @@
-mod ast;
+pub mod ast;
+mod vm;
 
 lalrpop_util::lalrpop_mod!(grammar, "/logic/grammar.rs");
 
-pub use ast::*;
 pub use grammar::LogicParser;
+pub use vm::*;
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use super::{ast::*, *};
     use crate::types::colors::{COLORS, rgba8888_to_double_bits, to_double_bits};
 
     macro_rules! assert_ast {

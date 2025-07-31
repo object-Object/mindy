@@ -21,6 +21,15 @@ pub struct ProcessorConfig {
     pub links: Vec<ProcessorLink>,
 }
 
+impl ProcessorConfig {
+    pub fn from_code(code: &str) -> Self {
+        Self {
+            code: code.to_string(),
+            links: Vec::new(),
+        }
+    }
+}
+
 #[binrw]
 #[brw(big)]
 #[derive(Debug, Clone, PartialEq, Eq)]
