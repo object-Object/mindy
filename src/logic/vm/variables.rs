@@ -6,9 +6,9 @@ use velcro::map_iter_from;
 use super::processor::ProcessorState;
 
 #[allow(clippy::approx_constant)]
-const PI: f64 = 3.1415927;
+pub const PI: f64 = 3.1415927;
 #[allow(clippy::approx_constant)]
-const E: f64 = 2.7182818;
+pub const E: f64 = 2.7182818;
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum LVar {

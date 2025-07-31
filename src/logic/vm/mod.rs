@@ -300,6 +300,10 @@ mod tests {
             stop
             set @ipt 10
             set true 0
+            set pi @pi
+            set pi_fancy π
+            set e @e
+            noop
             ",
         );
 
@@ -321,10 +325,24 @@ mod tests {
         });
 
         vm.do_tick(Duration::ZERO);
+        vm.do_tick(Duration::ZERO);
+        vm.do_tick(Duration::ZERO);
 
         with_processor(&mut vm, 0, |p| {
             assert_eq!(p.state.variables["@ipt"], LVar::Ipt);
             assert_eq!(p.state.variables["true"].get(&p.state), LValue::Number(1.));
+            assert_eq!(
+                p.state.variables["pi"].get(&p.state),
+                LValue::Number(variables::PI)
+            );
+            assert_eq!(
+                p.state.variables["pi_fancy"].get(&p.state),
+                LValue::Number(variables::PI)
+            );
+            assert_eq!(
+                p.state.variables["e"].get(&p.state),
+                LValue::Number(variables::E)
+            );
         });
     }
 
@@ -410,6 +428,9 @@ mod tests {
             ("equal", r#""abc""#, r#""abc""#, true),
             ("equal", "null", "null", true),
             ("equal", "0", "0.0000009", true),
+            ("equal", "@pi", "3.1415927", true),
+            ("equal", "π", "3.1415927", true),
+            ("equal", "@e", "2.7182818", true),
             ("equal", "0", "0.000001", false),
             ("equal", "0", "1", false),
             ("equal", "1", "null", false),
