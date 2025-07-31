@@ -14,8 +14,11 @@ pub enum Statement {
 #[derive(Debug, Clone, PartialEq)]
 pub enum Instruction {
     Noop,
+    End,
     Stop,
+    Set { to: Value, from: Value },
     Print { value: Value },
+    SetRate { value: Value },
     Unknown(String),
 }
 

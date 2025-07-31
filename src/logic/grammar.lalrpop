@@ -15,8 +15,11 @@ match {
     r"[^\r\n #\t;]+:" => LABEL,
 
     "noop",
+    "end",
     "stop",
+    "set",
     "print",
+    "setrate",
 
     // https://github.com/Anuken/Arc/blob/071fdffaf220cd57cf971a0ee58db2f321f92ee1/arc-core/src/arc/util/Strings.java#L495
     // for example, -+1.--0. is a valid number literal
@@ -64,14 +67,34 @@ Instruction: Instruction = {
     "noop" =>
         Instruction::Noop,
 
+    "end" =>
+        Instruction::End,
+
     "stop" =>
         Instruction::Stop,
 
+    "set" <to:Value> <from:Value> =>
+        Instruction::Set {<>},
+
     "print" <value:Value> =>
         Instruction::Print {<>},
-    
+
+    "setrate" <value:Value> =>
+        Instruction::SetRate {<>},
+
     <i:SYMBOL> =>
         Instruction::Unknown(i.into()),
+};
+
+Symbol = {
+    SYMBOL,
+    LABEL,
+    "noop",
+    "end",
+    "stop",
+    "set",
+    "print",
+    "setrate",
 };
 
 Value: Value = {
@@ -106,12 +129,4 @@ Value: Value = {
 
     <v:Symbol> =>
         Value::Variable(v.into()),
-};
-
-Symbol = {
-    SYMBOL,
-    LABEL,
-    "noop",
-    "stop",
-    "print",
 };

@@ -1,4 +1,4 @@
-#![allow(unused)]
+#![allow(dead_code)]
 
 mod blocks;
 mod instructions;
@@ -161,7 +161,10 @@ mod tests {
 
     use binrw::BinWrite;
 
-    use crate::types::{Object, PackedPoint2, ProcessorConfig};
+    use crate::{
+        logic::vm::variables::{LValue, LVar},
+        types::{Object, PackedPoint2, ProcessorConfig},
+    };
 
     use super::{processor::Processor, *};
 
@@ -185,8 +188,12 @@ mod tests {
         );
     }
 
+    fn with_processor(vm: &mut LogicVM, idx: usize, f: impl FnOnce(&mut Processor)) {
+        f(vm.processors[idx].borrow_mut().unwrap_processor_mut())
+    }
+
     fn take_processor(vm: &mut LogicVM, idx: usize) -> Processor {
-        vm.processors[0]
+        vm.processors[idx]
             .replace(Block::Unknown {
                 block: "".into(),
                 config: Object::Null,
@@ -207,7 +214,7 @@ mod tests {
             position: PackedPoint2 { x: 0, y: 0 },
             config: {
                 let mut cur = Cursor::new(Vec::new());
-                ProcessorConfig::from_code("stop").write(&mut cur);
+                ProcessorConfig::from_code("stop").write(&mut cur).unwrap();
                 cur.into_inner().into()
             },
             rotation: 0,
@@ -258,6 +265,112 @@ mod tests {
         run(&mut vm, 1, true);
 
         let processor = take_processor(&mut vm, 0);
-        assert_eq!(processor.state.printbuffer, "foobar\n10\n1.5nullnull")
+        assert_eq!(processor.state.printbuffer, "foobar\n10\n1.5nullnull");
+    }
+
+    #[test]
+    fn test_end() {
+        let mut vm = single_processor_vm(
+            BlockType::MicroProcessor,
+            "
+            print 1
+            end
+            print 2
+            ",
+        );
+
+        run(&mut vm, 2, false);
+
+        let processor = take_processor(&mut vm, 0);
+        assert_eq!(processor.state.counter, 3);
+        assert!(!processor.state.stopped());
+        assert_eq!(processor.state.printbuffer, "11");
+    }
+
+    #[test]
+    fn test_set() {
+        let mut vm = single_processor_vm(
+            BlockType::MicroProcessor,
+            "
+            set foo 1
+            noop
+            set foo 2
+            set @counter 6
+            stop
+            stop
+            set @ipt 10
+            set true 0
+            ",
+        );
+
+        with_processor(&mut vm, 0, |p| {
+            assert_eq!(p.state.variables["foo"].get(&p.state), LValue::Null);
+        });
+
+        vm.do_tick(Duration::ZERO);
+
+        with_processor(&mut vm, 0, |p| {
+            assert_eq!(p.state.variables["foo"].get(&p.state), LValue::Number(1.));
+        });
+
+        vm.do_tick(Duration::ZERO);
+
+        with_processor(&mut vm, 0, |p| {
+            assert_eq!(p.state.variables["foo"].get(&p.state), LValue::Number(2.));
+            assert_eq!(p.state.counter, 6);
+        });
+
+        vm.do_tick(Duration::ZERO);
+
+        with_processor(&mut vm, 0, |p| {
+            assert_eq!(p.state.variables["@ipt"], LVar::Ipt);
+            assert_eq!(p.state.variables["true"].get(&p.state), LValue::Number(1.));
+        });
+    }
+
+    #[test]
+    fn test_setrate() {
+        let mut vm = single_processor_vm(
+            BlockType::WorldProcessor,
+            "
+            noop
+            setrate 0
+            stop
+            setrate 10
+            stop
+            setrate 1
+            stop
+            setrate 1001
+            stop
+            setrate 500
+            stop
+            setrate 1000
+            stop
+            setrate 5.5
+            stop
+            ",
+        );
+
+        for ipt in [8, 1, 10, 1, 1000, 500, 1000, 5] {
+            with_processor(&mut vm, 0, |p| {
+                assert_eq!(
+                    p.state.ipt, ipt,
+                    "incorrect ipt at counter {}",
+                    p.state.counter
+                );
+                p.state.counter += 1;
+                p.state.set_stopped(false);
+            });
+
+            vm.do_tick(Duration::ZERO);
+        }
+    }
+
+    #[test]
+    fn test_setrate_unpriv() {
+        let mut vm = single_processor_vm(BlockType::MicroProcessor, "setrate 10; stop");
+        run(&mut vm, 1, true);
+        let processor = take_processor(&mut vm, 0);
+        assert_eq!(processor.state.ipt, 2);
     }
 }

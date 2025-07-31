@@ -1,12 +1,18 @@
-use std::{cell::RefCell, rc::Rc};
+use std::{cell::RefCell, collections::HashMap, rc::Rc};
 
 use num_traits::AsPrimitive;
+use velcro::map_iter_from;
 
 use super::processor::ProcessorState;
 
-#[derive(Debug, Clone)]
+#[allow(clippy::approx_constant)]
+const PI: f64 = 3.1415927;
+#[allow(clippy::approx_constant)]
+const E: f64 = 2.7182818;
+
+#[derive(Debug, Clone, PartialEq)]
 pub enum LVar {
-    Variable(LVarPtr),
+    Variable(Rc<RefCell<LValue>>),
     Constant(LValue),
     Counter,
     Ipt,
@@ -17,6 +23,38 @@ pub enum LVar {
 }
 
 impl LVar {
+    pub fn new_variable() -> Self {
+        Self::Variable(Rc::new(RefCell::new(LValue::Null)))
+    }
+
+    pub fn init_globals(variables: &mut HashMap<String, LVar>) {
+        // https://github.com/Anuken/Mindustry/blob/e95c543fb224b8d8cb21f834e0d02cbdb9f34d48/core/src/mindustry/logic/GlobalVars.java#L41
+        variables.extend(map_iter_from! {
+            "@counter": Self::Counter,
+            "@ipt": Self::Ipt,
+
+            "false": constant(0),
+            "true": constant(1),
+            "null": constant(LValue::Null),
+
+            "@pi": constant(PI),
+            "π": constant(PI),
+            "@e": constant(E),
+            "@degToRad": constant(PI / 180.),
+            "@radToDeg": constant(180. / PI),
+
+            "@time": Self::Time,
+            "@tick": Self::Tick,
+            "@second": Self::Second,
+            "@minute": Self::Minute,
+            "@waveNumber": constant(0),
+            "@waveTime": constant(0),
+
+            "@server": constant(1),
+            "@client": constant(0),
+        });
+    }
+
     pub fn get(&self, state: &ProcessorState) -> LValue {
         match self {
             Self::Variable(ptr) => LValue::clone(&ptr.borrow()),
@@ -30,7 +68,7 @@ impl LVar {
         }
     }
 
-    pub fn set(&mut self, state: &mut ProcessorState, value: LValue) {
+    pub fn set(&self, state: &mut ProcessorState, value: LValue) {
         match self {
             Self::Variable(ptr) => {
                 *ptr.borrow_mut() = value;
@@ -50,7 +88,12 @@ impl LVar {
     }
 }
 
-pub type LVarPtr = Rc<RefCell<LValue>>;
+fn constant<T>(value: T) -> LVar
+where
+    T: Into<LValue>,
+{
+    LVar::Constant(value.into())
+}
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum LValue {

@@ -1,11 +1,11 @@
-use std::{cell::Cell, cmp::min, collections::HashMap, io::Cursor, ops::RangeBounds, rc::Rc};
+use std::{cell::Cell, cmp::min, collections::HashMap, io::Cursor, rc::Rc};
 
 use binrw::BinRead;
 
 use super::{
     LogicVM, VMLoadError, VMLoadResult,
     instructions::{Instruction, InstructionResult, parse_instruction},
-    variables::LVarPtr,
+    variables::LVar,
 };
 use crate::{
     logic::{LogicParser, ast},
@@ -68,7 +68,7 @@ pub struct ProcessorState {
     running_processors: Rc<Cell<usize>>,
     pub(super) time: Rc<Cell<f64>>,
     pub(super) printbuffer: String,
-    pub(super) variables: HashMap<String, LVarPtr>,
+    pub(super) variables: HashMap<String, LVar>,
 }
 
 impl ProcessorState {
@@ -165,11 +165,18 @@ impl ProcessorBuilder<'_> {
             }
         }
 
-        let mut instructions = Vec::with_capacity(line);
         let mut variables = HashMap::new();
+        LVar::init_globals(&mut variables);
+
+        let mut instructions = Vec::with_capacity(line);
         for statement in code.into_iter() {
             if let ast::Statement::Instruction(instruction, _) = statement {
-                instructions.push(parse_instruction(instruction, &mut variables, &labels)?);
+                instructions.push(parse_instruction(
+                    instruction,
+                    &mut variables,
+                    &labels,
+                    privileged,
+                )?);
             }
         }
 
