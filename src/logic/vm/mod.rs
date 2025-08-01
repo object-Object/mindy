@@ -312,20 +312,22 @@ mod tests {
     fn test_set() {
         let mut vm = single_processor_vm(
             BlockType::MicroProcessor,
-            "
+            r#"
             set foo 1
             noop
             set foo 2
             set @counter 6
             stop
             stop
+            set @counter null
+            set @counter "foo"
             set @ipt 10
             set true 0
             set pi @pi
             set pi_fancy π
             set e @e
             noop
-            ",
+            "#,
         );
 
         with_processor(&mut vm, 0, |p| {
@@ -343,6 +345,12 @@ mod tests {
         with_processor(&mut vm, 0, |p| {
             assert_eq!(p.state.variables["foo"].get(&p.state), LValue::Number(2.));
             assert_eq!(p.state.counter, 6);
+        });
+
+        vm.do_tick(Duration::ZERO);
+
+        with_processor(&mut vm, 0, |p| {
+            assert_eq!(p.state.counter, 8);
         });
 
         vm.do_tick(Duration::ZERO);
