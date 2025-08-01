@@ -19,6 +19,8 @@ pub fn parse_instruction(
     privileged: bool,
     num_instructions: usize,
 ) -> VMLoadResult<Box<dyn Instruction>> {
+    // helpers
+
     let mut lvar = |value| match value {
         ast::Value::Variable(name) => variables.get(&name).cloned().unwrap_or_else(|| {
             let var = LVar::new_variable();
@@ -51,24 +53,30 @@ pub fn parse_instruction(
         _ => unreachable!(),
     };
 
+    // map AST instructions to handlers
+
     Ok(match instruction {
-        // unprivileged instructions
+        // input/output
+        // TODO: implement draw?
+        ast::Instruction::Draw { .. } => Box::new(Noop),
+        ast::Instruction::Print { value } => Box::new(Print { value: lvar(value) }),
+
+        // operations
+        ast::Instruction::Set { to, from } => Box::new(Set {
+            to: lvar(to),
+            from: lvar(from),
+        }),
+
+        // flow control
         ast::Instruction::Noop => Box::new(Noop),
-        ast::Instruction::End => Box::new(End),
         ast::Instruction::Stop => Box::new(Stop),
+        ast::Instruction::End => Box::new(End),
         ast::Instruction::Jump { target, op, x, y } => Box::new(Jump {
             target: jump_target(target)?,
             op,
             x: lvar(x),
             y: lvar(y),
         }),
-        ast::Instruction::Set { to, from } => Box::new(Set {
-            to: lvar(to),
-            from: lvar(from),
-        }),
-        ast::Instruction::Print { value } => Box::new(Print { value: lvar(value) }),
-        // TODO: implement?
-        ast::Instruction::Draw { .. } => Box::new(Noop),
 
         // unknown
         // do this here so it isn't ignored for unprivileged procs
@@ -81,7 +89,7 @@ pub fn parse_instruction(
         // convert privileged instructions to noops if the proc is unprivileged
         _ if !privileged => Box::new(Noop),
 
-        // privileged instructions
+        // privileged
         ast::Instruction::SetRate { value } => Box::new(SetRate { value: lvar(value) }),
     })
 }
@@ -109,20 +117,57 @@ impl<T: SimpleInstruction> Instruction for T {
     }
 }
 
-// unprivileged instructions
+// input/output
+
+struct Print {
+    value: LVar,
+}
+
+impl Print {
+    fn to_string(value: &LValue) -> Cow<'_, str> {
+        match value {
+            LValue::Null => Cow::from("null"),
+            LValue::Number(n) => {
+                let rounded = n.round() as u64;
+                Cow::from(if (n - (rounded as f64)).abs() < PRINT_EPSILON {
+                    rounded.to_string()
+                } else {
+                    n.to_string()
+                })
+            }
+            LValue::String(s) => Cow::Borrowed(s),
+        }
+    }
+}
+
+impl SimpleInstruction for Print {
+    fn execute(&self, state: &mut ProcessorState, _: &LogicVM) {
+        if state.printbuffer.len() < MAX_TEXT_BUFFER {
+            let value = self.value.get(state);
+            state.printbuffer.push_str(&Print::to_string(&value))
+        }
+    }
+}
+
+// operations
+
+struct Set {
+    to: LVar,
+    from: LVar,
+}
+
+impl SimpleInstruction for Set {
+    fn execute(&self, state: &mut ProcessorState, _: &LogicVM) {
+        self.to.set(state, self.from.get(state));
+    }
+}
+
+// flow control
 
 struct Noop;
 
 impl SimpleInstruction for Noop {
     fn execute(&self, _: &mut ProcessorState, _: &LogicVM) {}
-}
-
-struct End;
-
-impl SimpleInstruction for End {
-    fn execute(&self, state: &mut ProcessorState, _: &LogicVM) {
-        state.counter = state.num_instructions;
-    }
 }
 
 struct Stop;
@@ -132,6 +177,14 @@ impl Instruction for Stop {
         state.counter -= 1;
         state.set_stopped(true);
         InstructionResult::Yield
+    }
+}
+
+struct End;
+
+impl SimpleInstruction for End {
+    fn execute(&self, state: &mut ProcessorState, _: &LogicVM) {
+        state.counter = state.num_instructions;
     }
 }
 
@@ -178,48 +231,7 @@ impl SimpleInstruction for Jump {
     }
 }
 
-struct Set {
-    to: LVar,
-    from: LVar,
-}
-
-impl SimpleInstruction for Set {
-    fn execute(&self, state: &mut ProcessorState, _: &LogicVM) {
-        self.to.set(state, self.from.get(state));
-    }
-}
-
-struct Print {
-    value: LVar,
-}
-
-impl Print {
-    fn to_string(value: &LValue) -> Cow<'_, str> {
-        match value {
-            LValue::Null => Cow::from("null"),
-            LValue::Number(n) => {
-                let rounded = n.round() as u64;
-                Cow::from(if (n - (rounded as f64)).abs() < PRINT_EPSILON {
-                    rounded.to_string()
-                } else {
-                    n.to_string()
-                })
-            }
-            LValue::String(s) => Cow::Borrowed(s),
-        }
-    }
-}
-
-impl SimpleInstruction for Print {
-    fn execute(&self, state: &mut ProcessorState, _: &LogicVM) {
-        if state.printbuffer.len() < MAX_TEXT_BUFFER {
-            let value = self.value.get(state);
-            state.printbuffer.push_str(&Print::to_string(&value))
-        }
-    }
-}
-
-// privileged instructions
+// privileged
 
 struct SetRate {
     value: LVar,

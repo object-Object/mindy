@@ -14,23 +14,14 @@ match {
 
     r"[^\r\n #\t;]+:" => LABEL,
 
-    "noop",
-    "end",
-    "stop",
-    "jump",
-    "set",
-    "print",
     "draw",
+    "print",
+    "set",
+    "noop",
+    "stop",
+    "end",
+    "jump",
     "setrate",
-
-    "equal",
-    "notEqual",
-    "lessThan",
-    "lessThanEq",
-    "greaterThan",
-    "greaterThanEq",
-    "strictEqual",
-    "always",
 
     "clear",
     "color",
@@ -43,11 +34,19 @@ match {
     "linePoly",
     "triangle",
     "image",
-    // print
     "translate",
     "scale",
     "rotate",
     "reset",
+
+    "equal",
+    "notEqual",
+    "lessThan",
+    "lessThanEq",
+    "greaterThan",
+    "greaterThanEq",
+    "strictEqual",
+    "always",
 
     // https://github.com/Anuken/Arc/blob/071fdffaf220cd57cf971a0ee58db2f321f92ee1/arc-core/src/arc/util/Strings.java#L495
     // for example, -+1.--0. is a valid number literal
@@ -92,26 +91,7 @@ Statement: Statement = {
 };
 
 Instruction: Instruction = {
-    "noop" =>
-        Instruction::Noop,
-
-    "end" =>
-        Instruction::End,
-
-    "stop" =>
-        Instruction::Stop,
-
-    "jump" <target:JumpTarget> <op:ConditionOp0> =>
-        optional_args!(Instruction::Jump { <>; x, y }),
-
-    "jump" <target:JumpTarget> <op:ConditionOp2> <x:Value> <y:Value> =>
-        Instruction::Jump {<>},
-
-    "set" <to:Value> <from:Value> =>
-        Instruction::Set {<>},
-
-    "print" <value:Value> =>
-        Instruction::Print {<>},
+    // input/output
 
     "draw" <op:DrawOp0> =>
         optional_args!(Instruction::Draw { <>; x, y, p1, p2, p3, p4 }),
@@ -132,27 +112,42 @@ Instruction: Instruction = {
         optional_args!(Instruction::Draw { <>; p4 }),
 
     "draw" <op:DrawOp6> <x:Value> <y:Value> <p1:Value> <p2:Value> <p3:Value> <p4:Value> =>
-        Instruction::Draw {<>},
+        Instruction::Draw { <> },
+
+    "print" <value:Value> =>
+        Instruction::Print { <> },
+
+    // operations
+
+    "set" <to:Value> <from:Value> =>
+        Instruction::Set { <> },
+
+    // flow control
+
+    "noop" =>
+        Instruction::Noop,
+
+    "stop" =>
+        Instruction::Stop,
+
+    "end" =>
+        Instruction::End,
+
+    "jump" <target:JumpTarget> <op:ConditionOp0> =>
+        optional_args!(Instruction::Jump { <>; x, y }),
+
+    "jump" <target:JumpTarget> <op:ConditionOp2> <x:Value> <y:Value> =>
+        Instruction::Jump { <> },
+
+    // privileged
 
     "setrate" <value:Value> =>
-        Instruction::SetRate {<>},
+        Instruction::SetRate { <> },
+
+    // unknown
 
     <i:SYMBOL> =>
         Instruction::Unknown(i.into()),
-};
-
-ConditionOp0: ConditionOp = {
-    "always" => ConditionOp::Always,
-};
-
-ConditionOp2: ConditionOp = {
-    "equal"         => ConditionOp::Equal,
-    "notEqual"      => ConditionOp::NotEqual,
-    "lessThan"      => ConditionOp::LessThan,
-    "lessThanEq"    => ConditionOp::LessThanEq,
-    "greaterThan"   => ConditionOp::GreaterThan,
-    "greaterThanEq" => ConditionOp::GreaterThanEq,
-    "strictEqual"   => ConditionOp::StrictEqual,
 };
 
 DrawOp0: DrawOp = {
@@ -192,43 +187,18 @@ DrawOp6: DrawOp = {
     "triangle" => DrawOp::Triangle,
 };
 
-Symbol = {
-    SYMBOL,
-    LABEL,
+ConditionOp0: ConditionOp = {
+    "always" => ConditionOp::Always,
+};
 
-    "noop",
-    "end",
-    "stop",
-    "jump",
-    "set",
-    "print",
-    "draw",
-    "setrate",
-
-    "equal",
-    "notEqual",
-    "lessThan",
-    "lessThanEq",
-    "greaterThan",
-    "greaterThanEq",
-    "strictEqual",
-    "always",
-
-    "clear",
-    "color",
-    "col",
-    "stroke",
-    "line",
-    "rect",
-    "lineRect",
-    "poly",
-    "linePoly",
-    "triangle",
-    "image",
-    "translate",
-    "scale",
-    "rotate",
-    "reset",
+ConditionOp2: ConditionOp = {
+    "equal"         => ConditionOp::Equal,
+    "notEqual"      => ConditionOp::NotEqual,
+    "lessThan"      => ConditionOp::LessThan,
+    "lessThanEq"    => ConditionOp::LessThanEq,
+    "greaterThan"   => ConditionOp::GreaterThan,
+    "greaterThanEq" => ConditionOp::GreaterThanEq,
+    "strictEqual"   => ConditionOp::StrictEqual,
 };
 
 Value: Value = {
@@ -284,4 +254,43 @@ JumpTarget: Value = {
 
     <v:Symbol> =>
         Value::Variable(v.into()),
+};
+
+Symbol = {
+    SYMBOL,
+    LABEL,
+
+    "draw",
+    "print",
+    "set",
+    "noop",
+    "stop",
+    "end",
+    "jump",
+    "setrate",
+
+    "clear",
+    "color",
+    "col",
+    "stroke",
+    "line",
+    "rect",
+    "lineRect",
+    "poly",
+    "linePoly",
+    "triangle",
+    "image",
+    "translate",
+    "scale",
+    "rotate",
+    "reset",
+
+    "equal",
+    "notEqual",
+    "lessThan",
+    "lessThanEq",
+    "greaterThan",
+    "greaterThanEq",
+    "strictEqual",
+    "always",
 };

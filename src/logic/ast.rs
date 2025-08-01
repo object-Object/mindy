@@ -13,22 +13,7 @@ pub enum Statement {
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum Instruction {
-    Noop,
-    End,
-    Stop,
-    Jump {
-        target: Value,
-        op: ConditionOp,
-        x: Value,
-        y: Value,
-    },
-    Set {
-        to: Value,
-        from: Value,
-    },
-    Print {
-        value: Value,
-    },
+    // input/output
     Draw {
         op: DrawOp,
         x: Value,
@@ -38,22 +23,30 @@ pub enum Instruction {
         p3: Value,
         p4: Value,
     },
+    Print {
+        value: Value,
+    },
+    // operations
+    Set {
+        to: Value,
+        from: Value,
+    },
+    // flow control
+    Noop,
+    Stop,
+    End,
+    Jump {
+        target: Value,
+        op: ConditionOp,
+        x: Value,
+        y: Value,
+    },
+    // privileged
     SetRate {
         value: Value,
     },
+    // unknown
     Unknown(String),
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub enum ConditionOp {
-    Equal,
-    NotEqual,
-    LessThan,
-    LessThanEq,
-    GreaterThan,
-    GreaterThanEq,
-    StrictEqual,
-    Always,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -74,6 +67,18 @@ pub enum DrawOp {
     Scale,
     Rotate,
     Reset,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum ConditionOp {
+    Equal,
+    NotEqual,
+    LessThan,
+    LessThanEq,
+    GreaterThan,
+    GreaterThanEq,
+    StrictEqual,
+    Always,
 }
 
 #[derive(Debug, Clone, PartialEq)]
