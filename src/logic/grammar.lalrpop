@@ -19,6 +19,7 @@ match {
     "printchar",
     "format",
     "set",
+    "select",
     "packcolor",
     "unpackcolor",
     "noop",
@@ -132,6 +133,12 @@ Instruction: Instruction = {
 
     "set" <to:Value> <from:Value> =>
         Instruction::Set { <> },
+
+    "select" <result:Value> <op:ConditionOp0> <x:Value> <y:Value> <if_true:Value> =>
+        optional_args!(Instruction::Select { <>; if_false }),
+
+    "select" <result:Value> <op:ConditionOp2> <x:Value> <y:Value> <if_true:Value> <if_false:Value> =>
+        Instruction::Select { <> },
 
     "packcolor" <result:Value> <r:Value> <g:Value> <b:Value> <a:Value> =>
         Instruction::PackColor { <> },
@@ -285,6 +292,7 @@ Symbol = {
     "printchar",
     "format",
     "set",
+    "select",
     "packcolor",
     "unpackcolor",
     "noop",

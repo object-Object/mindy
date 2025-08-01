@@ -37,6 +37,14 @@ pub enum Instruction {
         to: Value,
         from: Value,
     },
+    Select {
+        result: Value,
+        op: ConditionOp,
+        x: Value,
+        y: Value,
+        if_true: Value,
+        if_false: Value,
+    },
     PackColor {
         result: Value,
         r: Value,

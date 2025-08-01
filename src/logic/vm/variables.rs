@@ -86,6 +86,10 @@ impl LVar {
             _ => {}
         }
     }
+
+    pub fn set_from(&self, state: &mut ProcessorState, other: &LVar) {
+        self.set(state, other.get(state));
+    }
 }
 
 fn constant<T>(value: T) -> LVar

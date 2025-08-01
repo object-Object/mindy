@@ -421,6 +421,69 @@ mod tests {
         assert_eq!(processor.state.ipt, 2);
     }
 
+    const CONDITION_TESTS: &[(&str, &str, &str, bool)] = &[
+        // equal
+        ("equal", "0", "0", true),
+        ("equal", "0", "null", true),
+        ("equal", "1", r#""""#, true),
+        ("equal", "1", r#""foo""#, true),
+        ("equal", r#""""#, r#""""#, true),
+        ("equal", r#""abc""#, r#""abc""#, true),
+        ("equal", "null", "null", true),
+        ("equal", "0", "0.0000009", true),
+        ("equal", "@pi", "3.1415927", true),
+        ("equal", "π", "3.1415927", true),
+        ("equal", "@e", "2.7182818", true),
+        ("equal", "0", "0.000001", false),
+        ("equal", "0", "1", false),
+        ("equal", "1", "null", false),
+        ("equal", r#""abc""#, r#""def""#, false),
+        // notEqual
+        ("notEqual", "0", "0", false),
+        ("notEqual", "0", "null", false),
+        ("notEqual", "null", "null", false),
+        ("notEqual", "0", "0.0000009", false),
+        ("notEqual", "0", "0.000001", true),
+        ("notEqual", "0", "1", true),
+        ("notEqual", "1", "null", true),
+        // lessThan
+        ("lessThan", "0", "1", true),
+        ("lessThan", "0", "0", false),
+        ("lessThan", "1", "0", false),
+        // lessThanEq
+        ("lessThanEq", "0", "1", true),
+        ("lessThanEq", "0", "0", true),
+        ("lessThanEq", "1", "0", false),
+        // greaterThan
+        ("greaterThan", "0", "1", false),
+        ("greaterThan", "0", "0", false),
+        ("greaterThan", "1", "0", true),
+        // greaterThanEq
+        ("greaterThanEq", "0", "1", false),
+        ("greaterThanEq", "0", "0", true),
+        ("greaterThanEq", "1", "0", true),
+        // strictEqual
+        ("strictEqual", "0", "0", true),
+        ("strictEqual", "0.5", "0.5", true),
+        ("strictEqual", "@pi", "3.1415927", true),
+        ("strictEqual", "null", "null", true),
+        ("strictEqual", r#""""#, r#""""#, true),
+        ("strictEqual", r#""abc""#, r#""abc""#, true),
+        ("strictEqual", "0", "null", false),
+        ("strictEqual", "1", r#""""#, false),
+        ("strictEqual", "1", r#""foo""#, false),
+        ("strictEqual", r#""abc""#, r#""def""#, false),
+        ("strictEqual", "0", "0.0000009", false),
+        ("strictEqual", "0", "0.000001", false),
+        ("strictEqual", "0", "1", false),
+        ("strictEqual", "1", "null", false),
+        // always
+        ("always", "0", "0", true),
+        ("always", "0", "1", true),
+        ("always", "1", "0", true),
+        ("always", "1", "1", true),
+    ];
+
     #[test]
     fn test_jump() {
         let mut code = r#"
@@ -447,71 +510,7 @@ mod tests {
         "#
         .to_string();
 
-        for (i, (cond, x, y, want_jump)) in [
-            // equal
-            ("equal", "0", "0", true),
-            ("equal", "0", "null", true),
-            ("equal", "1", r#""""#, true),
-            ("equal", "1", r#""foo""#, true),
-            ("equal", r#""""#, r#""""#, true),
-            ("equal", r#""abc""#, r#""abc""#, true),
-            ("equal", "null", "null", true),
-            ("equal", "0", "0.0000009", true),
-            ("equal", "@pi", "3.1415927", true),
-            ("equal", "π", "3.1415927", true),
-            ("equal", "@e", "2.7182818", true),
-            ("equal", "0", "0.000001", false),
-            ("equal", "0", "1", false),
-            ("equal", "1", "null", false),
-            ("equal", r#""abc""#, r#""def""#, false),
-            // notEqual
-            ("notEqual", "0", "0", false),
-            ("notEqual", "0", "null", false),
-            ("notEqual", "null", "null", false),
-            ("notEqual", "0", "0.0000009", false),
-            ("notEqual", "0", "0.000001", true),
-            ("notEqual", "0", "1", true),
-            ("notEqual", "1", "null", true),
-            // lessThan
-            ("lessThan", "0", "1", true),
-            ("lessThan", "0", "0", false),
-            ("lessThan", "1", "0", false),
-            // lessThanEq
-            ("lessThanEq", "0", "1", true),
-            ("lessThanEq", "0", "0", true),
-            ("lessThanEq", "1", "0", false),
-            // greaterThan
-            ("greaterThan", "0", "1", false),
-            ("greaterThan", "0", "0", false),
-            ("greaterThan", "1", "0", true),
-            // greaterThanEq
-            ("greaterThanEq", "0", "1", false),
-            ("greaterThanEq", "0", "0", true),
-            ("greaterThanEq", "1", "0", true),
-            // strictEqual
-            ("strictEqual", "0", "0", true),
-            ("strictEqual", "0.5", "0.5", true),
-            ("strictEqual", "@pi", "3.1415927", true),
-            ("strictEqual", "null", "null", true),
-            ("strictEqual", r#""""#, r#""""#, true),
-            ("strictEqual", r#""abc""#, r#""abc""#, true),
-            ("strictEqual", "0", "null", false),
-            ("strictEqual", "1", r#""""#, false),
-            ("strictEqual", "1", r#""foo""#, false),
-            ("strictEqual", r#""abc""#, r#""def""#, false),
-            ("strictEqual", "0", "0.0000009", false),
-            ("strictEqual", "0", "0.000001", false),
-            ("strictEqual", "0", "1", false),
-            ("strictEqual", "1", "null", false),
-            // always
-            ("always", "0", "0", true),
-            ("always", "0", "1", true),
-            ("always", "1", "0", true),
-            ("always", "1", "1", true),
-        ]
-        .into_iter()
-        .enumerate()
-        {
+        for (i, &(cond, x, y, want_jump)) in CONDITION_TESTS.iter().enumerate() {
             let err = format!("{cond} {x} {y}").replace('"', "'");
             if want_jump {
                 code.push_str(&format!(
@@ -771,5 +770,45 @@ mod tests {
             state.variables["packed2"].get(&state),
             LValue::Number(COLORS["royal"])
         );
+    }
+
+    #[test]
+    fn test_select() {
+        for &(cond, x, y, want_true) in CONDITION_TESTS {
+            let mut vm = single_processor_vm(
+                BlockType::HyperProcessor,
+                &format!(
+                    "
+                    set x {x}
+                    set y {y}
+                    set if_true 0xdeadbeef
+                    set if_false 0xbabecafe
+                    select got1 {cond} x y if_true if_false
+                    select got2 {cond} {x} {y} 0xdeadbeef 0xbabecafe
+                    stop
+                    "
+                ),
+            );
+
+            run(&mut vm, 1, true);
+
+            let state = take_processor(&mut vm, 0).state;
+            let want_value = if want_true {
+                0xdeadbeefu64
+            } else {
+                0xbabecafeu64
+            }
+            .into();
+            assert_eq!(
+                state.variables["got1"].get(&state),
+                want_value,
+                "{cond} {x} {y} (variables)"
+            );
+            assert_eq!(
+                state.variables["got2"].get(&state),
+                want_value,
+                "{cond} {x} {y} (constants)"
+            );
+        }
     }
 }

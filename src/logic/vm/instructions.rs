@@ -70,6 +70,21 @@ pub fn parse_instruction(
             to: lvar(to),
             from: lvar(from),
         }),
+        ast::Instruction::Select {
+            result,
+            op,
+            x,
+            y,
+            if_true,
+            if_false,
+        } => Box::new(Select {
+            result: lvar(result),
+            op,
+            x: lvar(x),
+            y: lvar(y),
+            if_true: lvar(if_true),
+            if_false: lvar(if_false),
+        }),
         ast::Instruction::PackColor { result, r, g, b, a } => Box::new(PackColor {
             result: lvar(result),
             r: lvar(r),
@@ -235,7 +250,27 @@ struct Set {
 
 impl SimpleInstruction for Set {
     fn execute(&self, state: &mut ProcessorState, _: &LogicVM) {
-        self.to.set(state, self.from.get(state));
+        self.to.set_from(state, &self.from);
+    }
+}
+
+struct Select {
+    result: LVar,
+    op: ConditionOp,
+    x: LVar,
+    y: LVar,
+    if_true: LVar,
+    if_false: LVar,
+}
+
+impl SimpleInstruction for Select {
+    fn execute(&self, state: &mut ProcessorState, _: &LogicVM) {
+        let result = if Jump::test(self.op, &self.x, &self.y, state) {
+            &self.if_true
+        } else {
+            &self.if_false
+        };
+        self.result.set_from(state, result);
     }
 }
 
@@ -330,7 +365,14 @@ struct Jump {
 }
 
 impl Jump {
-    fn test(op: ConditionOp, x: LValue, y: LValue) -> bool {
+    fn test(op: ConditionOp, x: &LVar, y: &LVar, state: &mut ProcessorState) -> bool {
+        if matches!(op, ConditionOp::Always) {
+            return true;
+        }
+
+        let x = x.get(state);
+        let y = y.get(state);
+
         match op {
             ConditionOp::Equal => {
                 if x.isobj() && y.isobj() {
@@ -351,14 +393,14 @@ impl Jump {
             ConditionOp::GreaterThan => x.num() > y.num(),
             ConditionOp::GreaterThanEq => x.num() >= y.num(),
             ConditionOp::StrictEqual => x == y,
-            ConditionOp::Always => true,
+            ConditionOp::Always => unreachable!(),
         }
     }
 }
 
 impl SimpleInstruction for Jump {
     fn execute(&self, state: &mut ProcessorState, _: &LogicVM) {
-        if Jump::test(self.op, self.x.get(state), self.y.get(state)) {
+        if Self::test(self.op, &self.x, &self.y, state) {
             // we do the bounds check while parsing
             state.counter = self.target;
         }
