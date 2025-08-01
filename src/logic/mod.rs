@@ -114,9 +114,12 @@ mod tests {
             ("--.-0.", variable("--.-0.")),
             ("1", number(1)),
             ("++1f", number(1)),
-            ("--1", number(-1)),
+            ("+-1", number(-1)),
+            ("-+1", number(-1)),
+            ("--1", number(1)),
             ("1.5F", number(1.5)),
             ("1.5FF", variable("1.5FF")),
+            ("-1", number(-1)),
             ("-1.5", number(-1.5)),
             ("0b101", number(5)),
             ("-0b1111", number(-15)),
@@ -132,7 +135,6 @@ mod tests {
             ("%+A-b+c", number(to_double_bits(0xa, -0xb, 0xc, 0xff))),
         ] {
             let input = format!("print {input}");
-            println!("{input}");
             assert_ast![&input, instruction!(Print { value })];
         }
     }

@@ -23,8 +23,8 @@ pub struct Processor {
 }
 
 impl Processor {
-    pub fn do_tick(&mut self, vm: &LogicVM) {
-        if !self.state.enabled {
+    pub fn do_tick(&mut self, vm: &LogicVM, time: f64) {
+        if !self.state.enabled || self.state.wait_end_time > time {
             return;
         }
 
@@ -59,6 +59,7 @@ pub struct ProcessorState {
     enabled: bool,
     /// True if we're currently at a `stop` instruction.
     stopped: bool,
+    pub(super) wait_end_time: f64,
     pub(super) num_instructions: usize,
 
     pub(super) counter: usize,
@@ -191,6 +192,7 @@ impl ProcessorBuilder<'_> {
             state: ProcessorState {
                 enabled: !instructions.is_empty(),
                 stopped: false,
+                wait_end_time: -1.,
                 num_instructions,
                 counter: 0,
                 accumulator: 0,

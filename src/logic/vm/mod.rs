@@ -117,11 +117,18 @@ impl LogicVM {
     }
 
     /// Execute one tick of the simulation.
+    ///
+    /// Note: negative delta values will be ignored.
     pub fn do_tick(&mut self, delta: Duration) {
-        self.time.update(|t| t + duration_millis_f64(delta));
+        // never move time backwards
+        let time = self.time.get() + duration_millis_f64(delta).max(0.);
+        self.time.set(time);
 
         for processor in &self.processors {
-            processor.borrow_mut().unwrap_processor_mut().do_tick(self);
+            processor
+                .borrow_mut()
+                .unwrap_processor_mut()
+                .do_tick(self, time);
         }
     }
 }
@@ -532,5 +539,52 @@ mod tests {
             state.variables["canary"].get(&state),
             LValue::Number(0xdeadbeefu64 as f64)
         );
+    }
+
+    #[test]
+    fn test_wait() {
+        let mut vm = single_processor_vm(
+            BlockType::HyperProcessor,
+            "
+            print 1
+            wait -1
+
+            print 2
+            wait 0
+
+            print 3
+            wait 1e-5
+
+            print 4
+            wait 1
+
+            print 5
+            stop
+            ",
+        );
+
+        vm.do_tick(Duration::ZERO);
+
+        with_processor(&mut vm, 0, |p| {
+            assert_eq!(p.state.printbuffer, "123");
+        });
+
+        vm.do_tick(Duration::from_secs_f64(1. / 60.));
+
+        with_processor(&mut vm, 0, |p| {
+            assert_eq!(p.state.printbuffer, "1234");
+        });
+
+        vm.do_tick(Duration::from_millis(500));
+
+        with_processor(&mut vm, 0, |p| {
+            assert_eq!(p.state.printbuffer, "1234");
+        });
+
+        vm.do_tick(Duration::from_millis(500));
+
+        with_processor(&mut vm, 0, |p| {
+            assert_eq!(p.state.printbuffer, "12345");
+        });
     }
 }

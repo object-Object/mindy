@@ -33,6 +33,9 @@ pub enum Instruction {
     },
     // flow control
     Noop,
+    Wait {
+        value: Value,
+    },
     Stop,
     End,
     Jump {
@@ -121,7 +124,7 @@ pub(super) fn parse_number(n: &str) -> Result<f64, Box<dyn Error>> {
         _ => 1.,
     };
 
-    match caps.name("dec_frac") {
+    Ok(match caps.name("dec_frac") {
         // decimal
         Some(dec_frac) => {
             let whole = match caps.name("dec_int") {
@@ -131,7 +134,7 @@ pub(super) fn parse_number(n: &str) -> Result<f64, Box<dyn Error>> {
 
             let dec = dec_frac.as_str().parse::<i64>()? as f64;
 
-            Ok((whole + (dec / 10f64.powf(dec_frac.len() as f64)).copysign(whole)) * sign)
+            whole + (dec / 10f64.powf(dec_frac.len() as f64)).copysign(whole)
         }
 
         None => {
@@ -142,14 +145,14 @@ pub(super) fn parse_number(n: &str) -> Result<f64, Box<dyn Error>> {
                 Some(sci_exp) => {
                     let power = sci_exp.as_str().parse::<i64>()? as f64;
 
-                    Ok(whole * 10f64.powf(power) * sign)
+                    whole * 10f64.powf(power)
                 }
 
                 // integer
-                None => Ok(whole),
+                None => whole,
             }
         }
-    }
+    } * sign)
 }
 
 pub(super) fn number_to_value<T, E>(n: &str, res: Result<T, E>) -> Value

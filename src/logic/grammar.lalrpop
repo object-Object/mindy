@@ -18,6 +18,7 @@ match {
     "print",
     "set",
     "noop",
+    "wait",
     "stop",
     "end",
     "jump",
@@ -126,6 +127,9 @@ Instruction: Instruction = {
 
     "noop" =>
         Instruction::Noop,
+    
+    "wait" <value:Value> =>
+        Instruction::Wait { <> },
 
     "stop" =>
         Instruction::Stop,
@@ -264,6 +268,7 @@ Symbol = {
     "print",
     "set",
     "noop",
+    "wait",
     "stop",
     "end",
     "jump",

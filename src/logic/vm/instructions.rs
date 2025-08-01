@@ -69,6 +69,7 @@ pub fn parse_instruction(
 
         // flow control
         ast::Instruction::Noop => Box::new(Noop),
+        ast::Instruction::Wait { value } => Box::new(Wait { value: lvar(value) }),
         ast::Instruction::Stop => Box::new(Stop),
         ast::Instruction::End => Box::new(End),
         ast::Instruction::Jump { target, op, x, y } => Box::new(Jump {
@@ -168,6 +169,22 @@ struct Noop;
 
 impl SimpleInstruction for Noop {
     fn execute(&self, _: &mut ProcessorState, _: &LogicVM) {}
+}
+
+struct Wait {
+    value: LVar,
+}
+
+impl Instruction for Wait {
+    fn execute(&self, state: &mut ProcessorState, _: &LogicVM) -> InstructionResult {
+        let wait_ms = self.value.get(state).num() * 1000.;
+        if wait_ms <= 0. {
+            InstructionResult::Ok
+        } else {
+            state.wait_end_time = state.time.get() + wait_ms;
+            InstructionResult::Yield
+        }
+    }
 }
 
 struct Stop;
