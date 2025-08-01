@@ -17,6 +17,7 @@ match {
     "draw",
     "print",
     "printchar",
+    "format",
     "set",
     "noop",
     "wait",
@@ -118,9 +119,12 @@ Instruction: Instruction = {
 
     "print" <value:Value> =>
         Instruction::Print { <> },
-    
+
     "printchar" <value:Value> =>
         Instruction::PrintChar { <> },
+
+    "format" <value:Value> =>
+        Instruction::Format { <> },
 
     // operations
 
@@ -271,6 +275,7 @@ Symbol = {
     "draw",
     "print",
     "printchar",
+    "format",
     "set",
     "noop",
     "wait",

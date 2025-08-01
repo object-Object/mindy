@@ -634,4 +634,78 @@ mod tests {
             ]
         );
     }
+
+    #[test]
+    fn test_format() {
+        let mut vm = single_processor_vm(
+            BlockType::MicroProcessor,
+            r#"
+            print "{0} {2} {/} {3} {:} {10} {1}"
+            noop
+
+            format 4
+            noop
+
+            format "abcde"
+            noop
+
+            format "aa"
+            noop
+
+            format ""
+            noop
+
+            format "ignored"
+            stop
+            "#,
+        );
+
+        vm.do_tick(Duration::ZERO);
+
+        with_processor(&mut vm, 0, |p| {
+            assert_eq!(
+                p.state.decode_printbuffer(),
+                r#"{0} {2} {/} {3} {:} {10} {1}"#
+            );
+        });
+
+        vm.do_tick(Duration::ZERO);
+
+        with_processor(&mut vm, 0, |p| {
+            assert_eq!(
+                p.state.decode_printbuffer(),
+                r#"4 {2} {/} {3} {:} {10} {1}"#
+            );
+        });
+
+        vm.do_tick(Duration::ZERO);
+
+        with_processor(&mut vm, 0, |p| {
+            assert_eq!(
+                p.state.decode_printbuffer(),
+                r#"4 {2} {/} {3} {:} {10} abcde"#
+            );
+        });
+
+        vm.do_tick(Duration::ZERO);
+
+        with_processor(&mut vm, 0, |p| {
+            assert_eq!(
+                p.state.decode_printbuffer(),
+                r#"4 aa {/} {3} {:} {10} abcde"#
+            );
+        });
+
+        vm.do_tick(Duration::ZERO);
+
+        with_processor(&mut vm, 0, |p| {
+            assert_eq!(p.state.decode_printbuffer(), r#"4 aa {/}  {:} {10} abcde"#);
+        });
+
+        vm.do_tick(Duration::ZERO);
+
+        with_processor(&mut vm, 0, |p| {
+            assert_eq!(p.state.decode_printbuffer(), r#"4 aa {/}  {:} {10} abcde"#);
+        });
+    }
 }

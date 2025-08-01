@@ -60,6 +60,7 @@ pub fn parse_instruction(
         ast::Instruction::Draw { .. } => Box::new(Noop),
         ast::Instruction::Print { value } => Box::new(Print { value: lvar(value) }),
         ast::Instruction::PrintChar { value } => Box::new(PrintChar { value: lvar(value) }),
+        ast::Instruction::Format { value } => Box::new(Format { value: lvar(value) }),
 
         // operations
         ast::Instruction::Set { to, from } => Box::new(Set {
@@ -143,10 +144,12 @@ impl Print {
 
 impl SimpleInstruction for Print {
     fn execute(&self, state: &mut ProcessorState, _: &LogicVM) {
-        if state.printbuffer.len() < MAX_TEXT_BUFFER {
-            let value = self.value.get(state);
-            state.append_printbuffer(&Print::to_string(&value));
+        if state.printbuffer.len() >= MAX_TEXT_BUFFER {
+            return;
         }
+
+        let value = self.value.get(state);
+        state.append_printbuffer(&Print::to_string(&value));
     }
 }
 
@@ -156,13 +159,53 @@ struct PrintChar {
 
 impl SimpleInstruction for PrintChar {
     fn execute(&self, state: &mut ProcessorState, _: &LogicVM) {
-        if state.printbuffer.len() < MAX_TEXT_BUFFER {
-            // TODO: content emojis
-            if let LValue::Number(c) = self.value.get(state) {
-                // Java converts from float to char via int, not directly
-                state.printbuffer.push(c.floor() as u32 as u16);
+        if state.printbuffer.len() >= MAX_TEXT_BUFFER {
+            return;
+        }
+
+        // TODO: content emojis
+        if let LValue::Number(c) = self.value.get(state) {
+            // Java converts from float to char via int, not directly
+            state.printbuffer.push(c.floor() as u32 as u16);
+        }
+    }
+}
+
+struct Format {
+    value: LVar,
+}
+
+impl SimpleInstruction for Format {
+    fn execute(&self, state: &mut ProcessorState, _: &LogicVM) {
+        if state.printbuffer.len() >= MAX_TEXT_BUFFER {
+            return;
+        }
+
+        let mut placeholder_index = MAX_TEXT_BUFFER;
+        let mut placeholder_number = 10;
+
+        for (i, vals) in state.printbuffer.windows(3).enumerate() {
+            let &[left, c, right] = vals else {
+                unreachable!()
+            };
+            if left == ('{' as u16) && right == ('}' as u16) {
+                let n = (c as i32) - ('0' as i32);
+                if (0..=9).contains(&n) && n < placeholder_number {
+                    placeholder_number = n;
+                    placeholder_index = i;
+                }
             }
         }
+
+        if placeholder_index == MAX_TEXT_BUFFER {
+            return;
+        }
+
+        let value = self.value.get(state);
+        state.printbuffer.splice(
+            placeholder_index..placeholder_index + 3,
+            ProcessorState::encode_utf16(&Print::to_string(&value)),
+        );
     }
 }
 

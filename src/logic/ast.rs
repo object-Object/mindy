@@ -29,6 +29,9 @@ pub enum Instruction {
     PrintChar {
         value: Value,
     },
+    Format {
+        value: Value,
+    },
     // operations
     Set {
         to: Value,

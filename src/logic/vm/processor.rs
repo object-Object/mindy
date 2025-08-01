@@ -112,12 +112,20 @@ impl ProcessorState {
         self.time.get() * 60. / 1000.
     }
 
+    pub fn encode_utf16(value: &str) -> impl Iterator<Item = u16> {
+        value.encode_utf16()
+    }
+
+    pub fn decode_utf16(value: &[u16]) -> String {
+        String::from_utf16_lossy(value)
+    }
+
     pub fn append_printbuffer(&mut self, value: &str) {
-        self.printbuffer.extend(value.encode_utf16())
+        self.printbuffer.extend(Self::encode_utf16(value))
     }
 
     pub fn decode_printbuffer(&self) -> String {
-        String::from_utf16_lossy(&self.printbuffer)
+        Self::decode_utf16(&self.printbuffer)
     }
 }
 
