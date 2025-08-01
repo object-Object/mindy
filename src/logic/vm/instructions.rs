@@ -302,7 +302,7 @@ impl SimpleInstruction for Op {
 
             LogicOp::Shl => ((x as i64).wrapping_shl(y as i64 as u32)).into(),
             LogicOp::Shr => ((x as i64).wrapping_shr(y as i64 as u32)).into(),
-            LogicOp::Ushr => ((x as i64 as u64).wrapping_shr(y as i64 as u32)).into(),
+            LogicOp::Ushr => (((x as i64 as u64).wrapping_shr(y as i64 as u32)) as i64).into(),
             LogicOp::Or => ((x as i64) | (y as i64)).into(),
             LogicOp::And => ((x as i64) & (y as i64)).into(),
             LogicOp::Xor => ((x as i64) ^ (y as i64)).into(),
@@ -323,13 +323,15 @@ impl SimpleInstruction for Op {
             }
             LogicOp::Noise => SIMPLEX.get([x, y]).into(),
             LogicOp::Abs => x.abs().into(),
-            LogicOp::Sign => x.signum().into(),
+            // https://github.com/rust-lang/rust/issues/57543
+            LogicOp::Sign => (if x == 0. { 0. } else { x.signum() }).into(),
             LogicOp::Log => x.ln().into(),
             LogicOp::Logn => x.log(y).into(),
             LogicOp::Log10 => x.log10().into(),
             LogicOp::Floor => x.floor().into(),
             LogicOp::Ceil => x.ceil().into(),
-            LogicOp::Round => x.round().into(),
+            // java's Math.round rounds toward +inf, but rust's f64::round rounds away from 0
+            LogicOp::Round => (x + 0.5).floor().into(),
             LogicOp::Sqrt => x.sqrt().into(),
             LogicOp::Rand => (rand::random::<f64>() * x).into(),
 

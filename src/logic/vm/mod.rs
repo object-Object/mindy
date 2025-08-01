@@ -327,6 +327,10 @@ mod tests {
             set pi_fancy π
             set e @e
             noop
+            set a 1e308
+            set b 1e309
+            set c -1e308
+            set d -1e309
             "#,
         );
 
@@ -372,6 +376,16 @@ mod tests {
                 p.state.variables["e"].get(&p.state),
                 LValue::Number(variables::E.into())
             );
+        });
+
+        vm.do_tick(Duration::ZERO);
+        vm.do_tick(Duration::ZERO);
+
+        with_processor(&mut vm, 0, |p| {
+            assert_eq!(p.state.variables["a"].get(&p.state), LValue::Number(1e308));
+            assert_eq!(p.state.variables["b"].get(&p.state), LValue::Null);
+            assert_eq!(p.state.variables["c"].get(&p.state), LValue::Number(-1e308));
+            assert_eq!(p.state.variables["d"].get(&p.state), LValue::Null);
         });
     }
 
@@ -808,6 +822,317 @@ mod tests {
                 want_value,
                 "{cond} {x} {y} (constants)"
             );
+        }
+    }
+
+    #[test]
+    #[allow(clippy::approx_constant)]
+    fn test_op_unary() {
+        for (op, x, want) in [
+            // not
+            ("not", "0b00", (-1).into()),
+            ("not", "0b01", (-2).into()),
+            ("not", "0b10", (-3).into()),
+            ("not", "0b11", (-4).into()),
+            ("not", "-1", 0.into()),
+            ("not", "-2", 1.into()),
+            ("not", "-3", 2.into()),
+            ("not", "-4", 3.into()),
+            // abs
+            ("abs", "0", 0.into()),
+            ("abs", "-0", 0.into()),
+            ("abs", "1", 1.into()),
+            ("abs", "-1", 1.into()),
+            ("abs", "1e308", 1e308.into()),
+            ("abs", "1e309", 0.into()),
+            ("abs", "-1e308", 1e308.into()),
+            ("abs", "-1e309", 0.into()),
+            // sign
+            ("sign", "0", 0.into()),
+            ("sign", "-0", 0.into()),
+            ("sign", "1", 1.into()),
+            ("sign", "-1", (-1).into()),
+            ("sign", "1e308", 1.into()),
+            ("sign", "1e309", 0.into()),
+            ("sign", "-1e308", (-1).into()),
+            ("sign", "-1e309", 0.into()),
+            // log
+            ("log", "-1", LValue::Null),
+            ("log", "0", LValue::Null),
+            ("log", "@e", 0.99999996963214.into()),
+            ("log", "2", 0.6931471805599453.into()),
+            // log10
+            ("log10", "-1", LValue::Null),
+            ("log10", "0", LValue::Null),
+            ("log10", "100", 2.into()),
+            ("log10", "101", 2.0043213737826426.into()),
+            // floor
+            ("floor", "0", 0.into()),
+            ("floor", "1", 1.into()),
+            ("floor", "1.5", 1.into()),
+            ("floor", "-1", (-1).into()),
+            ("floor", "-1.5", (-2).into()),
+            // ceil
+            ("ceil", "0", 0.into()),
+            ("ceil", "1", 1.into()),
+            ("ceil", "1.5", 2.into()),
+            ("ceil", "-1", (-1).into()),
+            ("ceil", "-1.5", (-1).into()),
+            // round
+            ("round", "0", 0.into()),
+            ("round", "1", 1.into()),
+            ("round", "1.1", 1.into()),
+            ("round", "1.49", 1.into()),
+            ("round", "1.5", 2.into()),
+            ("round", "1.51", 2.into()),
+            ("round", "1.9", 2.into()),
+            ("round", "-1", (-1).into()),
+            ("round", "-1.1", (-1).into()),
+            ("round", "-1.49", (-1).into()),
+            ("round", "-1.5", (-1).into()),
+            ("round", "-1.51", (-2).into()),
+            ("round", "-1.9", (-2).into()),
+            // sqrt
+            ("sqrt", "-1", LValue::Null),
+            ("sqrt", "-0.25", LValue::Null),
+            ("sqrt", "0", 0.into()),
+            ("sqrt", "0.25", 0.5.into()),
+            ("sqrt", "1", 1.into()),
+            ("sqrt", "4", 2.into()),
+            // sin
+            ("sin", "-30", (-0.49999999999999994).into()),
+            ("sin", "0", 0.into()),
+            ("sin", "30", 0.49999999999999994.into()),
+            ("sin", "45", 0.7071067811865476.into()),
+            ("sin", "60", 0.8660254037844386.into()),
+            ("sin", "90", 1.into()),
+            ("sin", "180", 1.2246467991473532e-16.into()),
+            // cos
+            ("cos", "-30", 0.8660254037844387.into()),
+            ("cos", "0", 1.into()),
+            ("cos", "30", 0.8660254037844387.into()),
+            ("cos", "45", 0.7071067811865476.into()),
+            ("cos", "60", 0.5000000000000001.into()),
+            ("cos", "90", 6.123233995736766e-17.into()),
+            ("cos", "180", (-1).into()),
+            // tan
+            ("tan", "0", 0.into()),
+            ("tan", "45", 0.9999999999999999.into()),
+            ("tan", "90", 16331239353195370i64.into()),
+            ("tan", "91", (-57.28996163075955).into()),
+            // asin
+            ("asin", "-0.5", (-30.000000000000004).into()),
+            ("asin", "0", 0.into()),
+            ("asin", "0.5", 30.000000000000004.into()),
+            // acos
+            ("acos", "-0.5", 120.00000000000001.into()),
+            ("acos", "0", 90.into()),
+            ("acos", "0.5", 60.00000000000001.into()),
+            // atan
+            ("atan", "-0.5", (-26.56505117707799).into()),
+            ("atan", "0", 0.into()),
+            ("atan", "0.5", 26.56505117707799.into()),
+        ] {
+            let mut vm = single_processor_vm(
+                BlockType::HyperProcessor,
+                &format!(
+                    "
+                    op {op} got {x}
+                    stop
+                    "
+                ),
+            );
+
+            run(&mut vm, 1, true);
+
+            let state = take_processor(&mut vm, 0).state;
+            assert_eq!(state.variables["got"].get(&state), want, "{op} {x}");
+        }
+    }
+
+    #[test]
+    fn test_op_binary() {
+        for (op, x, y, want) in [
+            // add
+            ("add", "0", "0", 0.into()),
+            ("add", "0", "1", 1.into()),
+            ("add", "1.5", "0.25", 1.75.into()),
+            ("add", "1.0", "-2.0", (-1).into()),
+            // sub
+            ("sub", "3", "1", 2.into()),
+            ("sub", "3", "-1", 4.into()),
+            // mul
+            ("mul", "1", "0", 0.into()),
+            ("mul", "1", "1", 1.into()),
+            ("mul", "3", "-4.5", (-13.5).into()),
+            // div
+            ("div", "5", "2", 2.5.into()),
+            ("div", "-5", "2", (-2.5).into()),
+            ("div", "5", "-2", (-2.5).into()),
+            ("div", "-5", "-2", 2.5.into()),
+            ("div", "1", "0", LValue::Null),
+            ("div", "-1", "0", LValue::Null),
+            ("div", "0", "0", LValue::Null),
+            ("div", "0", "1", 0.into()),
+            ("div", "0", "-1", 0.into()),
+            // idiv
+            ("idiv", "5", "2", 2.into()),
+            ("idiv", "-5", "2", (-3).into()),
+            ("idiv", "5", "-2", (-3).into()),
+            ("idiv", "-5", "-2", 2.into()),
+            ("idiv", "1", "0", LValue::Null),
+            ("idiv", "-1", "0", LValue::Null),
+            ("idiv", "0", "0", LValue::Null),
+            ("idiv", "0", "1", 0.into()),
+            ("idiv", "0", "-1", 0.into()),
+            // mod
+            ("mod", "5", "2", 1.into()),
+            ("mod", "-5", "2", (-1).into()),
+            ("mod", "5", "-2", 1.into()),
+            ("mod", "-5", "-2", (-1).into()),
+            // emod
+            ("emod", "5", "2", 1.into()),
+            ("emod", "-5", "2", 1.into()),
+            ("emod", "5", "-2", (-1).into()),
+            ("emod", "-5", "-2", (-1).into()),
+            // pow
+            ("pow", "3", "2", 9.into()),
+            ("pow", "9", "0.5", 3.into()),
+            ("pow", "16", "-0.5", 0.25.into()),
+            ("pow", "-3", "2", 9.into()),
+            ("pow", "-9", "0.5", LValue::Null),
+            ("pow", "-16", "-0.5", LValue::Null),
+            // land
+            ("land", "false", "false", 0.into()),
+            ("land", "false", "true", 0.into()),
+            ("land", "true", "false", 0.into()),
+            ("land", "true", "true", 1.into()),
+            ("land", "\"foo\"", "null", 0.into()),
+            ("land", "\"foo\"", "\"bar\"", 1.into()),
+            // shl
+            ("shl", "2", "0", 2.into()),
+            ("shl", "2", "1", 4.into()),
+            ("shl", "2", "62", (-9223372036854775808i64).into()),
+            ("shl", "2", "63", 0.into()),
+            ("shl", "2", "64", 2.into()),
+            ("shl", "2", "-1", 0.into()),
+            ("shl", "2", "-60", 32.into()),
+            ("shl", "-2", "0", (-2).into()),
+            ("shl", "-2", "1", (-4).into()),
+            ("shl", "-2", "62", (-9223372036854775808i64).into()),
+            ("shl", "-2", "63", 0.into()),
+            ("shl", "-2", "64", (-2).into()),
+            ("shl", "-2", "-1", 0.into()),
+            ("shl", "-2", "-60", (-32).into()),
+            // shr
+            ("shr", "2", "0", 2.into()),
+            ("shr", "2", "1", 1.into()),
+            ("shr", "2", "62", 0.into()),
+            ("shr", "2", "63", 0.into()),
+            ("shr", "2", "64", 2.into()),
+            ("shr", "2", "-1", 0.into()),
+            ("shr", "2", "-60", 0.into()),
+            ("shr", "-2", "0", (-2).into()),
+            ("shr", "-2", "1", (-1).into()),
+            ("shr", "-2", "62", (-1).into()),
+            ("shr", "-2", "63", (-1).into()),
+            ("shr", "-2", "64", (-2).into()),
+            ("shr", "-2", "-1", (-1).into()),
+            ("shr", "-2", "-60", (-1).into()),
+            // ushr
+            ("ushr", "2", "0", 2.into()),
+            ("ushr", "2", "1", 1.into()),
+            ("ushr", "2", "62", 0.into()),
+            ("ushr", "2", "63", 0.into()),
+            ("ushr", "2", "64", 2.into()),
+            ("ushr", "2", "-1", 0.into()),
+            ("ushr", "2", "-60", 0.into()),
+            ("ushr", "-2", "0", (-2).into()),
+            ("ushr", "-2", "1", 9223372036854775807i64.into()),
+            ("ushr", "-2", "62", 3.into()),
+            ("ushr", "-2", "63", 1.into()),
+            ("ushr", "-2", "64", (-2).into()),
+            ("ushr", "-2", "-1", 1.into()),
+            ("ushr", "-2", "-60", 1152921504606846976i64.into()),
+            // or
+            ("or", "0b10", "0b10", 0b10.into()),
+            ("or", "0b10", "0b11", 0b11.into()),
+            ("or", "0b11", "0b10", 0b11.into()),
+            ("or", "0b11", "0b11", 0b11.into()),
+            ("or", "-1", "0", (-1).into()),
+            ("or", "-1", "1", (-1).into()),
+            // and
+            ("and", "0b10", "0b10", 0b10.into()),
+            ("and", "0b10", "0b11", 0b10.into()),
+            ("and", "0b11", "0b10", 0b10.into()),
+            ("and", "0b11", "0b11", 0b11.into()),
+            ("and", "-1", "0", 0.into()),
+            ("and", "-1", "1", 1.into()),
+            // xor
+            ("xor", "0b10", "0b10", 0b00.into()),
+            ("xor", "0b10", "0b11", 0b01.into()),
+            ("xor", "0b11", "0b10", 0b01.into()),
+            ("xor", "0b11", "0b11", 0b00.into()),
+            ("xor", "-1", "0", (-1).into()),
+            ("xor", "-1", "1", (-2).into()),
+            // max
+            ("max", "-1", "1", 1.into()),
+            ("max", "1", "-1", 1.into()),
+            ("max", "1", "2", 2.into()),
+            ("max", "2", "1", 2.into()),
+            // min
+            ("min", "-1", "1", (-1).into()),
+            ("min", "1", "-1", (-1).into()),
+            ("min", "1", "2", 1.into()),
+            ("min", "2", "1", 1.into()),
+            // angle
+            // mindustry apparently uses a different algorithm that gives 29.999948501586914 instead of 30
+            // but this is probably close enough
+            ("angle", "0.8660254038", "0.5", 30.into()),
+            // angleDiff
+            ("angleDiff", "10", "10", 0.into()),
+            ("angleDiff", "10", "20", 10.into()),
+            ("angleDiff", "10", "-10", 20.into()),
+            ("angleDiff", "10", "350", 20.into()),
+            // len
+            ("len", "3", "4", 5.into()),
+            ("len", "1", "1", 2f32.sqrt().into()),
+            // noise
+            ("noise", "0", "0", 0.into()),
+            // i'm not porting mindustry's noise algorithm. this is not the value you would get ingame
+            ("noise", "0", "1", (-0.7139277281035279).into()),
+            ("noise", "1", "0", (-0.3646124062135936).into()),
+            // logn
+            ("logn", "-1", "2", LValue::Null),
+            ("logn", "0", "2", LValue::Null),
+            ("logn", "0b1000", "2", 3.into()),
+            ("logn", "0b1010", "2", 3.3219280948873626.into()),
+            ("logn", "-1", "10", LValue::Null),
+            ("logn", "0", "10", LValue::Null),
+            ("logn", "100", "10", 2.into()),
+            ("logn", "101", "10", 2.0043213737826426.into()),
+        ]
+        .into_iter()
+        .chain(
+            CONDITION_TESTS
+                .iter()
+                .filter(|&(op, ..)| *op != "always")
+                .map(|&(op, x, y, want)| (op, x, y, want.into())),
+        ) {
+            let mut vm = single_processor_vm(
+                BlockType::HyperProcessor,
+                &format!(
+                    "
+                    op {op} got {x} {y}
+                    stop
+                    "
+                ),
+            );
+
+            run(&mut vm, 1, true);
+
+            let state = take_processor(&mut vm, 0).state;
+            assert_eq!(state.variables["got"].get(&state), want, "{op} {x} {y}");
         }
     }
 }
