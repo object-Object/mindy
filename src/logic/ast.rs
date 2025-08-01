@@ -37,6 +37,20 @@ pub enum Instruction {
         to: Value,
         from: Value,
     },
+    PackColor {
+        result: Value,
+        r: Value,
+        g: Value,
+        b: Value,
+        a: Value,
+    },
+    UnpackColor {
+        r: Value,
+        g: Value,
+        b: Value,
+        a: Value,
+        value: Value,
+    },
     // flow control
     Noop,
     Wait {

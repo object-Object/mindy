@@ -111,6 +111,10 @@ impl LValue {
         }
     }
 
+    pub fn numf(&self) -> f32 {
+        self.num() as f32
+    }
+
     pub fn isobj(&self) -> bool {
         !matches!(self, Self::Number(_))
     }

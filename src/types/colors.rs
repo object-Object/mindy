@@ -104,10 +104,39 @@ lazy_static! {
     };
 }
 
+pub fn f32_to_double_bits(r: f32, g: f32, b: f32, a: f32) -> f64 {
+    to_double_bits(
+        (r * 255.) as i32,
+        (g * 255.) as i32,
+        (b * 255.) as i32,
+        (a * 255.) as i32,
+    )
+}
+
 pub fn to_double_bits(r: i32, g: i32, b: i32, a: i32) -> f64 {
     rgba8888_to_double_bits(((r << 24) | (g << 16) | (b << 8) | a) as u32)
 }
 
 pub fn rgba8888_to_double_bits(value: u32) -> f64 {
     f64::from_bits(value as u64)
+}
+
+pub fn from_double_bits(value: f64) -> (u8, u8, u8, u8) {
+    let value = value.to_bits();
+    (
+        (value >> 24) as u8,
+        (value >> 16) as u8,
+        (value >> 8) as u8,
+        value as u8,
+    )
+}
+
+pub fn f64_from_double_bits(value: f64) -> (f64, f64, f64, f64) {
+    let (r, g, b, a) = from_double_bits(value);
+    (
+        (r as f64) / 255.,
+        (g as f64) / 255.,
+        (b as f64) / 255.,
+        (a as f64) / 255.,
+    )
 }

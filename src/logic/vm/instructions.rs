@@ -5,7 +5,10 @@ use super::{
     processor::{MAX_TEXT_BUFFER, ProcessorState},
     variables::{LValue, LVar},
 };
-use crate::logic::ast::{self, ConditionOp};
+use crate::{
+    logic::ast::{self, ConditionOp},
+    types::colors::{f32_to_double_bits, f64_from_double_bits},
+};
 
 const MAX_IPT: usize = 1000;
 const EQUALITY_EPSILON: f64 = 0.000001;
@@ -66,6 +69,20 @@ pub fn parse_instruction(
         ast::Instruction::Set { to, from } => Box::new(Set {
             to: lvar(to),
             from: lvar(from),
+        }),
+        ast::Instruction::PackColor { result, r, g, b, a } => Box::new(PackColor {
+            result: lvar(result),
+            r: lvar(r),
+            g: lvar(g),
+            b: lvar(b),
+            a: lvar(a),
+        }),
+        ast::Instruction::UnpackColor { r, g, b, a, value } => Box::new(UnpackColor {
+            r: lvar(r),
+            g: lvar(g),
+            b: lvar(b),
+            a: lvar(a),
+            value: lvar(value),
         }),
 
         // flow control
@@ -219,6 +236,47 @@ struct Set {
 impl SimpleInstruction for Set {
     fn execute(&self, state: &mut ProcessorState, _: &LogicVM) {
         self.to.set(state, self.from.get(state));
+    }
+}
+
+struct PackColor {
+    result: LVar,
+    r: LVar,
+    g: LVar,
+    b: LVar,
+    a: LVar,
+}
+
+impl SimpleInstruction for PackColor {
+    fn execute(&self, state: &mut ProcessorState, _: &LogicVM) {
+        self.result.set(
+            state,
+            f32_to_double_bits(
+                self.r.get(state).numf().clamp(0., 1.),
+                self.g.get(state).numf().clamp(0., 1.),
+                self.b.get(state).numf().clamp(0., 1.),
+                self.a.get(state).numf().clamp(0., 1.),
+            )
+            .into(),
+        )
+    }
+}
+
+struct UnpackColor {
+    r: LVar,
+    g: LVar,
+    b: LVar,
+    a: LVar,
+    value: LVar,
+}
+
+impl SimpleInstruction for UnpackColor {
+    fn execute(&self, state: &mut ProcessorState, _: &LogicVM) {
+        let (r, g, b, a) = f64_from_double_bits(self.value.get(state).num());
+        self.r.set(state, r.into());
+        self.g.set(state, g.into());
+        self.b.set(state, b.into());
+        self.a.set(state, a.into());
     }
 }
 

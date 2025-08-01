@@ -19,6 +19,8 @@ match {
     "printchar",
     "format",
     "set",
+    "packcolor",
+    "unpackcolor",
     "noop",
     "wait",
     "stop",
@@ -130,6 +132,12 @@ Instruction: Instruction = {
 
     "set" <to:Value> <from:Value> =>
         Instruction::Set { <> },
+
+    "packcolor" <result:Value> <r:Value> <g:Value> <b:Value> <a:Value> =>
+        Instruction::PackColor { <> },
+
+    "unpackcolor" <r:Value> <g:Value> <b:Value> <a:Value> <value:Value> =>
+        Instruction::UnpackColor { <> },
 
     // flow control
 
@@ -277,6 +285,8 @@ Symbol = {
     "printchar",
     "format",
     "set",
+    "packcolor",
+    "unpackcolor",
     "noop",
     "wait",
     "stop",

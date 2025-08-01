@@ -172,7 +172,7 @@ mod tests {
 
     use crate::{
         logic::vm::variables::{LValue, LVar},
-        types::{Object, PackedPoint2, ProcessorConfig},
+        types::{Object, PackedPoint2, ProcessorConfig, colors::COLORS},
     };
 
     use super::{processor::Processor, *};
@@ -715,5 +715,61 @@ mod tests {
         with_processor(&mut vm, 0, |p| {
             assert_eq!(p.state.decode_printbuffer(), r#"4 aa {/}  {:} {10} abcde"#);
         });
+    }
+
+    #[test]
+    fn test_pack_unpack_color() {
+        let mut vm = single_processor_vm(
+            BlockType::HyperProcessor,
+            "
+            packcolor packed1 0 0.5 0.75 1
+            unpackcolor r1 g1 b1 a1 packed1
+            unpackcolor r2 g2 b2 a2 %[royal]
+            packcolor packed2 r2 g2 b2 a2
+            stop
+            ",
+        );
+
+        run(&mut vm, 1, true);
+
+        let state = take_processor(&mut vm, 0).state;
+
+        assert_eq!(
+            state.variables["packed1"].get(&state),
+            LValue::Number(f64::from_bits(0x00_7f_bf_ffu64))
+        );
+
+        assert_eq!(state.variables["r1"].get(&state), LValue::Number(0.));
+        assert_eq!(
+            state.variables["g1"].get(&state),
+            LValue::Number(127. / 255.)
+        );
+        assert_eq!(
+            state.variables["b1"].get(&state),
+            LValue::Number(191. / 255.)
+        );
+        assert_eq!(state.variables["a1"].get(&state), LValue::Number(1.));
+
+        assert_eq!(
+            state.variables["r2"].get(&state),
+            LValue::Number((0x41 as f64) / 255.)
+        );
+        assert_eq!(
+            state.variables["g2"].get(&state),
+            LValue::Number((0x69 as f64) / 255.)
+        );
+        assert_eq!(
+            state.variables["b2"].get(&state),
+            LValue::Number((0xe1 as f64) / 255.)
+        );
+        assert_eq!(
+            state.variables["a2"].get(&state),
+            LValue::Number((0xff as f64) / 255.)
+        );
+
+        assert_eq!(
+            state.variables["packed2"].get(&state),
+            LValue::Number(COLORS["royal"])
+        );
     }
 }
