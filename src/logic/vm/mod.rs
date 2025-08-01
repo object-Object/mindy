@@ -167,6 +167,8 @@ mod tests {
     use std::io::Cursor;
 
     use binrw::BinWrite;
+    use itertools::Itertools;
+    use pretty_assertions::assert_eq;
 
     use crate::{
         logic::vm::variables::{LValue, LVar},
@@ -265,6 +267,7 @@ mod tests {
             print 1.5
             print null
             print foo
+            print "♥"
             stop
             "#,
         );
@@ -272,7 +275,18 @@ mod tests {
         run(&mut vm, 1, true);
 
         let processor = take_processor(&mut vm, 0);
-        assert_eq!(processor.state.printbuffer, "foobar\n10\n1.5nullnull");
+        assert_eq!(
+            processor.state.decode_printbuffer(),
+            "foobar\n10\n1.5nullnull♥"
+        );
+        assert_eq!(
+            processor.state.printbuffer,
+            "foobar\n10\n1.5nullnull"
+                .bytes()
+                .map(|b| b as u16)
+                .chain([0x2665])
+                .collect_vec()
+        );
     }
 
     #[test]
@@ -291,7 +305,7 @@ mod tests {
         let processor = take_processor(&mut vm, 0);
         assert_eq!(processor.state.counter, 3);
         assert!(!processor.state.stopped());
-        assert_eq!(processor.state.printbuffer, "11");
+        assert_eq!(processor.state.decode_printbuffer(), "11");
     }
 
     #[test]
@@ -566,25 +580,58 @@ mod tests {
         vm.do_tick(Duration::ZERO);
 
         with_processor(&mut vm, 0, |p| {
-            assert_eq!(p.state.printbuffer, "123");
+            assert_eq!(p.state.decode_printbuffer(), "123");
         });
 
         vm.do_tick(Duration::from_secs_f64(1. / 60.));
 
         with_processor(&mut vm, 0, |p| {
-            assert_eq!(p.state.printbuffer, "1234");
+            assert_eq!(p.state.decode_printbuffer(), "1234");
         });
 
         vm.do_tick(Duration::from_millis(500));
 
         with_processor(&mut vm, 0, |p| {
-            assert_eq!(p.state.printbuffer, "1234");
+            assert_eq!(p.state.decode_printbuffer(), "1234");
         });
 
         vm.do_tick(Duration::from_millis(500));
 
         with_processor(&mut vm, 0, |p| {
-            assert_eq!(p.state.printbuffer, "12345");
+            assert_eq!(p.state.decode_printbuffer(), "12345");
         });
+    }
+
+    #[test]
+    fn test_printchar() {
+        // TODO: test full range (requires op add)
+        let mut vm = single_processor_vm(
+            BlockType::HyperProcessor,
+            "
+            printchar 0
+            printchar 10
+            printchar 0x41
+            printchar 0xc0
+            printchar 0x2665
+            printchar 0xd799
+            printchar 0xd800
+            printchar 0xdfff
+            printchar 0x8000
+            printchar 0xffff
+            printchar 0x10000
+            printchar 0x10001
+            stop
+            ",
+        );
+
+        run(&mut vm, 1, true);
+
+        let state = take_processor(&mut vm, 0).state;
+        assert_eq!(
+            state.printbuffer,
+            &[
+                0, 10, 0x41, 0xc0, 0x2665, 0xd799, 0xd800, 0xdfff, 0x8000, 0xffff, 0, 1
+            ]
+        );
     }
 }

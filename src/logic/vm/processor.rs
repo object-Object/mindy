@@ -12,6 +12,7 @@ use crate::{
     types::{Object, ProcessorConfig},
 };
 
+pub(super) const MAX_TEXT_BUFFER: usize = 400;
 const MAX_INSTRUCTION_SCALE: usize = 5;
 
 pub struct Processor {
@@ -68,7 +69,10 @@ pub struct ProcessorState {
 
     running_processors: Rc<Cell<usize>>,
     pub(super) time: Rc<Cell<f64>>,
-    pub(super) printbuffer: String,
+    // we use Vec<u16> instead of String because Java strings allow invalid UTF-16
+    // this behaviour is user-visible with printchar and when reading from a message
+    // https://users.rust-lang.org/t/why-is-a-char-valid-in-jvm-but-invalid-in-rust/73524
+    pub(super) printbuffer: Vec<u16>,
     pub(super) variables: HashMap<String, LVar>,
 }
 
@@ -106,6 +110,14 @@ impl ProcessorState {
 
     pub fn tick(&self) -> f64 {
         self.time.get() * 60. / 1000.
+    }
+
+    pub fn append_printbuffer(&mut self, value: &str) {
+        self.printbuffer.extend(value.encode_utf16())
+    }
+
+    pub fn decode_printbuffer(&self) -> String {
+        String::from_utf16_lossy(&self.printbuffer)
     }
 }
 
@@ -199,7 +211,7 @@ impl ProcessorBuilder<'_> {
                 ipt,
                 running_processors,
                 time,
-                printbuffer: String::new(),
+                printbuffer: Vec::with_capacity(MAX_TEXT_BUFFER),
                 variables,
             },
             instructions,

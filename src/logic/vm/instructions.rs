@@ -2,12 +2,11 @@ use std::{borrow::Cow, collections::HashMap};
 
 use super::{
     LogicVM, VMLoadError, VMLoadResult,
-    processor::ProcessorState,
+    processor::{MAX_TEXT_BUFFER, ProcessorState},
     variables::{LValue, LVar},
 };
 use crate::logic::ast::{self, ConditionOp};
 
-const MAX_TEXT_BUFFER: usize = 400;
 const MAX_IPT: usize = 1000;
 const EQUALITY_EPSILON: f64 = 0.000001;
 const PRINT_EPSILON: f64 = 0.00001;
@@ -60,6 +59,7 @@ pub fn parse_instruction(
         // TODO: implement draw?
         ast::Instruction::Draw { .. } => Box::new(Noop),
         ast::Instruction::Print { value } => Box::new(Print { value: lvar(value) }),
+        ast::Instruction::PrintChar { value } => Box::new(PrintChar { value: lvar(value) }),
 
         // operations
         ast::Instruction::Set { to, from } => Box::new(Set {
@@ -145,7 +145,23 @@ impl SimpleInstruction for Print {
     fn execute(&self, state: &mut ProcessorState, _: &LogicVM) {
         if state.printbuffer.len() < MAX_TEXT_BUFFER {
             let value = self.value.get(state);
-            state.printbuffer.push_str(&Print::to_string(&value))
+            state.append_printbuffer(&Print::to_string(&value));
+        }
+    }
+}
+
+struct PrintChar {
+    value: LVar,
+}
+
+impl SimpleInstruction for PrintChar {
+    fn execute(&self, state: &mut ProcessorState, _: &LogicVM) {
+        if state.printbuffer.len() < MAX_TEXT_BUFFER {
+            // TODO: content emojis
+            if let LValue::Number(c) = self.value.get(state) {
+                // Java converts from float to char via int, not directly
+                state.printbuffer.push(c.floor() as u32 as u16);
+            }
         }
     }
 }
