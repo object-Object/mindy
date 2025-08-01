@@ -6,9 +6,15 @@ use velcro::map_iter_from;
 use super::processor::ProcessorState;
 
 #[allow(clippy::approx_constant)]
-pub const PI: f64 = 3.1415927;
+pub const PI: f32 = 3.1415927;
 #[allow(clippy::approx_constant)]
-pub const E: f64 = 2.7182818;
+pub const E: f32 = 2.7182818;
+
+pub const DEG_RAD: f32 = PI / 180.;
+pub const RAD_DEG: f32 = 180. / PI;
+
+pub const F64_DEG_RAD: f64 = 0.017453292519943295;
+pub const F64_RAD_DEG: f64 = 57.29577951308232;
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum LVar {
@@ -40,8 +46,8 @@ impl LVar {
             "@pi": constant(PI),
             "π": constant(PI),
             "@e": constant(E),
-            "@degToRad": constant(PI / 180.),
-            "@radToDeg": constant(180. / PI),
+            "@degToRad": constant(DEG_RAD),
+            "@radToDeg": constant(RAD_DEG),
 
             "@time": Self::Time,
             "@tick": Self::Tick,
@@ -126,7 +132,12 @@ impl LValue {
 
 impl<T: AsPrimitive<f64> + Numeric> From<T> for LValue {
     fn from(value: T) -> Self {
-        Self::Number(value.as_())
+        let value = value.as_();
+        if invalid(value) {
+            Self::Null
+        } else {
+            Self::Number(value)
+        }
     }
 }
 

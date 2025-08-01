@@ -37,6 +37,12 @@ pub enum Instruction {
         to: Value,
         from: Value,
     },
+    Op {
+        op: LogicOp,
+        result: Value,
+        x: Value,
+        y: Value,
+    },
     Select {
         result: Value,
         op: ConditionOp,
@@ -110,6 +116,54 @@ pub enum ConditionOp {
     GreaterThanEq,
     StrictEqual,
     Always,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum LogicOp {
+    Add,
+    Sub,
+    Mul,
+    Div,
+    Idiv,
+    Mod,
+    Emod,
+    Pow,
+
+    Land,
+    Condition(ConditionOp),
+
+    Shl,
+    Shr,
+    Ushr,
+    Or,
+    And,
+    Xor,
+    Not,
+
+    Max,
+    Min,
+    Angle,
+    AngleDiff,
+    Len,
+    Noise,
+    Abs,
+    Sign,
+    Log,
+    Logn,
+    Log10,
+    Floor,
+    Ceil,
+    Round,
+    Sqrt,
+    Rand,
+
+    Sin,
+    Cos,
+    Tan,
+
+    Asin,
+    Acos,
+    Atan,
 }
 
 #[derive(Debug, Clone, PartialEq)]

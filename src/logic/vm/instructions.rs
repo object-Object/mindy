@@ -1,18 +1,28 @@
 use std::{borrow::Cow, collections::HashMap};
 
+use lazy_static::lazy_static;
+use noise::{NoiseFn, Simplex};
+
 use super::{
     LogicVM, VMLoadError, VMLoadResult,
     processor::{MAX_TEXT_BUFFER, ProcessorState},
-    variables::{LValue, LVar},
+    variables::{LValue, LVar, RAD_DEG},
 };
 use crate::{
-    logic::ast::{self, ConditionOp},
+    logic::{
+        ast::{self, ConditionOp, LogicOp},
+        vm::variables::{F64_DEG_RAD, F64_RAD_DEG},
+    },
     types::colors::{f32_to_double_bits, f64_from_double_bits},
 };
 
 const MAX_IPT: usize = 1000;
 const EQUALITY_EPSILON: f64 = 0.000001;
 const PRINT_EPSILON: f64 = 0.00001;
+
+lazy_static! {
+    static ref SIMPLEX: Simplex = Simplex::new(0);
+}
 
 pub fn parse_instruction(
     instruction: ast::Instruction,
@@ -69,6 +79,12 @@ pub fn parse_instruction(
         ast::Instruction::Set { to, from } => Box::new(Set {
             to: lvar(to),
             from: lvar(from),
+        }),
+        ast::Instruction::Op { op, result, x, y } => Box::new(Op {
+            op,
+            result: lvar(result),
+            x: lvar(x),
+            y: lvar(y),
         }),
         ast::Instruction::Select {
             result,
@@ -251,6 +267,82 @@ struct Set {
 impl SimpleInstruction for Set {
     fn execute(&self, state: &mut ProcessorState, _: &LogicVM) {
         self.to.set_from(state, &self.from);
+    }
+}
+
+struct Op {
+    op: LogicOp,
+    result: LVar,
+    x: LVar,
+    y: LVar,
+}
+
+impl SimpleInstruction for Op {
+    fn execute(&self, state: &mut ProcessorState, _: &LogicVM) {
+        // TODO: this seems inefficient for unary and condition ops
+        let x = self.x.get(state).num();
+        let y = self.y.get(state).num();
+
+        fn wrap_angle(a: f32) -> f32 {
+            if a < 0. { a + 360. } else { a }
+        }
+
+        let result = match self.op {
+            LogicOp::Add => (x + y).into(),
+            LogicOp::Sub => (x - y).into(),
+            LogicOp::Mul => (x * y).into(),
+            LogicOp::Div => (x / y).into(),
+            LogicOp::Idiv => (x / y).floor().into(),
+            LogicOp::Mod => (x % y).into(),
+            LogicOp::Emod => (((x % y) + y) % y).into(),
+            LogicOp::Pow => x.powf(y).into(),
+
+            LogicOp::Land => (x != 0. && y != 0.).into(),
+            LogicOp::Condition(op) => Jump::test(op, &self.x, &self.y, state).into(),
+
+            LogicOp::Shl => ((x as i64).wrapping_shl(y as i64 as u32)).into(),
+            LogicOp::Shr => ((x as i64).wrapping_shr(y as i64 as u32)).into(),
+            LogicOp::Ushr => ((x as i64 as u64).wrapping_shr(y as i64 as u32)).into(),
+            LogicOp::Or => ((x as i64) | (y as i64)).into(),
+            LogicOp::And => ((x as i64) & (y as i64)).into(),
+            LogicOp::Xor => ((x as i64) ^ (y as i64)).into(),
+            LogicOp::Not => (!(x as i64)).into(),
+
+            LogicOp::Max => x.max(y).into(),
+            LogicOp::Min => x.min(y).into(),
+            LogicOp::Angle => wrap_angle((y as f32).atan2(x as f32) * RAD_DEG).into(),
+            LogicOp::AngleDiff => {
+                let x = (x as f32) % 360.;
+                let y = (y as f32) % 360.;
+                f32::min(wrap_angle(x - y), wrap_angle(y - x)).into()
+            }
+            LogicOp::Len => {
+                let x = x as f32;
+                let y = y as f32;
+                (x * x + y * y).sqrt().into()
+            }
+            LogicOp::Noise => SIMPLEX.get([x, y]).into(),
+            LogicOp::Abs => x.abs().into(),
+            LogicOp::Sign => x.signum().into(),
+            LogicOp::Log => x.ln().into(),
+            LogicOp::Logn => x.log(y).into(),
+            LogicOp::Log10 => x.log10().into(),
+            LogicOp::Floor => x.floor().into(),
+            LogicOp::Ceil => x.ceil().into(),
+            LogicOp::Round => x.round().into(),
+            LogicOp::Sqrt => x.sqrt().into(),
+            LogicOp::Rand => (rand::random::<f64>() * x).into(),
+
+            LogicOp::Sin => (x * F64_DEG_RAD).sin().into(),
+            LogicOp::Cos => (x * F64_DEG_RAD).cos().into(),
+            LogicOp::Tan => (x * F64_DEG_RAD).tan().into(),
+
+            LogicOp::Asin => (x.asin() * F64_RAD_DEG).into(),
+            LogicOp::Acos => (x.acos() * F64_RAD_DEG).into(),
+            LogicOp::Atan => (x.atan() * F64_RAD_DEG).into(),
+        };
+
+        self.result.set(state, result);
     }
 }
 

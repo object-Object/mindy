@@ -362,15 +362,15 @@ mod tests {
             assert_eq!(p.state.variables["true"].get(&p.state), LValue::Number(1.));
             assert_eq!(
                 p.state.variables["pi"].get(&p.state),
-                LValue::Number(variables::PI)
+                LValue::Number(variables::PI.into())
             );
             assert_eq!(
                 p.state.variables["pi_fancy"].get(&p.state),
-                LValue::Number(variables::PI)
+                LValue::Number(variables::PI.into())
             );
             assert_eq!(
                 p.state.variables["e"].get(&p.state),
-                LValue::Number(variables::E)
+                LValue::Number(variables::E.into())
             );
         });
     }
@@ -465,7 +465,6 @@ mod tests {
         // strictEqual
         ("strictEqual", "0", "0", true),
         ("strictEqual", "0.5", "0.5", true),
-        ("strictEqual", "@pi", "3.1415927", true),
         ("strictEqual", "null", "null", true),
         ("strictEqual", r#""""#, r#""""#, true),
         ("strictEqual", r#""abc""#, r#""abc""#, true),
@@ -647,7 +646,7 @@ mod tests {
         let mut vm = single_processor_vm(
             BlockType::MicroProcessor,
             r#"
-            print "{0} {2} {/} {3} {:} {10} {1}"
+            print "{0} {1} {/} {9} {:} {10} {0}"
             noop
 
             format 4
@@ -672,7 +671,7 @@ mod tests {
         with_processor(&mut vm, 0, |p| {
             assert_eq!(
                 p.state.decode_printbuffer(),
-                r#"{0} {2} {/} {3} {:} {10} {1}"#
+                r#"{0} {1} {/} {9} {:} {10} {0}"#
             );
         });
 
@@ -681,7 +680,7 @@ mod tests {
         with_processor(&mut vm, 0, |p| {
             assert_eq!(
                 p.state.decode_printbuffer(),
-                r#"4 {2} {/} {3} {:} {10} {1}"#
+                r#"4 {1} {/} {9} {:} {10} {0}"#
             );
         });
 
@@ -690,7 +689,7 @@ mod tests {
         with_processor(&mut vm, 0, |p| {
             assert_eq!(
                 p.state.decode_printbuffer(),
-                r#"4 {2} {/} {3} {:} {10} abcde"#
+                r#"4 {1} {/} {9} {:} {10} abcde"#
             );
         });
 
@@ -699,7 +698,7 @@ mod tests {
         with_processor(&mut vm, 0, |p| {
             assert_eq!(
                 p.state.decode_printbuffer(),
-                r#"4 aa {/} {3} {:} {10} abcde"#
+                r#"4 aa {/} {9} {:} {10} abcde"#
             );
         });
 

@@ -19,6 +19,7 @@ match {
     "printchar",
     "format",
     "set",
+    "op",
     "select",
     "packcolor",
     "unpackcolor",
@@ -53,6 +54,50 @@ match {
     "greaterThanEq",
     "strictEqual",
     "always",
+
+    "add",
+    "sub",
+    "mul",
+    "div",
+    "idiv",
+    "mod",
+    "emod",
+    "pow",
+
+    "land",
+
+    "shl",
+    "shr",
+    "ushr",
+    "or",
+    "and",
+    "xor",
+    "not",
+
+    "max",
+    "min",
+    "angle",
+    "angleDiff",
+    "len",
+    "noise",
+    "abs",
+    "sign",
+    "log",
+    "logn",
+    "log10",
+    "floor",
+    "ceil",
+    "round",
+    "sqrt",
+    "rand",
+
+    "sin",
+    "cos",
+    "tan",
+
+    "asin",
+    "acos",
+    "atan",
 
     // https://github.com/Anuken/Arc/blob/071fdffaf220cd57cf971a0ee58db2f321f92ee1/arc-core/src/arc/util/Strings.java#L495
     // for example, -+1.--0. is a valid number literal
@@ -133,6 +178,12 @@ Instruction: Instruction = {
 
     "set" <to:Value> <from:Value> =>
         Instruction::Set { <> },
+
+    "op" <op:LogicOp1> <result:Value> <x:Value> =>
+        optional_args!(Instruction::Op { <>; y }),
+
+    "op" <op:LogicOp2> <result:Value> <x:Value> <y:Value> =>
+        Instruction::Op { <> },
 
     "select" <result:Value> <op:ConditionOp0> <x:Value> <y:Value> <if_true:Value> =>
         optional_args!(Instruction::Select { <>; if_false }),
@@ -228,6 +279,57 @@ ConditionOp2: ConditionOp = {
     "strictEqual"   => ConditionOp::StrictEqual,
 };
 
+LogicOp1: LogicOp = {
+    "not" => LogicOp::Not,
+
+    "abs"   => LogicOp::Abs,
+    "sign"  => LogicOp::Sign,
+    "log"   => LogicOp::Log,
+    "log10" => LogicOp::Log10,
+    "floor" => LogicOp::Floor,
+    "ceil"  => LogicOp::Ceil,
+    "round" => LogicOp::Round,
+    "sqrt"  => LogicOp::Sqrt,
+    "rand"  => LogicOp::Rand,
+
+    "sin" => LogicOp::Sin,
+    "cos" => LogicOp::Cos,
+    "tan" => LogicOp::Tan,
+
+    "asin" => LogicOp::Asin,
+    "acos" => LogicOp::Acos,
+    "atan" => LogicOp::Atan,
+};
+
+LogicOp2: LogicOp = {
+    "add"  => LogicOp::Add,
+    "sub"  => LogicOp::Sub,
+    "mul"  => LogicOp::Mul,
+    "div"  => LogicOp::Div,
+    "idiv" => LogicOp::Idiv,
+    "mod"  => LogicOp::Mod,
+    "emod" => LogicOp::Emod,
+    "pow"  => LogicOp::Pow,
+
+    "land"       => LogicOp::Land,
+    ConditionOp2 => LogicOp::Condition(<>),
+
+    "shl"  => LogicOp::Shl,
+    "shr"  => LogicOp::Shr,
+    "ushr" => LogicOp::Ushr,
+    "or"   => LogicOp::Or,
+    "and"  => LogicOp::And,
+    "xor"  => LogicOp::Xor,
+
+    "max"       => LogicOp::Max,
+    "min"       => LogicOp::Min,
+    "angle"     => LogicOp::Angle,
+    "angleDiff" => LogicOp::AngleDiff,
+    "len"       => LogicOp::Len,
+    "noise"     => LogicOp::Noise,
+    "logn"      => LogicOp::Logn,
+};
+
 Value: Value = {
     <s:STRING> =>
         Value::String(s[1..s.len() - 1].replace(r"\n", "\n")),
@@ -292,6 +394,7 @@ Symbol = {
     "printchar",
     "format",
     "set",
+    "op",
     "select",
     "packcolor",
     "unpackcolor",
@@ -326,4 +429,48 @@ Symbol = {
     "greaterThanEq",
     "strictEqual",
     "always",
+
+    "add",
+    "sub",
+    "mul",
+    "div",
+    "idiv",
+    "mod",
+    "emod",
+    "pow",
+
+    "land",
+
+    "shl",
+    "shr",
+    "ushr",
+    "or",
+    "and",
+    "xor",
+    "not",
+
+    "max",
+    "min",
+    "angle",
+    "angleDiff",
+    "len",
+    "noise",
+    "abs",
+    "sign",
+    "log",
+    "logn",
+    "log10",
+    "floor",
+    "ceil",
+    "round",
+    "sqrt",
+    "rand",
+
+    "sin",
+    "cos",
+    "tan",
+
+    "asin",
+    "acos",
+    "atan",
 };
