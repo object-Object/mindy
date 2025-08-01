@@ -7,7 +7,7 @@ use super::{
     LogicVM, VMLoadError, VMLoadResult,
     processor::{Processor, ProcessorBuilder},
 };
-use crate::types::{Object, ProcessorConfig, SchematicTile};
+use crate::types::{Object, ProcessorConfig, SchematicTile, content};
 
 const MESSAGE_MAX_LEN: usize = 220;
 const MESSAGE_MAX_LINES: usize = 24;
@@ -79,6 +79,7 @@ impl Block {
                         privileged: false,
                         running_processors: Rc::clone(&vm.running_processors),
                         time: Rc::clone(&vm.time),
+                        globals: &vm.globals,
                         config,
                     }
                     .build()?,
@@ -93,6 +94,7 @@ impl Block {
                         privileged: false,
                         running_processors: Rc::clone(&vm.running_processors),
                         time: Rc::clone(&vm.time),
+                        globals: &vm.globals,
                         config,
                     }
                     .build()?,
@@ -107,6 +109,7 @@ impl Block {
                         privileged: false,
                         running_processors: Rc::clone(&vm.running_processors),
                         time: Rc::clone(&vm.time),
+                        globals: &vm.globals,
                         config,
                     }
                     .build()?,
@@ -121,6 +124,7 @@ impl Block {
                         privileged: true,
                         running_processors: Rc::clone(&vm.running_processors),
                         time: Rc::clone(&vm.time),
+                        globals: &vm.globals,
                         config,
                     }
                     .build()?,
@@ -148,7 +152,10 @@ impl Block {
                     block: block.clone(),
                     config: config.clone(),
                 },
-                1,
+                content::blocks::FROM_NAME
+                    .get(block.as_str())
+                    .map(|v| v.size)
+                    .unwrap_or(1),
             )),
         }
     }

@@ -6,14 +6,18 @@ use noise::{NoiseFn, Simplex};
 use super::{
     LogicVM, VMLoadError, VMLoadResult,
     processor::{MAX_TEXT_BUFFER, ProcessorState},
-    variables::{LValue, LVar, RAD_DEG},
+    variables::{Content, LValue, LVar, RAD_DEG},
 };
 use crate::{
     logic::{
         ast::{self, ConditionOp, LogicOp},
         vm::variables::{F64_DEG_RAD, F64_RAD_DEG},
     },
-    types::colors::{f32_to_double_bits, f64_from_double_bits},
+    types::{
+        ContentType, Team,
+        colors::{f32_to_double_bits, f64_from_double_bits},
+        content,
+    },
 };
 
 const MAX_IPT: usize = 1000;
@@ -27,6 +31,7 @@ lazy_static! {
 pub fn parse_instruction(
     instruction: ast::Instruction,
     variables: &mut HashMap<String, LVar>,
+    globals: &HashMap<String, LVar>,
     labels: &HashMap<String, usize>,
     privileged: bool,
     num_instructions: usize,
@@ -34,11 +39,15 @@ pub fn parse_instruction(
     // helpers
 
     let mut lvar = |value| match value {
-        ast::Value::Variable(name) => variables.get(&name).cloned().unwrap_or_else(|| {
-            let var = LVar::new_variable();
-            variables.insert(name, LVar::clone(&var));
-            var
-        }),
+        ast::Value::Variable(name) => {
+            if let Some(var) = globals.get(&name).or_else(|| variables.get(&name)) {
+                var.clone()
+            } else {
+                let var = LVar::new_variable();
+                variables.insert(name, LVar::clone(&var));
+                var
+            }
+        }
         ast::Value::String(value) => LVar::Constant(LValue::String(value.into())),
         ast::Value::Number(value) => LVar::Constant(value.into()),
         ast::Value::None => LVar::Constant(LValue::Null),
@@ -100,6 +109,15 @@ pub fn parse_instruction(
             y: lvar(y),
             if_true: lvar(if_true),
             if_false: lvar(if_false),
+        }),
+        ast::Instruction::Lookup {
+            content_type,
+            result,
+            id,
+        } => Box::new(Lookup {
+            content_type,
+            result: lvar(result),
+            id: lvar(id),
         }),
         ast::Instruction::PackColor { result, r, g, b, a } => Box::new(PackColor {
             result: lvar(result),
@@ -186,6 +204,8 @@ impl Print {
                 })
             }
             LValue::String(s) => Cow::Borrowed(s),
+            LValue::Content(content) => Cow::Borrowed(content.name()),
+            LValue::Team(team) => team.name(),
         }
     }
 }
@@ -365,6 +385,46 @@ impl SimpleInstruction for Select {
             &self.if_false
         };
         self.result.set_from(state, result);
+    }
+}
+
+struct Lookup {
+    content_type: ContentType,
+    result: LVar,
+    id: LVar,
+}
+
+impl SimpleInstruction for Lookup {
+    fn execute(&self, state: &mut ProcessorState, _: &LogicVM) {
+        let id = self.id.get(state).num() as i32;
+
+        let result = match self.content_type {
+            ContentType::Block => content::blocks::FROM_LOGIC_ID
+                .get(&id)
+                .map(|v| Content::Block(v))
+                .into(),
+
+            ContentType::Item => content::items::FROM_LOGIC_ID
+                .get(&id)
+                .map(|v| Content::Item(v))
+                .into(),
+
+            ContentType::Liquid => content::liquids::FROM_LOGIC_ID
+                .get(&id)
+                .map(|v| Content::Liquid(v))
+                .into(),
+
+            ContentType::Unit => content::units::FROM_LOGIC_ID
+                .get(&id)
+                .map(|v| Content::Unit(v))
+                .into(),
+
+            ContentType::Team => id.try_into().ok().map(Team::from_id).into(),
+
+            _ => LValue::Null,
+        };
+
+        self.result.set(state, result);
     }
 }
 

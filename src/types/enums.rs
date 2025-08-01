@@ -1,6 +1,6 @@
 #![allow(deprecated)]
 
-use std::hash::Hash;
+use std::{borrow::Cow, hash::Hash};
 
 use binrw::prelude::*;
 
@@ -23,7 +23,7 @@ pub enum ContentType {
     #[deprecated]
     Loadout,
     #[deprecated]
-    Typeid,
+    TypeID,
     Error,
     Planet,
     #[deprecated]
@@ -122,6 +122,39 @@ pub enum Team {
     #[brw(magic = 6u8)]
     Neoplastic,
     Unknown(u8),
+}
+
+impl Team {
+    pub fn base_teams() -> impl Iterator<Item = Self> {
+        (0u8..=6u8).map(Self::from_id)
+    }
+
+    pub fn from_id(id: u8) -> Self {
+        match id {
+            0 => Self::Derelict,
+            1 => Self::Sharded,
+            2 => Self::Crux,
+            3 => Self::Malis,
+            4 => Self::Green,
+            5 => Self::Blue,
+            6 => Self::Neoplastic,
+            _ => Self::Unknown(id),
+        }
+    }
+
+    pub fn name(&self) -> Cow<'_, str> {
+        match self {
+            Self::Derelict => Cow::from("Derelict"),
+            Self::Sharded => Cow::from("Sharded"),
+            Self::Crux => Cow::from("Crux"),
+            Self::Malis => Cow::from("Malis"),
+            Self::Green => Cow::from("Green"),
+            Self::Blue => Cow::from("Blue"),
+            Self::Neoplastic => Cow::from("Neoplastic"),
+            // TODO: this probably shouldn't need to allocate
+            Self::Unknown(i) => Cow::Owned(format!("team#{i}")),
+        }
+    }
 }
 
 #[binrw]

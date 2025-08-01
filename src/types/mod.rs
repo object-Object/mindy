@@ -1,6 +1,7 @@
 #![allow(deprecated)]
 
 pub mod colors;
+pub mod content;
 
 mod enums;
 mod java;

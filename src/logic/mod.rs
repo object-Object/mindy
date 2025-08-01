@@ -1,7 +1,11 @@
 pub mod ast;
 mod vm;
 
-lalrpop_util::lalrpop_mod!(grammar, "/logic/grammar.rs");
+lalrpop_util::lalrpop_mod!(
+    #[allow(deprecated)]
+    grammar,
+    "/logic/grammar.rs"
+);
 
 pub use grammar::LogicParser;
 pub use vm::*;

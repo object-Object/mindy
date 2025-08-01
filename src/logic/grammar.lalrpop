@@ -1,7 +1,7 @@
 // -*- mode: Rust; -*-
 
 use super::ast::*;
-use crate::types::colors::{COLORS, to_double_bits};
+use crate::types::{colors::{COLORS, to_double_bits}, ContentType};
 
 grammar;
 
@@ -21,6 +21,7 @@ match {
     "set",
     "op",
     "select",
+    "lookup",
     "packcolor",
     "unpackcolor",
     "noop",
@@ -98,6 +99,25 @@ match {
     "asin",
     "acos",
     "atan",
+
+    "item",
+    "block",
+    "mech_UNUSED",
+    "bullet",
+    "liquid",
+    "status",
+    "unit",
+    "weather",
+    "effect_UNUSED",
+    "sector",
+    "loadout_UNUSED",
+    "typeid_UNUSED",
+    "error",
+    "planet",
+    "ammo_UNUSED",
+    "team",
+    "unitCommand",
+    "unitStance",
 
     // https://github.com/Anuken/Arc/blob/071fdffaf220cd57cf971a0ee58db2f321f92ee1/arc-core/src/arc/util/Strings.java#L495
     // for example, -+1.--0. is a valid number literal
@@ -190,6 +210,9 @@ Instruction: Instruction = {
 
     "select" <result:Value> <op:ConditionOp2> <x:Value> <y:Value> <if_true:Value> <if_false:Value> =>
         Instruction::Select { <> },
+
+    "lookup" <content_type:ContentType> <result:Value> <id:Value> =>
+        Instruction::Lookup { <> },
 
     "packcolor" <result:Value> <r:Value> <g:Value> <b:Value> <a:Value> =>
         Instruction::PackColor { <> },
@@ -330,6 +353,27 @@ LogicOp2: LogicOp = {
     "logn"      => LogicOp::Logn,
 };
 
+ContentType: ContentType = {
+    "item"           => ContentType::Item,
+    "block"          => ContentType::Block,
+    "mech_UNUSED"    => ContentType::Mech,
+    "bullet"         => ContentType::Bullet,
+    "liquid"         => ContentType::Liquid,
+    "status"         => ContentType::Status,
+    "unit"           => ContentType::Unit,
+    "weather"        => ContentType::Weather,
+    "effect_UNUSED"  => ContentType::Effect,
+    "sector"         => ContentType::Sector,
+    "loadout_UNUSED" => ContentType::Loadout,
+    "typeid_UNUSED"  => ContentType::TypeID,
+    "error"          => ContentType::Error,
+    "planet"         => ContentType::Planet,
+    "ammo_UNUSED"    => ContentType::Ammo,
+    "team"           => ContentType::Team,
+    "unitCommand"    => ContentType::UnitCommand,
+    "unitStance"     => ContentType::UnitStance,
+}
+
 Value: Value = {
     <s:STRING> =>
         Value::String(s[1..s.len() - 1].replace(r"\n", "\n")),
@@ -396,6 +440,7 @@ Symbol = {
     "set",
     "op",
     "select",
+    "lookup",
     "packcolor",
     "unpackcolor",
     "noop",
@@ -473,4 +518,23 @@ Symbol = {
     "asin",
     "acos",
     "atan",
+
+    "item",
+    "block",
+    "mech_UNUSED",
+    "bullet",
+    "liquid",
+    "status",
+    "unit",
+    "weather",
+    "effect_UNUSED",
+    "sector",
+    "loadout_UNUSED",
+    "typeid_UNUSED",
+    "error",
+    "planet",
+    "ammo_UNUSED",
+    "team",
+    "unitCommand",
+    "unitStance",
 };

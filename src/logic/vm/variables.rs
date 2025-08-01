@@ -1,7 +1,12 @@
 use std::{cell::RefCell, collections::HashMap, rc::Rc};
 
 use num_traits::AsPrimitive;
-use velcro::map_iter_from;
+use velcro::hash_map_from;
+
+use crate::types::{
+    Team, colors,
+    content::{self, Block, Item, Liquid, Unit},
+};
 
 use super::processor::ProcessorState;
 
@@ -33,10 +38,9 @@ impl LVar {
         Self::Variable(Rc::new(RefCell::new(LValue::Null)))
     }
 
-    pub fn init_globals(variables: &mut HashMap<String, LVar>) {
-        // https://github.com/Anuken/Mindustry/blob/e95c543fb224b8d8cb21f834e0d02cbdb9f34d48/core/src/mindustry/logic/GlobalVars.java#L41
-        variables.extend(map_iter_from! {
-            "@counter": Self::Counter,
+    // https://github.com/Anuken/Mindustry/blob/e95c543fb224b8d8cb21f834e0d02cbdb9f34d48/core/src/mindustry/logic/GlobalVars.java#L41
+    pub fn create_globals() -> HashMap<String, LVar> {
+        let mut globals = hash_map_from! {
             "@ipt": Self::Ipt,
 
             "false": constant(0),
@@ -58,19 +62,82 @@ impl LVar {
 
             "@server": constant(1),
             "@client": constant(0),
-        });
+
+            "@blockCount": constant(content::blocks::FROM_LOGIC_ID.len()),
+            "@itemCount": constant(content::items::FROM_LOGIC_ID.len()),
+            "@liquidCount": constant(content::liquids::FROM_LOGIC_ID.len()),
+            "@unitCount": constant(content::units::FROM_LOGIC_ID.len()),
+        };
+
+        globals.extend(Team::base_teams().map(|t| (format!("@{}", t.name()), constant(t))));
+
+        globals.extend(
+            content::items::VALUES
+                .iter()
+                .map(|v| (format!("@{}", v.name), constant(Content::Item(v)))),
+        );
+
+        globals.extend(
+            content::liquids::VALUES
+                .iter()
+                .map(|v| (format!("@{}", v.name), constant(Content::Liquid(v)))),
+        );
+
+        globals.extend(
+            content::blocks::VALUES
+                .iter()
+                .filter(|v| !content::items::FROM_NAME.contains_key(v.name.as_str()) && !v.legacy)
+                .map(|v| (format!("@{}", v.name), constant(Content::Block(v)))),
+        );
+
+        globals.extend(
+            colors::COLORS
+                .iter()
+                .filter(|(k, _)| matches!(k.chars().next(), Some(c) if c.is_lowercase()))
+                .map(|(k, v)| {
+                    let mut name = "@color".to_string();
+                    name.push(k.chars().next().unwrap().to_ascii_uppercase());
+                    name.extend(k.chars().skip(1));
+                    (name, constant(*v))
+                }),
+        );
+
+        // skip adding weathers and alignments since they aren't useful in a headless environment
+
+        globals.extend(
+            content::units::VALUES
+                .iter()
+                .map(|v| (format!("@{}", v.name), constant(Content::Unit(v)))),
+        );
+
+        globals
+    }
+
+    pub fn create_locals() -> HashMap<String, LVar> {
+        hash_map_from! {
+            // we want other processors to be able to write @counter as if it's a local
+            "@counter": Self::Counter,
+        }
     }
 
     pub fn get(&self, state: &ProcessorState) -> LValue {
         match self {
-            Self::Variable(ptr) => LValue::clone(&ptr.borrow()),
-            Self::Constant(value) => value.to_owned(),
+            Self::Variable(_) | Self::Constant(_) => self.try_get().unwrap(),
             Self::Counter => state.counter.into(),
             Self::Ipt => state.ipt.into(),
             Self::Time => state.time.get().into(),
             Self::Tick => state.tick().into(),
             Self::Second => (state.tick() / 60.).into(),
             Self::Minute => (state.tick() / 60. / 60.).into(),
+        }
+    }
+
+    /// Returns `None` if this is a variable that requires access to a specific processor's state.
+    pub fn try_get(&self) -> Option<LValue> {
+        match self {
+            Self::Variable(ptr) => Some(LValue::clone(&ptr.borrow())),
+            Self::Constant(value) => Some(value.to_owned()),
+            _ => None,
         }
     }
 
@@ -110,6 +177,8 @@ pub enum LValue {
     Null,
     Number(f64),
     String(Rc<str>),
+    Content(Content),
+    Team(Team),
 }
 
 impl LValue {
@@ -165,6 +234,18 @@ impl From<&str> for LValue {
     }
 }
 
+impl From<Content> for LValue {
+    fn from(value: Content) -> Self {
+        Self::Content(value)
+    }
+}
+
+impl From<Team> for LValue {
+    fn from(value: Team) -> Self {
+        Self::Team(value)
+    }
+}
+
 impl<T> From<Option<T>> for LValue
 where
     LValue: From<T>,
@@ -179,6 +260,34 @@ where
 
 fn invalid(n: f64) -> bool {
     n.is_nan() || n.is_infinite()
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub enum Content {
+    Block(&'static Block),
+    Item(&'static Item),
+    Liquid(&'static Liquid),
+    Unit(&'static Unit),
+}
+
+impl Content {
+    pub fn name(&self) -> &'static str {
+        match self {
+            Self::Block(Block { name, .. }) => name,
+            Self::Item(Item { name, .. }) => name,
+            Self::Liquid(Liquid { name, .. }) => name,
+            Self::Unit(Unit { name, .. }) => name,
+        }
+    }
+
+    pub fn logic_id(&self) -> i32 {
+        match self {
+            Self::Block(Block { logic_id, .. }) => *logic_id,
+            Self::Item(Item { logic_id, .. }) => *logic_id,
+            Self::Liquid(Liquid { logic_id, .. }) => *logic_id,
+            Self::Unit(Unit { logic_id, .. }) => *logic_id,
+        }
+    }
 }
 
 // https://stackoverflow.com/a/66537661

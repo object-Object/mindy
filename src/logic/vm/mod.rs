@@ -6,6 +6,7 @@ mod processor;
 mod variables;
 
 use std::{
+    borrow::Cow,
     cell::{Cell, RefCell},
     collections::HashMap,
     rc::Rc,
@@ -14,7 +15,10 @@ use std::{
 
 use thiserror::Error;
 
-use self::blocks::{Block, BlockType};
+use self::{
+    blocks::{Block, BlockType},
+    variables::LVar,
+};
 use crate::types::{Point2, Schematic, SchematicTile};
 
 const MILLIS_PER_SEC: u64 = 1_000;
@@ -22,20 +26,26 @@ const NANOS_PER_MILLI: u32 = 1_000_000;
 
 type BlockPtr = Rc<RefCell<Block>>;
 
-pub struct LogicVM {
+pub struct LogicVM<'a> {
     blocks: HashMap<Point2, BlockPtr>,
     processors: Vec<BlockPtr>,
     running_processors: Rc<Cell<usize>>,
     time: Rc<Cell<f64>>,
+    globals: Cow<'a, HashMap<String, LVar>>,
 }
 
-impl LogicVM {
+impl<'a> LogicVM<'a> {
     pub fn new() -> Self {
+        Self::new_with_globals(Cow::Owned(LVar::create_globals()))
+    }
+
+    pub fn new_with_globals(globals: Cow<'a, HashMap<String, LVar>>) -> Self {
         Self {
             blocks: HashMap::new(),
             processors: Vec::new(),
             running_processors: Rc::new(Cell::new(0)),
             time: Rc::new(Cell::new(0.)),
+            globals,
         }
     }
 
@@ -133,7 +143,7 @@ impl LogicVM {
     }
 }
 
-impl Default for LogicVM {
+impl Default for LogicVM<'_> {
     fn default() -> Self {
         Self::new()
     }
@@ -171,14 +181,28 @@ mod tests {
     use pretty_assertions::assert_eq;
 
     use crate::{
-        logic::vm::variables::{LValue, LVar},
-        types::{Object, PackedPoint2, ProcessorConfig, colors::COLORS},
+        logic::vm::variables::{Content, LValue, LVar},
+        types::{Object, PackedPoint2, ProcessorConfig, Team, colors::COLORS},
     };
 
     use super::{processor::Processor, *};
 
-    fn single_processor_vm(block: BlockType, code: &str) -> LogicVM {
+    fn single_processor_vm<'a>(block: BlockType, code: &str) -> LogicVM<'a> {
         let mut vm = LogicVM::new();
+        vm.add_blocks([(
+            Block::new_processor(block, &ProcessorConfig::from_code(code), &vm).unwrap(),
+            Point2 { x: 0, y: 0 },
+        )])
+        .unwrap();
+        vm
+    }
+
+    fn single_processor_vm_with_globals<'a>(
+        block: BlockType,
+        code: &str,
+        globals: &'a HashMap<String, LVar>,
+    ) -> LogicVM<'a> {
+        let mut vm = LogicVM::new_with_globals(Cow::Borrowed(globals));
         vm.add_blocks([(
             Block::new_processor(block, &ProcessorConfig::from_code(code), &vm).unwrap(),
             Point2 { x: 0, y: 0 },
@@ -361,9 +385,12 @@ mod tests {
         vm.do_tick(Duration::ZERO);
         vm.do_tick(Duration::ZERO);
 
+        assert_eq!(vm.globals["@ipt"], LVar::Ipt);
+        assert_eq!(vm.globals["true"].try_get().unwrap(), LValue::Number(1.));
+
         with_processor(&mut vm, 0, |p| {
-            assert_eq!(p.state.variables["@ipt"], LVar::Ipt);
-            assert_eq!(p.state.variables["true"].get(&p.state), LValue::Number(1.));
+            assert_eq!(p.state.variables.get("@ipt"), None);
+            assert_eq!(p.state.variables.get("true"), None);
             assert_eq!(
                 p.state.variables["pi"].get(&p.state),
                 LValue::Number(variables::PI.into())
@@ -787,8 +814,10 @@ mod tests {
 
     #[test]
     fn test_select() {
+        let globals = LVar::create_globals();
+
         for &(cond, x, y, want_true) in CONDITION_TESTS {
-            let mut vm = single_processor_vm(
+            let mut vm = single_processor_vm_with_globals(
                 BlockType::HyperProcessor,
                 &format!(
                     "
@@ -801,6 +830,7 @@ mod tests {
                     stop
                     "
                 ),
+                &globals,
             );
 
             run(&mut vm, 1, true);
@@ -828,6 +858,8 @@ mod tests {
     #[test]
     #[allow(clippy::approx_constant)]
     fn test_op_unary() {
+        let globals = LVar::create_globals();
+
         for (op, x, want, epsilon) in [
             // not
             ("not", "0b00", (-1).into(), None),
@@ -933,7 +965,7 @@ mod tests {
             ("atan", "0", 0.into(), None),
             ("atan", "0.5", 26.56505117707799.into(), Some(1e-13)),
         ] {
-            let mut vm = single_processor_vm(
+            let mut vm = single_processor_vm_with_globals(
                 BlockType::HyperProcessor,
                 &format!(
                     "
@@ -941,6 +973,7 @@ mod tests {
                     stop
                     "
                 ),
+                &globals,
             );
 
             run(&mut vm, 1, true);
@@ -960,6 +993,8 @@ mod tests {
 
     #[test]
     fn test_op_binary() {
+        let globals = LVar::create_globals();
+
         for (op, x, y, want) in [
             // add
             ("add", "0", "0", 0.into()),
@@ -1127,7 +1162,7 @@ mod tests {
                 .filter(|&(op, ..)| *op != "always")
                 .map(|&(op, x, y, want)| (op, x, y, want.into())),
         ) {
-            let mut vm = single_processor_vm(
+            let mut vm = single_processor_vm_with_globals(
                 BlockType::HyperProcessor,
                 &format!(
                     "
@@ -1135,6 +1170,7 @@ mod tests {
                     stop
                     "
                 ),
+                &globals,
             );
 
             run(&mut vm, 1, true);
@@ -1142,5 +1178,127 @@ mod tests {
             let state = take_processor(&mut vm, 0).state;
             assert_eq!(state.variables["got"].get(&state), want, "{op} {x} {y}");
         }
+    }
+
+    #[test]
+    pub fn test_lookup() {
+        let mut vm = single_processor_vm(
+            BlockType::HyperProcessor,
+            "
+            set blocks @blockCount
+            set items @itemCount
+            set liquids @liquidCount
+            set units @unitCount
+
+            lookup block block1 -1
+            lookup block block2 0
+            lookup block block3 259
+            lookup block block4 260
+
+            lookup item item1 -1
+            lookup item item2 0
+            lookup item item3 19
+            lookup item item4 20
+
+            lookup liquid liquid1 -1
+            lookup liquid liquid2 0
+            lookup liquid liquid3 10
+            lookup liquid liquid4 11
+
+            lookup unit unit1 -1
+            lookup unit unit2 0
+            lookup unit unit3 55
+            lookup unit unit4 56
+
+            lookup team team1 -1
+            lookup team team2 0
+            lookup team team3 255
+            lookup team team4 256
+
+            stop
+            ",
+        );
+
+        run(&mut vm, 1, true);
+
+        let state = take_processor(&mut vm, 0).state;
+
+        assert_eq!(state.variables["blocks"].get(&state), LValue::Number(260.));
+        assert_eq!(state.variables["items"].get(&state), LValue::Number(20.));
+        assert_eq!(state.variables["liquids"].get(&state), LValue::Number(11.));
+        assert_eq!(state.variables["units"].get(&state), LValue::Number(56.));
+
+        // blocks
+
+        assert_eq!(state.variables["block1"].get(&state), LValue::Null);
+        let block2 = state.variables["block2"].get(&state);
+        assert!(
+            matches!(block2, LValue::Content(Content::Block(b)) if b.name == "graphite-press"),
+            "{block2:?}"
+        );
+        let block3 = state.variables["block3"].get(&state);
+        assert!(
+            matches!(block3, LValue::Content(Content::Block(b)) if b.name == "tile-logic-display"),
+            "{block3:?}"
+        );
+        assert_eq!(state.variables["block4"].get(&state), LValue::Null);
+
+        // items
+
+        assert_eq!(state.variables["item1"].get(&state), LValue::Null);
+        let item2 = state.variables["item2"].get(&state);
+        assert!(
+            matches!(item2, LValue::Content(Content::Item(b)) if b.name == "copper"),
+            "{item2:?}"
+        );
+        let item3 = state.variables["item3"].get(&state);
+        assert!(
+            matches!(item3, LValue::Content(Content::Item(b)) if b.name == "carbide"),
+            "{item3:?}"
+        );
+        assert_eq!(state.variables["item4"].get(&state), LValue::Null);
+
+        // liquids
+
+        assert_eq!(state.variables["liquid1"].get(&state), LValue::Null);
+        let liquid2 = state.variables["liquid2"].get(&state);
+        assert!(
+            matches!(liquid2, LValue::Content(Content::Liquid(b)) if b.name == "water"),
+            "{liquid2:?}"
+        );
+        let liquid3 = state.variables["liquid3"].get(&state);
+        assert!(
+            matches!(liquid3, LValue::Content(Content::Liquid(b)) if b.name == "arkycite"),
+            "{liquid3:?}"
+        );
+        assert_eq!(state.variables["liquid4"].get(&state), LValue::Null);
+
+        // units
+
+        assert_eq!(state.variables["unit1"].get(&state), LValue::Null);
+        let unit2 = state.variables["unit2"].get(&state);
+        assert!(
+            matches!(unit2, LValue::Content(Content::Unit(b)) if b.name == "dagger"),
+            "{unit2:?}"
+        );
+        let unit3 = state.variables["unit3"].get(&state);
+        assert!(
+            matches!(unit3, LValue::Content(Content::Unit(b)) if b.name == "emanate"),
+            "{unit3:?}"
+        );
+        assert_eq!(state.variables["unit4"].get(&state), LValue::Null);
+
+        // teams
+
+        assert_eq!(state.variables["team1"].get(&state), LValue::Null);
+        assert_eq!(
+            state.variables["team2"].get(&state),
+            LValue::Team(Team::Derelict)
+        );
+        assert_eq!(
+            state.variables["team3"].get(&state),
+            LValue::Team(Team::Unknown(255))
+        );
+        assert_eq!(state.variables["team4"].get(&state), LValue::Null);
     }
 }

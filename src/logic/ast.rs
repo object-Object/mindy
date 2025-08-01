@@ -51,6 +51,11 @@ pub enum Instruction {
         if_true: Value,
         if_false: Value,
     },
+    Lookup {
+        content_type: ContentType,
+        result: Value,
+        id: Value,
+    },
     PackColor {
         result: Value,
         r: Value,
@@ -257,3 +262,5 @@ macro_rules! optional_args {
 }
 
 pub(super) use optional_args;
+
+use crate::types::ContentType;

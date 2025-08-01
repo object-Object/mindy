@@ -139,6 +139,7 @@ pub struct ProcessorBuilder<'a> {
     pub privileged: bool,
     pub running_processors: Rc<Cell<usize>>,
     pub time: Rc<Cell<f64>>,
+    pub globals: &'a HashMap<String, LVar>,
     pub config: &'a ProcessorConfig,
 }
 
@@ -164,6 +165,7 @@ impl ProcessorBuilder<'_> {
             privileged,
             running_processors,
             time,
+            globals,
             config,
         } = self;
 
@@ -186,8 +188,7 @@ impl ProcessorBuilder<'_> {
             }
         }
 
-        let mut variables = HashMap::new();
-        LVar::init_globals(&mut variables);
+        let mut variables = LVar::create_locals();
 
         let mut instructions = Vec::with_capacity(num_instructions);
         for statement in code.into_iter() {
@@ -195,6 +196,7 @@ impl ProcessorBuilder<'_> {
                 instructions.push(parse_instruction(
                     instruction,
                     &mut variables,
+                    globals,
                     &labels,
                     privileged,
                     num_instructions,
