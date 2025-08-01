@@ -8,6 +8,8 @@ pub use vm::*;
 
 #[cfg(test)]
 mod tests {
+    use pretty_assertions::assert_eq;
+
     use super::{
         ast::{Instruction::*, *},
         *,
@@ -223,6 +225,174 @@ mod tests {
             "print foo",
             instruction!(Print {
                 value: variable("foo")
+            }),
+        ];
+    }
+
+    #[test]
+    fn test_draw() {
+        assert_ast![
+            "
+            draw clear r g b
+            draw color r g b a
+            draw col color
+            draw stroke width
+            draw line x1 y1 x2 y2
+            draw rect x y width height
+            draw lineRect x y width height
+            draw poly x y sides radius rotation
+            draw linePoly x y sides radius rotation
+            draw triangle x1 y1 x2 y2 x3 y3
+            draw image x y image size rotation
+            draw print x y align
+            draw translate x y
+            draw scale x y
+            draw rotate degrees
+            draw reset
+            ",
+            instruction!(Draw {
+                op: DrawOp::Clear,
+                x: variable("r"),
+                y: variable("g"),
+                p1: variable("b"),
+                p2: Value::None,
+                p3: Value::None,
+                p4: Value::None,
+            }),
+            instruction!(Draw {
+                op: DrawOp::Color,
+                x: variable("r"),
+                y: variable("g"),
+                p1: variable("b"),
+                p2: variable("a"),
+                p3: Value::None,
+                p4: Value::None,
+            }),
+            instruction!(Draw {
+                op: DrawOp::Col,
+                x: variable("color"),
+                y: Value::None,
+                p1: Value::None,
+                p2: Value::None,
+                p3: Value::None,
+                p4: Value::None,
+            }),
+            instruction!(Draw {
+                op: DrawOp::Stroke,
+                x: variable("width"),
+                y: Value::None,
+                p1: Value::None,
+                p2: Value::None,
+                p3: Value::None,
+                p4: Value::None,
+            }),
+            instruction!(Draw {
+                op: DrawOp::Line,
+                x: variable("x1"),
+                y: variable("y1"),
+                p1: variable("x2"),
+                p2: variable("y2"),
+                p3: Value::None,
+                p4: Value::None,
+            }),
+            instruction!(Draw {
+                op: DrawOp::Rect,
+                x: variable("x"),
+                y: variable("y"),
+                p1: variable("width"),
+                p2: variable("height"),
+                p3: Value::None,
+                p4: Value::None,
+            }),
+            instruction!(Draw {
+                op: DrawOp::LineRect,
+                x: variable("x"),
+                y: variable("y"),
+                p1: variable("width"),
+                p2: variable("height"),
+                p3: Value::None,
+                p4: Value::None,
+            }),
+            instruction!(Draw {
+                op: DrawOp::Poly,
+                x: variable("x"),
+                y: variable("y"),
+                p1: variable("sides"),
+                p2: variable("radius"),
+                p3: variable("rotation"),
+                p4: Value::None,
+            }),
+            instruction!(Draw {
+                op: DrawOp::LinePoly,
+                x: variable("x"),
+                y: variable("y"),
+                p1: variable("sides"),
+                p2: variable("radius"),
+                p3: variable("rotation"),
+                p4: Value::None,
+            }),
+            instruction!(Draw {
+                op: DrawOp::Triangle,
+                x: variable("x1"),
+                y: variable("y1"),
+                p1: variable("x2"),
+                p2: variable("y2"),
+                p3: variable("x3"),
+                p4: variable("y3"),
+            }),
+            instruction!(Draw {
+                op: DrawOp::Image,
+                x: variable("x"),
+                y: variable("y"),
+                p1: variable("image"),
+                p2: variable("size"),
+                p3: variable("rotation"),
+                p4: Value::None,
+            }),
+            instruction!(Draw {
+                op: DrawOp::Print,
+                x: variable("x"),
+                y: variable("y"),
+                p1: variable("align"),
+                p2: Value::None,
+                p3: Value::None,
+                p4: Value::None,
+            }),
+            instruction!(Draw {
+                op: DrawOp::Translate,
+                x: variable("x"),
+                y: variable("y"),
+                p1: Value::None,
+                p2: Value::None,
+                p3: Value::None,
+                p4: Value::None,
+            }),
+            instruction!(Draw {
+                op: DrawOp::Scale,
+                x: variable("x"),
+                y: variable("y"),
+                p1: Value::None,
+                p2: Value::None,
+                p3: Value::None,
+                p4: Value::None,
+            }),
+            instruction!(Draw {
+                op: DrawOp::Rotate,
+                x: variable("degrees"),
+                y: Value::None,
+                p1: Value::None,
+                p2: Value::None,
+                p3: Value::None,
+                p4: Value::None,
+            }),
+            instruction!(Draw {
+                op: DrawOp::Reset,
+                x: Value::None,
+                y: Value::None,
+                p1: Value::None,
+                p2: Value::None,
+                p3: Value::None,
+                p4: Value::None,
             }),
         ];
     }

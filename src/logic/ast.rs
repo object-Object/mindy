@@ -29,6 +29,15 @@ pub enum Instruction {
     Print {
         value: Value,
     },
+    Draw {
+        op: DrawOp,
+        x: Value,
+        y: Value,
+        p1: Value,
+        p2: Value,
+        p3: Value,
+        p4: Value,
+    },
     SetRate {
         value: Value,
     },
@@ -45,6 +54,26 @@ pub enum ConditionOp {
     GreaterThanEq,
     StrictEqual,
     Always,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum DrawOp {
+    Clear,
+    Color,
+    Col,
+    Stroke,
+    Line,
+    Rect,
+    LineRect,
+    Poly,
+    LinePoly,
+    Triangle,
+    Image,
+    Print,
+    Translate,
+    Scale,
+    Rotate,
+    Reset,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -127,3 +156,14 @@ where
         Err(_) => Value::Variable(n.into()),
     }
 }
+
+macro_rules! optional_args {
+    ($($typ:ident)::+ { $($name:ident$(: $value:expr)?),+ ; $($extra:ident),+ $(,)? }) => {
+        $($typ)::+ {
+            $($name$(: $value)?),+ ,
+            $($extra: Value::None),+
+        }
+    };
+}
+
+pub(super) use optional_args;

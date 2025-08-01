@@ -67,6 +67,8 @@ pub fn parse_instruction(
             from: lvar(from),
         }),
         ast::Instruction::Print { value } => Box::new(Print { value: lvar(value) }),
+        // TODO: implement?
+        ast::Instruction::Draw { .. } => Box::new(Noop),
 
         // unknown
         // do this here so it isn't ignored for unprivileged procs

@@ -20,6 +20,7 @@ match {
     "jump",
     "set",
     "print",
+    "draw",
     "setrate",
 
     "equal",
@@ -30,6 +31,23 @@ match {
     "greaterThanEq",
     "strictEqual",
     "always",
+
+    "clear",
+    "color",
+    "col",
+    "stroke",
+    "line",
+    "rect",
+    "lineRect",
+    "poly",
+    "linePoly",
+    "triangle",
+    "image",
+    // print
+    "translate",
+    "scale",
+    "rotate",
+    "reset",
 
     // https://github.com/Anuken/Arc/blob/071fdffaf220cd57cf971a0ee58db2f321f92ee1/arc-core/src/arc/util/Strings.java#L495
     // for example, -+1.--0. is a valid number literal
@@ -84,7 +102,7 @@ Instruction: Instruction = {
         Instruction::Stop,
 
     "jump" <target:JumpTarget> <op:ConditionOp0> =>
-        Instruction::Jump { <>, x: Value::None, y: Value::None },
+        optional_args!(Instruction::Jump { <>; x, y }),
 
     "jump" <target:JumpTarget> <op:ConditionOp2> <x:Value> <y:Value> =>
         Instruction::Jump {<>},
@@ -94,6 +112,27 @@ Instruction: Instruction = {
 
     "print" <value:Value> =>
         Instruction::Print {<>},
+
+    "draw" <op:DrawOp0> =>
+        optional_args!(Instruction::Draw { <>; x, y, p1, p2, p3, p4 }),
+
+    "draw" <op:DrawOp1> <x:Value> =>
+        optional_args!(Instruction::Draw { <>; y, p1, p2, p3, p4 }),
+
+    "draw" <op:DrawOp2> <x:Value> <y:Value> =>
+        optional_args!(Instruction::Draw { <>; p1, p2, p3, p4 }),
+
+    "draw" <op:DrawOp3> <x:Value> <y:Value> <p1:Value> =>
+        optional_args!(Instruction::Draw { <>; p2, p3, p4 }),
+
+    "draw" <op:DrawOp4> <x:Value> <y:Value> <p1:Value> <p2:Value> =>
+        optional_args!(Instruction::Draw { <>; p3, p4 }),
+
+    "draw" <op:DrawOp5> <x:Value> <y:Value> <p1:Value> <p2:Value> <p3:Value> =>
+        optional_args!(Instruction::Draw { <>; p4 }),
+
+    "draw" <op:DrawOp6> <x:Value> <y:Value> <p1:Value> <p2:Value> <p3:Value> <p4:Value> =>
+        Instruction::Draw {<>},
 
     "setrate" <value:Value> =>
         Instruction::SetRate {<>},
@@ -116,6 +155,43 @@ ConditionOp2: ConditionOp = {
     "strictEqual"   => ConditionOp::StrictEqual,
 };
 
+DrawOp0: DrawOp = {
+    "reset" => DrawOp::Reset,
+};
+
+DrawOp1: DrawOp = {
+    "col"    => DrawOp::Col,
+    "stroke" => DrawOp::Stroke,
+    "rotate" => DrawOp::Rotate,
+};
+
+DrawOp2: DrawOp = {
+    "translate" => DrawOp::Translate,
+    "scale"     => DrawOp::Scale,
+};
+
+DrawOp3: DrawOp = {
+    "clear" => DrawOp::Clear,
+    "print" => DrawOp::Print,
+};
+
+DrawOp4: DrawOp = {
+    "color"    => DrawOp::Color,
+    "line"     => DrawOp::Line,
+    "rect"     => DrawOp::Rect,
+    "lineRect" => DrawOp::LineRect,
+};
+
+DrawOp5: DrawOp = {
+    "poly"     => DrawOp::Poly,
+    "linePoly" => DrawOp::LinePoly,
+    "image"    => DrawOp::Image,
+};
+
+DrawOp6: DrawOp = {
+    "triangle" => DrawOp::Triangle,
+};
+
 Symbol = {
     SYMBOL,
     LABEL,
@@ -126,6 +202,7 @@ Symbol = {
     "jump",
     "set",
     "print",
+    "draw",
     "setrate",
 
     "equal",
@@ -136,6 +213,22 @@ Symbol = {
     "greaterThanEq",
     "strictEqual",
     "always",
+
+    "clear",
+    "color",
+    "col",
+    "stroke",
+    "line",
+    "rect",
+    "lineRect",
+    "poly",
+    "linePoly",
+    "triangle",
+    "image",
+    "translate",
+    "scale",
+    "rotate",
+    "reset",
 };
 
 Value: Value = {
