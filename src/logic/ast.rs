@@ -39,6 +39,10 @@ pub enum Instruction {
     PrintFlush {
         target: Value,
     },
+    GetLink {
+        result: Value,
+        index: Value,
+    },
     // operations
     Set {
         to: Value,

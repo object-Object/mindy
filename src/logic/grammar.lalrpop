@@ -20,6 +20,7 @@ match {
     "format",
     "drawflush",
     "printflush",
+    "getlink",
     "set",
     "op",
     "select",
@@ -203,6 +204,9 @@ Instruction: Instruction = {
 
     "printflush" <target:Value> =>
         Instruction::PrintFlush { <> },
+
+    "getlink" <result:Value> <index:Value> =>
+        Instruction::GetLink { <> },
 
     // operations
 
@@ -449,6 +453,7 @@ Symbol = {
     "format",
     "drawflush",
     "printflush",
+    "getlink",
     "set",
     "op",
     "select",

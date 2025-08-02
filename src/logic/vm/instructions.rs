@@ -128,6 +128,10 @@ impl Instruction for InstructionBuilder {
             ast::Instruction::PrintFlush { target } => Box::new(PrintFlush {
                 target: lvar(target),
             }),
+            ast::Instruction::GetLink { result, index } => Box::new(GetLink {
+                result: lvar(result),
+                index: lvar(index),
+            }),
 
             // operations
             ast::Instruction::Set { to, from } => Box::new(Set {
@@ -330,6 +334,21 @@ impl SimpleInstruction for PrintFlush {
     }
 }
 
+struct GetLink {
+    result: LVar,
+    index: LVar,
+}
+
+impl SimpleInstruction for GetLink {
+    fn execute(&self, state: &mut ProcessorState, _: &LogicVM) {
+        let result = match self.index.get(state).num_usize() {
+            Ok(index) => state.link(index).into(),
+            Err(_) => LValue::Null,
+        };
+        self.result.set(state, result);
+    }
+}
+
 // operations
 
 struct Set {
@@ -449,7 +468,7 @@ struct Lookup {
 
 impl SimpleInstruction for Lookup {
     fn execute(&self, state: &mut ProcessorState, _: &LogicVM) {
-        let id = self.id.get(state).num() as i32;
+        let id = self.id.get(state).numi();
 
         let result = match self.content_type {
             ContentType::Block => content::blocks::FROM_LOGIC_ID

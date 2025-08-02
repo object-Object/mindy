@@ -242,7 +242,9 @@ mod tests {
 
     use crate::{
         logic::vm::{
-            buildings::{HYPER_PROCESSOR, MEMORY_BANK, MEMORY_CELL, MESSAGE, MICRO_PROCESSOR},
+            buildings::{
+                HYPER_PROCESSOR, MEMORY_BANK, MEMORY_CELL, MESSAGE, MICRO_PROCESSOR, SWITCH,
+            },
             variables::{Content, LValue, LVar},
         },
         types::{Object, PackedPoint2, ProcessorConfig, ProcessorLinkConfig, Team, colors::COLORS},
@@ -763,6 +765,57 @@ mod tests {
         with_processor(&mut vm, (0, 0), |p| {
             assert_eq!(p.state.printbuffer, Vec::<u16>::new());
         });
+    }
+
+    #[test]
+    fn test_getlink() {
+        let mut builder = LogicVMBuilder::new();
+        builder.add_buildings(
+            [
+                Building::from_processor_config(
+                    HYPER_PROCESSOR,
+                    Point2 { x: 0, y: 0 },
+                    &ProcessorConfig {
+                        code: "
+                        getlink link_-1 -1
+                        getlink link_null null
+                        getlink link_0 0
+                        getlink link_1 1
+                        getlink link_2 2
+                        getlink link_3 3
+                        stop
+                        "
+                        .into(),
+                        links: vec![
+                            ProcessorLinkConfig::unnamed(3, 0),
+                            ProcessorLinkConfig::unnamed(4, 0),
+                            ProcessorLinkConfig::unnamed(5, 0),
+                        ],
+                    },
+                    &builder,
+                ),
+                Building::from_config(SWITCH, Point2 { x: 3, y: 0 }, &Object::Null, &builder),
+                Building::from_config(SWITCH, Point2 { x: 4, y: 0 }, &Object::Null, &builder),
+                Building::from_config(SWITCH, Point2 { x: 5, y: 0 }, &Object::Null, &builder),
+            ]
+            .map(|v| v.unwrap()),
+        );
+        let mut vm = builder.build().unwrap();
+
+        run(&mut vm, 1, true);
+
+        let state = take_processor(&mut vm, (0, 0)).state;
+        assert_variables(
+            &state,
+            map_iter! {
+                "link_-1": LValue::Null,
+                "link_null": LValue::Building(Point2 { x: 3, y: 0 }),
+                "link_0": LValue::Building(Point2 { x: 3, y: 0 }),
+                "link_1": LValue::Building(Point2 { x: 4, y: 0 }),
+                "link_2": LValue::Building(Point2 { x: 5, y: 0 }),
+                "link_3": LValue::Null,
+            },
+        );
     }
 
     #[test]

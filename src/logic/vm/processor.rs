@@ -27,7 +27,6 @@ const MAX_INSTRUCTION_SCALE: usize = 5;
 pub struct Processor {
     privileged: bool,
     instructions: Vec<Box<dyn Instruction>>,
-    links: Vec<ProcessorLink>,
     pub(super) state: ProcessorState,
 }
 
@@ -43,7 +42,7 @@ impl Processor {
         // TODO: this may produce different link names than mindustry in specific cases
         // ie. if a custom link name is specified for a building that would be built after this processor
         let mut taken_names = HashMap::new();
-        self.links.retain_mut(|link| {
+        self.state.links.retain_mut(|link| {
             // check if the other building exists
 
             let Some(other) = vm.building(link.position) else {
@@ -110,7 +109,11 @@ impl Processor {
         });
 
         // now that we know which links are valid, set up the per-processor constants
-        LVar::late_init_locals(&mut self.state.variables, building.position, &self.links);
+        LVar::late_init_locals(
+            &mut self.state.variables,
+            building.position,
+            &self.state.links,
+        );
 
         // finally, finish parsing the instructions
         // this must only be done after the link variables have been added
@@ -177,7 +180,9 @@ pub struct ProcessorState {
     /// True if we're currently at a `stop` instruction.
     stopped: bool,
     pub(super) wait_end_time: f64,
+
     pub(super) num_instructions: usize,
+    links: Vec<ProcessorLink>,
 
     pub(super) counter: usize,
     accumulator: usize,
@@ -242,6 +247,10 @@ impl ProcessorState {
 
     pub fn decode_printbuffer(&self) -> String {
         Self::decode_utf16(&self.printbuffer)
+    }
+
+    pub fn link(&self, index: usize) -> Option<Point2> {
+        self.links.get(index).map(|l| l.position)
     }
 }
 
@@ -338,12 +347,12 @@ impl ProcessorBuilder<'_> {
 
         Ok(Processor {
             privileged,
-            links,
             state: ProcessorState {
                 enabled,
                 stopped: false,
                 wait_end_time: -1.,
                 num_instructions,
+                links,
                 counter: 0,
                 accumulator: 0,
                 ipt,

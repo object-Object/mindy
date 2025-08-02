@@ -1,4 +1,4 @@
-use std::{cell::RefCell, collections::HashMap, rc::Rc};
+use std::{cell::RefCell, collections::HashMap, num::TryFromIntError, rc::Rc};
 
 use num_traits::AsPrimitive;
 use velcro::{hash_map_from, map_iter_from};
@@ -203,6 +203,14 @@ impl LValue {
             Self::Null => 0.,
             _ => 1.,
         }
+    }
+
+    pub fn numi(&self) -> i32 {
+        self.num() as i32
+    }
+
+    pub fn num_usize(&self) -> Result<usize, TryFromIntError> {
+        self.numi().try_into()
     }
 
     pub fn numf(&self) -> f32 {
