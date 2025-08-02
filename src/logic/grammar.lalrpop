@@ -18,6 +18,8 @@ match {
     "print",
     "printchar",
     "format",
+    "drawflush",
+    "printflush",
     "set",
     "op",
     "select",
@@ -193,6 +195,14 @@ Instruction: Instruction = {
 
     "format" <value:Value> =>
         Instruction::Format { <> },
+
+    // block control
+
+    "drawflush" <target:Value> =>
+        Instruction::DrawFlush { <> },
+
+    "printflush" <target:Value> =>
+        Instruction::PrintFlush { <> },
 
     // operations
 
@@ -437,6 +447,8 @@ Symbol = {
     "print",
     "printchar",
     "format",
+    "drawflush",
+    "printflush",
     "set",
     "op",
     "select",

@@ -32,6 +32,13 @@ pub enum Instruction {
     Format {
         value: Value,
     },
+    // block control
+    DrawFlush {
+        target: Value,
+    },
+    PrintFlush {
+        target: Value,
+    },
     // operations
     Set {
         to: Value,

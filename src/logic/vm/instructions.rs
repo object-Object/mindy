@@ -5,6 +5,7 @@ use noise::{NoiseFn, Simplex};
 
 use super::{
     LogicVM, VMLoadError, VMLoadResult,
+    buildings::BuildingData,
     processor::{MAX_TEXT_BUFFER, ProcessorState},
     variables::{Content, LValue, LVar, RAD_DEG},
 };
@@ -121,6 +122,12 @@ impl Instruction for InstructionBuilder {
             ast::Instruction::Print { value } => Box::new(Print { value: lvar(value) }),
             ast::Instruction::PrintChar { value } => Box::new(PrintChar { value: lvar(value) }),
             ast::Instruction::Format { value } => Box::new(Format { value: lvar(value) }),
+
+            // block control
+            ast::Instruction::DrawFlush { .. } => Box::new(Noop),
+            ast::Instruction::PrintFlush { target } => Box::new(PrintFlush {
+                target: lvar(target),
+            }),
 
             // operations
             ast::Instruction::Set { to, from } => Box::new(Set {
@@ -298,6 +305,28 @@ impl SimpleInstruction for Format {
             placeholder_index..placeholder_index + 3,
             ProcessorState::encode_utf16(&Print::to_string(&value, vm)),
         );
+    }
+}
+
+// block control
+
+struct PrintFlush {
+    target: LVar,
+}
+
+impl SimpleInstruction for PrintFlush {
+    fn execute(&self, state: &mut ProcessorState, vm: &LogicVM) {
+        if let LValue::Building(position) = self.target.get(state)
+            && let Some(target) = vm.building(position)
+            && let Ok(mut data) = target.data.try_borrow_mut()
+            && let BuildingData::Message(message_buffer) = &mut *data
+        {
+            if state.printbuffer.len() > MAX_TEXT_BUFFER {
+                state.printbuffer.drain(MAX_TEXT_BUFFER..);
+            }
+            std::mem::swap(&mut state.printbuffer, message_buffer);
+        }
+        state.printbuffer.clear();
     }
 }
 

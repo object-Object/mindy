@@ -242,7 +242,7 @@ mod tests {
 
     use crate::{
         logic::vm::{
-            buildings::{HYPER_PROCESSOR, MEMORY_BANK, MEMORY_CELL, MICRO_PROCESSOR},
+            buildings::{HYPER_PROCESSOR, MEMORY_BANK, MEMORY_CELL, MESSAGE, MICRO_PROCESSOR},
             variables::{Content, LValue, LVar},
         },
         types::{Object, PackedPoint2, ProcessorConfig, ProcessorLinkConfig, Team, colors::COLORS},
@@ -629,6 +629,140 @@ mod tests {
                 "bank2": Some(LValue::Building(Point2 { x: 11, y: 3 })),
             },
         );
+    }
+
+    #[test]
+    fn test_printflush() {
+        let mut builder = LogicVMBuilder::new();
+        builder.add_buildings(
+            [
+                Building::from_processor_config(
+                    MICRO_PROCESSOR,
+                    Point2 { x: 0, y: 0 },
+                    &ProcessorConfig {
+                        code: format!(
+                            r#"
+                            print "bar"
+                            printflush message1
+
+                            print "baz"
+                            printflush message1
+
+                            print "{max_length}"
+                            printflush message1
+
+                            printflush message1
+                            noop
+
+                            print "{too_long}"
+                            printflush message1
+
+                            print "discarded"
+                            printflush null
+
+                            print "discarded"
+                            printflush @this
+
+                            stop
+                            "#,
+                            max_length = "a".repeat(400),
+                            too_long = "b".repeat(401),
+                        ),
+                        links: vec![ProcessorLinkConfig::unnamed(1, 0)],
+                    },
+                    &builder,
+                ),
+                Building::from_config(
+                    MESSAGE,
+                    Point2 { x: 1, y: 0 },
+                    &Object::String(Some("foo".into())),
+                    &builder,
+                ),
+            ]
+            .map(|v| v.unwrap()),
+        );
+        let mut vm = builder.build().unwrap();
+
+        fn with_message(vm: &LogicVM, f: impl FnOnce(&[u16])) {
+            let data = vm.building((1, 0).into()).unwrap().data.borrow();
+            let BuildingData::Message(buf) = &*data else {
+                panic!("expected Message, got {}", <&str>::from(&*data));
+            };
+            f(buf);
+        }
+
+        // initial state
+        with_message(&vm, |buf| {
+            assert_eq!(buf, b"foo".iter().map(|&c| c as u16).collect_vec());
+            assert_eq!(buf, "foo".encode_utf16().collect_vec());
+        });
+
+        // print "bar"
+        vm.do_tick(Duration::ZERO);
+        with_message(&vm, |buf| {
+            assert_eq!(buf, "bar".encode_utf16().collect_vec());
+        });
+        with_processor(&mut vm, (0, 0), |p| {
+            assert_eq!(p.state.printbuffer, Vec::<u16>::new());
+        });
+
+        // print "baz"
+        vm.do_tick(Duration::ZERO);
+        with_message(&vm, |buf| {
+            assert_eq!(buf, "baz".encode_utf16().collect_vec());
+        });
+        with_processor(&mut vm, (0, 0), |p| {
+            assert_eq!(p.state.printbuffer, Vec::<u16>::new());
+        });
+
+        // print "{max_length}"
+        vm.do_tick(Duration::ZERO);
+        with_message(&vm, |buf| {
+            assert_eq!(buf.len(), 400);
+            assert_eq!(buf[0], b'a' as u16);
+        });
+        with_processor(&mut vm, (0, 0), |p| {
+            assert_eq!(p.state.printbuffer, Vec::<u16>::new());
+        });
+
+        // empty printflush
+        vm.do_tick(Duration::ZERO);
+        with_message(&vm, |buf| {
+            assert_eq!(buf, Vec::<u16>::new());
+        });
+        with_processor(&mut vm, (0, 0), |p| {
+            assert_eq!(p.state.printbuffer, Vec::<u16>::new());
+        });
+
+        // print "{too_long}"
+        vm.do_tick(Duration::ZERO);
+        with_message(&vm, |buf| {
+            assert_eq!(buf.len(), 400);
+            assert_eq!(buf[0], b'b' as u16);
+        });
+        with_processor(&mut vm, (0, 0), |p| {
+            assert_eq!(p.state.printbuffer, Vec::<u16>::new());
+        });
+
+        // printflush null
+        vm.do_tick(Duration::ZERO);
+        with_message(&vm, |buf| {
+            assert_eq!(buf.len(), 400);
+            assert_eq!(buf[0], b'b' as u16);
+        });
+        with_processor(&mut vm, (0, 0), |p| {
+            assert_eq!(p.state.printbuffer, Vec::<u16>::new());
+        });
+
+        // printflush @this
+        vm.do_tick(Duration::ZERO);
+        with_message(&vm, |buf| {
+            assert_eq!(buf.len(), 400);
+            assert_eq!(buf[0], b'b' as u16);
+        });
+        with_processor(&mut vm, (0, 0), |p| {
+            assert_eq!(p.state.printbuffer, Vec::<u16>::new());
+        });
     }
 
     #[test]
@@ -1667,5 +1801,34 @@ mod tests {
             LValue::Team(Team::Unknown(255))
         );
         assert_eq!(state.variables["team4"].get(&state), LValue::Null);
+    }
+
+    #[test]
+    fn test_draw() {
+        let mut vm = single_processor_vm(
+            HYPER_PROCESSOR,
+            "
+            draw clear 0 0 0
+            draw color 0 0 0 255
+            draw col 0
+            draw stroke 0
+            draw line 0 0 0 255
+            draw rect 0 0 0 255
+            draw lineRect 0 0 0 255
+            draw poly 0 0 0 255 0
+            draw linePoly 0 0 0 255 0
+            draw triangle 0 0 0 255 0 0
+            draw image 0 0 @copper 32 0
+            draw print 0 0 @bottomLeft
+            draw translate 0 0
+            draw scale 0 0
+            draw rotate 0
+            draw reset
+
+            drawflush display1
+            stop
+            ",
+        );
+        run(&mut vm, 1, true);
     }
 }

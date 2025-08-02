@@ -31,6 +31,7 @@ impl ProcessorConfig {
     }
 }
 
+/// A relative processor link.
 #[binrw]
 #[brw(big)]
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -38,4 +39,15 @@ pub struct ProcessorLinkConfig {
     pub name: JavaString,
     pub x: i16,
     pub y: i16,
+}
+
+impl ProcessorLinkConfig {
+    /// Create a relative link without assigning a custom name.
+    pub fn unnamed(x: i16, y: i16) -> Self {
+        Self {
+            name: "".into(),
+            x,
+            y,
+        }
+    }
 }
