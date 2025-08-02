@@ -179,7 +179,11 @@ impl LogicVMBuilder {
 
             for x in position.x..position.x + size {
                 for y in position.y..position.y + size {
-                    vm.buildings_map.insert(Point2 { x, y }, i);
+                    let position = Point2 { x, y };
+                    if vm.buildings_map.contains_key(&position) {
+                        return Err(VMLoadError::Overlap(position));
+                    }
+                    vm.buildings_map.insert(position, i);
                 }
             }
         }
@@ -815,6 +819,32 @@ mod tests {
                 "link_2": LValue::Building(Point2 { x: 5, y: 0 }),
                 "link_3": LValue::Null,
             },
+        );
+    }
+
+    #[test]
+    fn test_overlap() {
+        let mut builder = LogicVMBuilder::new();
+        builder.add_buildings(
+            [
+                Building::from_processor_config(
+                    HYPER_PROCESSOR,
+                    Point2 { x: 0, y: 0 },
+                    &ProcessorConfig::from_code(""),
+                    &builder,
+                ),
+                Building::from_config(SWITCH, Point2 { x: 2, y: 2 }, &Object::Null, &builder),
+            ]
+            .map(|v| v.unwrap()),
+        );
+
+        let Err(err) = builder.build() else {
+            panic!("did not return error");
+        };
+
+        assert!(
+            matches!(err, VMLoadError::Overlap(Point2 { x: 2, y: 2 })),
+            "{err:?}"
         );
     }
 
