@@ -114,6 +114,7 @@ impl Building {
                     running_processors: Rc::clone(&vm.running_processors),
                     time: Rc::clone(&vm.time),
                     globals: &vm.globals,
+                    position,
                     config,
                 }
                 .build()?,
@@ -126,6 +127,7 @@ impl Building {
                     running_processors: Rc::clone(&vm.running_processors),
                     time: Rc::clone(&vm.time),
                     globals: &vm.globals,
+                    position,
                     config,
                 }
                 .build()?,
@@ -138,6 +140,7 @@ impl Building {
                     running_processors: Rc::clone(&vm.running_processors),
                     time: Rc::clone(&vm.time),
                     globals: &vm.globals,
+                    position,
                     config,
                 }
                 .build()?,
@@ -150,6 +153,7 @@ impl Building {
                     running_processors: Rc::clone(&vm.running_processors),
                     time: Rc::clone(&vm.time),
                     globals: &vm.globals,
+                    position,
                     config,
                 }
                 .build()?,

@@ -113,10 +113,14 @@ impl LVar {
         globals
     }
 
-    pub fn create_locals() -> HashMap<String, LVar> {
+    pub fn create_locals(position: Point2) -> HashMap<String, LVar> {
         hash_map_from! {
             // we want other processors to be able to write @counter as if it's a local
             "@counter": Self::Counter,
+
+            "@this": constant(LValue::Building(position)),
+            "@thisx": constant(position.x),
+            "@thisy": constant(position.y),
         }
     }
 

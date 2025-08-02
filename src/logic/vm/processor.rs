@@ -9,7 +9,7 @@ use super::{
 };
 use crate::{
     logic::{LogicParser, ast},
-    types::{Object, ProcessorConfig},
+    types::{Object, Point2, ProcessorConfig},
 };
 
 pub(super) const MAX_TEXT_BUFFER: usize = 400;
@@ -140,6 +140,7 @@ pub struct ProcessorBuilder<'a> {
     pub running_processors: Rc<Cell<usize>>,
     pub time: Rc<Cell<f64>>,
     pub globals: &'a HashMap<String, LVar>,
+    pub position: Point2,
     pub config: &'a ProcessorConfig,
 }
 
@@ -166,6 +167,7 @@ impl ProcessorBuilder<'_> {
             running_processors,
             time,
             globals,
+            position,
             config,
         } = self;
 
@@ -188,7 +190,7 @@ impl ProcessorBuilder<'_> {
             }
         }
 
-        let mut variables = LVar::create_locals();
+        let mut variables = LVar::create_locals(position);
 
         let mut instructions = Vec::with_capacity(num_instructions);
         for statement in code.into_iter() {
