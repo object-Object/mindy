@@ -539,10 +539,10 @@ mod tests {
         assert_variables(
             &state,
             map_iter! {
-                "cell1": Some(LValue::Building(Point2 { x: 0, y: 10 })),
-                "cell2": Some(LValue::Building(Point2 { x: 7, y: 7 })),
-                "cell3": Some(LValue::Building(Point2 { x: 9, y: 5 })),
-                "bank1": Some(LValue::Building(Point2 { x: 10, y: 2 })),
+                "cell1": LValue::Building(Point2 { x: 0, y: 10 }),
+                "cell2": LValue::Building(Point2 { x: 7, y: 7 }),
+                "cell3": LValue::Building(Point2 { x: 9, y: 5 }),
+                "bank1": LValue::Building(Point2 { x: 10, y: 2 }),
             },
         );
     }
