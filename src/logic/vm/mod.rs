@@ -7,7 +7,7 @@ mod variables;
 
 use std::{
     borrow::Cow,
-    cell::{Cell, RefCell},
+    cell::Cell,
     collections::HashMap,
     rc::Rc,
     time::{Duration, Instant},
@@ -25,8 +25,10 @@ const MILLIS_PER_SEC: u64 = 1_000;
 const NANOS_PER_MILLI: u32 = 1_000_000;
 
 pub struct LogicVM<'a> {
-    buildings: HashMap<Point2, Rc<RefCell<Building>>>,
-    processors: Vec<Rc<RefCell<Building>>>,
+    /// Sorted with all processors first, then all other buildings.
+    buildings: Vec<Building>,
+    buildings_map: HashMap<Point2, usize>,
+    total_processors: usize,
     running_processors: Rc<Cell<usize>>,
     time: Rc<Cell<f64>>,
     globals: Cow<'a, HashMap<String, LVar>>,
@@ -39,8 +41,9 @@ impl<'a> LogicVM<'a> {
 
     pub fn new_with_globals(globals: Cow<'a, HashMap<String, LVar>>) -> Self {
         Self {
-            buildings: HashMap::new(),
-            processors: Vec::new(),
+            buildings: Vec::new(),
+            buildings_map: HashMap::new(),
+            total_processors: 0,
             running_processors: Rc::new(Cell::new(0)),
             time: Rc::new(Cell::new(0.)),
             globals,
@@ -57,41 +60,42 @@ impl<'a> LogicVM<'a> {
         Ok(vm)
     }
 
-    pub fn add_building(&mut self, building: Building) -> VMLoadResult<()> {
+    pub fn add_building(&mut self, building: Building) {
         let position = building.position;
         let size = building.block.size;
 
-        let building = Rc::new(RefCell::new(building));
-
-        for x in position.x..position.x + size {
-            for y in position.y..position.y + size {
-                self.buildings.insert(Point2 { x, y }, building.clone());
-            }
-        }
-
-        if let BuildingData::Processor(processor) = &building.borrow().data {
-            self.processors.push(building.clone());
+        let index = if let BuildingData::Processor(processor) = &*building.data.borrow() {
             if processor.state.enabled() {
                 self.running_processors.update(|n| n + 1);
             }
-        }
+            self.total_processors += 1;
+            self.total_processors - 1
+        } else {
+            self.buildings.len()
+        };
 
-        Ok(())
+        self.buildings.insert(index, building);
+
+        for x in position.x..position.x + size {
+            for y in position.y..position.y + size {
+                self.buildings_map.insert(Point2 { x, y }, index);
+            }
+        }
     }
 
-    pub fn add_buildings<T>(&mut self, buildings: T) -> VMLoadResult<()>
+    pub fn add_buildings<T>(&mut self, buildings: T)
     where
         T: IntoIterator<Item = Building>,
     {
         for building in buildings.into_iter() {
-            self.add_building(building)?;
+            self.add_building(building);
         }
-        Ok(())
     }
 
     pub fn add_schematic_tile(&mut self, tile: &SchematicTile) -> VMLoadResult<()> {
         let building = Building::from_schematic_tile(tile, self)?;
-        self.add_building(building)
+        self.add_building(building);
+        Ok(())
     }
 
     pub fn add_schematic_tiles(&mut self, tiles: &[SchematicTile]) -> VMLoadResult<()> {
@@ -99,6 +103,12 @@ impl<'a> LogicVM<'a> {
             self.add_schematic_tile(tile)?;
         }
         Ok(())
+    }
+
+    pub fn building(&self, position: Point2) -> Option<&Building> {
+        self.buildings_map
+            .get(&position)
+            .map(|&i| &self.buildings[i])
     }
 
     /// Run the simulation until all processors halt, or until a number of ticks are finished.
@@ -134,10 +144,10 @@ impl<'a> LogicVM<'a> {
         let time = self.time.get() + duration_millis_f64(delta).max(0.);
         self.time.set(time);
 
-        for processor in &self.processors {
+        for processor in self.buildings.iter().take(self.total_processors) {
             processor
-                .borrow_mut()
                 .data
+                .borrow_mut()
                 .unwrap_processor_mut()
                 .do_tick(self, time);
         }
@@ -189,7 +199,7 @@ mod tests {
             buildings::{HYPER_PROCESSOR, MICRO_PROCESSOR},
             variables::{Content, LValue, LVar},
         },
-        types::{Object, PackedPoint2, ProcessorConfig, Team, colors::COLORS, content},
+        types::{Object, PackedPoint2, ProcessorConfig, Team, colors::COLORS},
     };
 
     use super::{buildings::WORLD_PROCESSOR, processor::Processor, *};
@@ -197,15 +207,14 @@ mod tests {
     fn single_processor_vm<'a>(name: &str, code: &str) -> LogicVM<'a> {
         let mut vm = LogicVM::new();
         vm.add_building(
-            Building::new_processor(
+            Building::from_processor_config(
                 name,
                 Point2::new(0, 0),
                 &ProcessorConfig::from_code(code),
                 &vm,
             )
             .unwrap(),
-        )
-        .unwrap();
+        );
         vm
     }
 
@@ -216,15 +225,14 @@ mod tests {
     ) -> LogicVM<'a> {
         let mut vm = LogicVM::new_with_globals(Cow::Borrowed(globals));
         vm.add_building(
-            Building::new_processor(
+            Building::from_processor_config(
                 name,
                 Point2::new(0, 0),
                 &ProcessorConfig::from_code(code),
                 &vm,
             )
             .unwrap(),
-        )
-        .unwrap();
+        );
         vm
     }
 
@@ -239,19 +247,15 @@ mod tests {
     }
 
     fn with_processor(vm: &mut LogicVM, idx: usize, f: impl FnOnce(&mut Processor)) {
-        f(vm.processors[idx].borrow_mut().data.unwrap_processor_mut())
+        f(vm.buildings[idx].data.borrow_mut().unwrap_processor_mut())
     }
 
     fn take_processor(vm: &mut LogicVM, idx: usize) -> Processor {
-        vm.processors[idx]
-            .replace(Building {
-                position: Point2::new(0, 0),
-                block: &content::blocks::VALUES[0],
-                data: BuildingData::Unknown {
-                    config: Object::Null,
-                },
-            })
+        vm.buildings[idx]
             .data
+            .replace(BuildingData::Unknown {
+                config: Object::Null,
+            })
             .into_processor()
     }
 

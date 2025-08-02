@@ -192,7 +192,7 @@ struct Print {
 }
 
 impl Print {
-    fn to_string(value: &LValue) -> Cow<'_, str> {
+    fn to_string<'a>(value: &'a LValue, vm: &LogicVM) -> Cow<'a, str> {
         match value {
             LValue::Null => Cow::from("null"),
             LValue::Number(n) => {
@@ -206,19 +206,22 @@ impl Print {
             LValue::String(s) => Cow::Borrowed(s),
             LValue::Content(content) => Cow::Borrowed(content.name()),
             LValue::Team(team) => team.name(),
-            LValue::Building { block, .. } => Cow::Borrowed(&block.name),
+            LValue::Building(position) => vm
+                .building(*position)
+                .map(|b| Cow::Borrowed(b.block.name.as_str()))
+                .unwrap_or(Cow::from("null")),
         }
     }
 }
 
 impl SimpleInstruction for Print {
-    fn execute(&self, state: &mut ProcessorState, _: &LogicVM) {
+    fn execute(&self, state: &mut ProcessorState, vm: &LogicVM) {
         if state.printbuffer.len() >= MAX_TEXT_BUFFER {
             return;
         }
 
         let value = self.value.get(state);
-        state.append_printbuffer(&Print::to_string(&value));
+        state.append_printbuffer(&Print::to_string(&value, vm));
     }
 }
 
@@ -245,7 +248,7 @@ struct Format {
 }
 
 impl SimpleInstruction for Format {
-    fn execute(&self, state: &mut ProcessorState, _: &LogicVM) {
+    fn execute(&self, state: &mut ProcessorState, vm: &LogicVM) {
         if state.printbuffer.len() >= MAX_TEXT_BUFFER {
             return;
         }
@@ -273,7 +276,7 @@ impl SimpleInstruction for Format {
         let value = self.value.get(state);
         state.printbuffer.splice(
             placeholder_index..placeholder_index + 3,
-            ProcessorState::encode_utf16(&Print::to_string(&value)),
+            ProcessorState::encode_utf16(&Print::to_string(&value, vm)),
         );
     }
 }

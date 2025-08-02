@@ -1,4 +1,4 @@
-use std::rc::Rc;
+use std::{cell::RefCell, rc::Rc};
 
 use strum_macros::IntoStaticStr;
 
@@ -32,14 +32,31 @@ const MESSAGE_MAX_LINES: usize = 24;
 pub struct Building {
     pub block: &'static Block,
     pub position: Point2,
-    pub data: BuildingData,
+    pub data: Rc<RefCell<BuildingData>>,
 }
 
 impl Building {
-    pub fn new(name: &str, position: Point2, config: &Object, vm: &LogicVM) -> VMLoadResult<Self> {
+    pub fn new(name: &str, position: Point2, data: BuildingData) -> VMLoadResult<Self> {
+        let block = *content::blocks::FROM_NAME
+            .get(name)
+            .ok_or_else(|| VMLoadError::UnknownBlockType(name.to_string()))?;
+
+        Ok(Self {
+            block,
+            position,
+            data: Rc::new(RefCell::new(data)),
+        })
+    }
+
+    pub fn from_config(
+        name: &str,
+        position: Point2,
+        config: &Object,
+        vm: &LogicVM,
+    ) -> VMLoadResult<Self> {
         let data = match name {
             MICRO_PROCESSOR | LOGIC_PROCESSOR | HYPER_PROCESSOR | WORLD_PROCESSOR => {
-                return Self::new_processor(
+                return Self::from_processor_config(
                     name,
                     position,
                     &ProcessorBuilder::parse_config(config)?,
@@ -79,10 +96,10 @@ impl Building {
             },
         };
 
-        Self::from_data(name, position, data)
+        Self::new(name, position, data)
     }
 
-    pub fn new_processor(
+    pub fn from_processor_config(
         name: &str,
         position: Point2,
         config: &ProcessorConfig,
@@ -145,7 +162,7 @@ impl Building {
             }
         };
 
-        Self::from_data(name, position, data)
+        Self::new(name, position, data)
     }
 
     pub fn from_schematic_tile(
@@ -157,19 +174,7 @@ impl Building {
         }: &SchematicTile,
         vm: &LogicVM,
     ) -> VMLoadResult<Self> {
-        Self::new(name, (*position).into(), config, vm)
-    }
-
-    pub fn from_data(name: &str, position: Point2, data: BuildingData) -> VMLoadResult<Self> {
-        let block = *content::blocks::FROM_NAME
-            .get(name)
-            .ok_or_else(|| VMLoadError::UnknownBlockType(name.to_string()))?;
-
-        Ok(Self {
-            block,
-            position,
-            data,
-        })
+        Self::from_config(name, (*position).into(), config, vm)
     }
 }
 

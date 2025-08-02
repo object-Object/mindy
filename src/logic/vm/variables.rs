@@ -179,10 +179,7 @@ pub enum LValue {
     String(Rc<str>),
     Content(Content),
     Team(Team),
-    Building {
-        block: &'static Block,
-        position: Point2,
-    },
+    Building(Point2),
 }
 
 impl LValue {
