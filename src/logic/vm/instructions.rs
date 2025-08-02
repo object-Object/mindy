@@ -1,4 +1,4 @@
-use std::{borrow::Cow, collections::HashMap};
+use std::{borrow::Cow, collections::HashMap, rc::Rc};
 
 use lazy_static::lazy_static;
 use noise::{NoiseFn, Simplex};
@@ -28,140 +28,6 @@ lazy_static! {
     static ref SIMPLEX: Simplex = Simplex::new(0);
 }
 
-pub fn parse_instruction(
-    instruction: ast::Instruction,
-    variables: &mut HashMap<String, LVar>,
-    globals: &HashMap<String, LVar>,
-    labels: &HashMap<String, usize>,
-    privileged: bool,
-    num_instructions: usize,
-) -> VMLoadResult<Box<dyn Instruction>> {
-    // helpers
-
-    let mut lvar = |value| match value {
-        ast::Value::Variable(name) => {
-            if let Some(var) = globals.get(&name).or_else(|| variables.get(&name)) {
-                var.clone()
-            } else {
-                let var = LVar::new_variable();
-                variables.insert(name, LVar::clone(&var));
-                var
-            }
-        }
-        ast::Value::String(value) => LVar::Constant(LValue::String(value.into())),
-        ast::Value::Number(value) => LVar::Constant(value.into()),
-        ast::Value::None => LVar::Constant(LValue::Null),
-    };
-
-    let jump_target = |value| match value {
-        ast::Value::Variable(name) => labels
-            .get(&name)
-            .copied()
-            .ok_or_else(|| VMLoadError::BadProcessorCode(format!("label not found: {name}"))),
-
-        ast::Value::Number(address) => {
-            let counter = address as usize;
-            if (0..num_instructions).contains(&counter) {
-                Ok(counter)
-            } else {
-                Err(VMLoadError::BadProcessorCode(format!(
-                    "jump out of range: {}",
-                    address.trunc()
-                )))
-            }
-        }
-
-        _ => unreachable!(),
-    };
-
-    // map AST instructions to handlers
-
-    Ok(match instruction {
-        // input/output
-        // TODO: implement draw?
-        ast::Instruction::Draw { .. } => Box::new(Noop),
-        ast::Instruction::Print { value } => Box::new(Print { value: lvar(value) }),
-        ast::Instruction::PrintChar { value } => Box::new(PrintChar { value: lvar(value) }),
-        ast::Instruction::Format { value } => Box::new(Format { value: lvar(value) }),
-
-        // operations
-        ast::Instruction::Set { to, from } => Box::new(Set {
-            to: lvar(to),
-            from: lvar(from),
-        }),
-        ast::Instruction::Op { op, result, x, y } => Box::new(Op {
-            op,
-            result: lvar(result),
-            x: lvar(x),
-            y: lvar(y),
-        }),
-        ast::Instruction::Select {
-            result,
-            op,
-            x,
-            y,
-            if_true,
-            if_false,
-        } => Box::new(Select {
-            result: lvar(result),
-            op,
-            x: lvar(x),
-            y: lvar(y),
-            if_true: lvar(if_true),
-            if_false: lvar(if_false),
-        }),
-        ast::Instruction::Lookup {
-            content_type,
-            result,
-            id,
-        } => Box::new(Lookup {
-            content_type,
-            result: lvar(result),
-            id: lvar(id),
-        }),
-        ast::Instruction::PackColor { result, r, g, b, a } => Box::new(PackColor {
-            result: lvar(result),
-            r: lvar(r),
-            g: lvar(g),
-            b: lvar(b),
-            a: lvar(a),
-        }),
-        ast::Instruction::UnpackColor { r, g, b, a, value } => Box::new(UnpackColor {
-            r: lvar(r),
-            g: lvar(g),
-            b: lvar(b),
-            a: lvar(a),
-            value: lvar(value),
-        }),
-
-        // flow control
-        ast::Instruction::Noop => Box::new(Noop),
-        ast::Instruction::Wait { value } => Box::new(Wait { value: lvar(value) }),
-        ast::Instruction::Stop => Box::new(Stop),
-        ast::Instruction::End => Box::new(End),
-        ast::Instruction::Jump { target, op, x, y } => Box::new(Jump {
-            target: jump_target(target)?,
-            op,
-            x: lvar(x),
-            y: lvar(y),
-        }),
-
-        // unknown
-        // do this here so it isn't ignored for unprivileged procs
-        ast::Instruction::Unknown(name) => {
-            return Err(VMLoadError::BadProcessorCode(format!(
-                "unknown instruction: {name}"
-            )));
-        }
-
-        // convert privileged instructions to noops if the proc is unprivileged
-        _ if !privileged => Box::new(Noop),
-
-        // privileged
-        ast::Instruction::SetRate { value } => Box::new(SetRate { value: lvar(value) }),
-    })
-}
-
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum InstructionResult {
     Ok,
@@ -169,6 +35,16 @@ pub enum InstructionResult {
 }
 
 pub trait Instruction {
+    fn late_init(
+        self: Box<Self>,
+        _variables: &mut HashMap<String, LVar>,
+        _globals: &HashMap<String, LVar>,
+        _privileged: bool,
+        _num_instructions: usize,
+    ) -> VMLoadResult<Box<dyn Instruction>> {
+        Err(VMLoadError::AlreadyInitialized)
+    }
+
     /// Returns true if more instructions can be executed,
     /// or false if the processor should yield for the rest of this tick.
     fn execute(&self, state: &mut ProcessorState, vm: &LogicVM) -> InstructionResult;
@@ -182,6 +58,150 @@ impl<T: SimpleInstruction> Instruction for T {
     fn execute(&self, state: &mut ProcessorState, vm: &LogicVM) -> InstructionResult {
         self.execute(state, vm);
         InstructionResult::Ok
+    }
+}
+
+pub(super) struct InstructionBuilder {
+    pub instruction: ast::Instruction,
+    pub labels: Rc<HashMap<String, usize>>,
+}
+
+impl Instruction for InstructionBuilder {
+    fn late_init(
+        self: Box<Self>,
+        variables: &mut HashMap<String, LVar>,
+        globals: &HashMap<String, LVar>,
+        privileged: bool,
+        num_instructions: usize,
+    ) -> VMLoadResult<Box<dyn Instruction>> {
+        // helpers
+
+        let mut lvar = |value| match value {
+            ast::Value::Variable(name) => {
+                if let Some(var) = globals.get(&name).or_else(|| variables.get(&name)) {
+                    var.clone()
+                } else {
+                    let var = LVar::new_variable();
+                    variables.insert(name, LVar::clone(&var));
+                    var
+                }
+            }
+            ast::Value::String(value) => LVar::Constant(LValue::String(value.into())),
+            ast::Value::Number(value) => LVar::Constant(value.into()),
+            ast::Value::None => LVar::Constant(LValue::Null),
+        };
+
+        let jump_target =
+            |value| match value {
+                ast::Value::Variable(name) => self.labels.get(&name).copied().ok_or_else(|| {
+                    VMLoadError::BadProcessorCode(format!("label not found: {name}"))
+                }),
+
+                ast::Value::Number(address) => {
+                    let counter = address as usize;
+                    if (0..num_instructions).contains(&counter) {
+                        Ok(counter)
+                    } else {
+                        Err(VMLoadError::BadProcessorCode(format!(
+                            "jump out of range: {}",
+                            address.trunc()
+                        )))
+                    }
+                }
+
+                _ => unreachable!(),
+            };
+
+        // map AST instructions to handlers
+
+        Ok(match self.instruction {
+            // input/output
+            // TODO: implement draw?
+            ast::Instruction::Draw { .. } => Box::new(Noop),
+            ast::Instruction::Print { value } => Box::new(Print { value: lvar(value) }),
+            ast::Instruction::PrintChar { value } => Box::new(PrintChar { value: lvar(value) }),
+            ast::Instruction::Format { value } => Box::new(Format { value: lvar(value) }),
+
+            // operations
+            ast::Instruction::Set { to, from } => Box::new(Set {
+                to: lvar(to),
+                from: lvar(from),
+            }),
+            ast::Instruction::Op { op, result, x, y } => Box::new(Op {
+                op,
+                result: lvar(result),
+                x: lvar(x),
+                y: lvar(y),
+            }),
+            ast::Instruction::Select {
+                result,
+                op,
+                x,
+                y,
+                if_true,
+                if_false,
+            } => Box::new(Select {
+                result: lvar(result),
+                op,
+                x: lvar(x),
+                y: lvar(y),
+                if_true: lvar(if_true),
+                if_false: lvar(if_false),
+            }),
+            ast::Instruction::Lookup {
+                content_type,
+                result,
+                id,
+            } => Box::new(Lookup {
+                content_type,
+                result: lvar(result),
+                id: lvar(id),
+            }),
+            ast::Instruction::PackColor { result, r, g, b, a } => Box::new(PackColor {
+                result: lvar(result),
+                r: lvar(r),
+                g: lvar(g),
+                b: lvar(b),
+                a: lvar(a),
+            }),
+            ast::Instruction::UnpackColor { r, g, b, a, value } => Box::new(UnpackColor {
+                r: lvar(r),
+                g: lvar(g),
+                b: lvar(b),
+                a: lvar(a),
+                value: lvar(value),
+            }),
+
+            // flow control
+            ast::Instruction::Noop => Box::new(Noop),
+            ast::Instruction::Wait { value } => Box::new(Wait { value: lvar(value) }),
+            ast::Instruction::Stop => Box::new(Stop),
+            ast::Instruction::End => Box::new(End),
+            ast::Instruction::Jump { target, op, x, y } => Box::new(Jump {
+                target: jump_target(target)?,
+                op,
+                x: lvar(x),
+                y: lvar(y),
+            }),
+
+            // unknown
+            // do this here so it isn't ignored for unprivileged procs
+            ast::Instruction::Unknown(name) => {
+                return Err(VMLoadError::BadProcessorCode(format!(
+                    "unknown instruction: {name}"
+                )));
+            }
+
+            // convert privileged instructions to noops if the proc is unprivileged
+            _ if !privileged => Box::new(Noop),
+
+            // privileged
+            ast::Instruction::SetRate { value } => Box::new(SetRate { value: lvar(value) }),
+        })
+    }
+
+    fn execute(&self, _: &mut ProcessorState, _: &LogicVM) -> InstructionResult {
+        unreachable!("InstructionBuilder should always be replaced during late init")
     }
 }
 
@@ -475,7 +495,7 @@ impl SimpleInstruction for UnpackColor {
 
 // flow control
 
-struct Noop;
+pub(super) struct Noop;
 
 impl SimpleInstruction for Noop {
     fn execute(&self, _: &mut ProcessorState, _: &LogicVM) {}

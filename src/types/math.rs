@@ -25,6 +25,12 @@ impl From<PackedPoint2> for Point2 {
     }
 }
 
+impl From<(i32, i32)> for Point2 {
+    fn from((x, y): (i32, i32)) -> Self {
+        Self { x, y }
+    }
+}
+
 impl Display for Point2 {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "({}, {})", self.x, self.y)

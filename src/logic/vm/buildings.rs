@@ -3,7 +3,7 @@ use std::{cell::RefCell, rc::Rc};
 use strum_macros::IntoStaticStr;
 
 use super::{
-    LogicVM, VMLoadError, VMLoadResult,
+    LogicVMBuilder, VMLoadError, VMLoadResult,
     processor::{Processor, ProcessorBuilder, ProcessorState},
 };
 use crate::types::{
@@ -52,7 +52,7 @@ impl Building {
         name: &str,
         position: Point2,
         config: &Object,
-        vm: &LogicVM,
+        builder: &LogicVMBuilder,
     ) -> VMLoadResult<Self> {
         let data = match name {
             MICRO_PROCESSOR | LOGIC_PROCESSOR | HYPER_PROCESSOR | WORLD_PROCESSOR => {
@@ -60,7 +60,7 @@ impl Building {
                     name,
                     position,
                     &ProcessorBuilder::parse_config(config)?,
-                    vm,
+                    builder,
                 );
             }
 
@@ -103,17 +103,15 @@ impl Building {
         name: &str,
         position: Point2,
         config: &ProcessorConfig,
-        vm: &LogicVM,
+        builder: &LogicVMBuilder,
     ) -> VMLoadResult<Self> {
         let data = match name {
             MICRO_PROCESSOR => BuildingData::Processor(
                 ProcessorBuilder {
                     ipt: 2,
-                    range: 8. * 10.,
                     privileged: false,
-                    running_processors: Rc::clone(&vm.running_processors),
-                    time: Rc::clone(&vm.time),
-                    globals: &vm.globals,
+                    running_processors: Rc::clone(&builder.vm.running_processors),
+                    time: Rc::clone(&builder.vm.time),
                     position,
                     config,
                 }
@@ -122,11 +120,9 @@ impl Building {
             LOGIC_PROCESSOR => BuildingData::Processor(
                 ProcessorBuilder {
                     ipt: 8,
-                    range: 8. * 22.,
                     privileged: false,
-                    running_processors: Rc::clone(&vm.running_processors),
-                    time: Rc::clone(&vm.time),
-                    globals: &vm.globals,
+                    running_processors: Rc::clone(&builder.vm.running_processors),
+                    time: Rc::clone(&builder.vm.time),
                     position,
                     config,
                 }
@@ -135,11 +131,9 @@ impl Building {
             HYPER_PROCESSOR => BuildingData::Processor(
                 ProcessorBuilder {
                     ipt: 25,
-                    range: 8. * 42.,
                     privileged: false,
-                    running_processors: Rc::clone(&vm.running_processors),
-                    time: Rc::clone(&vm.time),
-                    globals: &vm.globals,
+                    running_processors: Rc::clone(&builder.vm.running_processors),
+                    time: Rc::clone(&builder.vm.time),
                     position,
                     config,
                 }
@@ -148,11 +142,9 @@ impl Building {
             WORLD_PROCESSOR => BuildingData::Processor(
                 ProcessorBuilder {
                     ipt: 8,
-                    range: f32::MAX,
                     privileged: true,
-                    running_processors: Rc::clone(&vm.running_processors),
-                    time: Rc::clone(&vm.time),
-                    globals: &vm.globals,
+                    running_processors: Rc::clone(&builder.vm.running_processors),
+                    time: Rc::clone(&builder.vm.time),
                     position,
                     config,
                 }
@@ -176,9 +168,9 @@ impl Building {
             config,
             ..
         }: &SchematicTile,
-        vm: &LogicVM,
+        builder: &LogicVMBuilder,
     ) -> VMLoadResult<Self> {
-        Self::from_config(name, (*position).into(), config, vm)
+        Self::from_config(name, (*position).into(), config, builder)
     }
 }
 

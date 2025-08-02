@@ -1,5 +1,3 @@
-#![allow(dead_code)]
-
 mod buildings;
 mod instructions;
 mod processor;
@@ -24,29 +22,23 @@ use crate::types::{Point2, Schematic, SchematicTile};
 const MILLIS_PER_SEC: u64 = 1_000;
 const NANOS_PER_MILLI: u32 = 1_000_000;
 
-pub struct LogicVM<'a> {
-    /// Sorted with all processors first, then all other buildings.
+pub struct LogicVM {
+    /// Sorted with all processors in update order first, then all other buildings in arbitrary order.
     buildings: Vec<Building>,
     buildings_map: HashMap<Point2, usize>,
     total_processors: usize,
     running_processors: Rc<Cell<usize>>,
     time: Rc<Cell<f64>>,
-    globals: Cow<'a, HashMap<String, LVar>>,
 }
 
-impl<'a> LogicVM<'a> {
-    pub fn new() -> Self {
-        Self::new_with_globals(Cow::Owned(LVar::create_globals()))
-    }
-
-    pub fn new_with_globals(globals: Cow<'a, HashMap<String, LVar>>) -> Self {
+impl LogicVM {
+    fn new() -> Self {
         Self {
             buildings: Vec::new(),
             buildings_map: HashMap::new(),
             total_processors: 0,
             running_processors: Rc::new(Cell::new(0)),
             time: Rc::new(Cell::new(0.)),
-            globals,
         }
     }
 
@@ -55,54 +47,9 @@ impl<'a> LogicVM<'a> {
     }
 
     pub fn from_schematic_tiles(tiles: &[SchematicTile]) -> VMLoadResult<Self> {
-        let mut vm = Self::new();
-        vm.add_schematic_tiles(tiles)?;
-        Ok(vm)
-    }
-
-    pub fn add_building(&mut self, building: Building) {
-        let position = building.position;
-        let size = building.block.size;
-
-        let index = if let BuildingData::Processor(processor) = &*building.data.borrow() {
-            if processor.state.enabled() {
-                self.running_processors.update(|n| n + 1);
-            }
-            self.total_processors += 1;
-            self.total_processors - 1
-        } else {
-            self.buildings.len()
-        };
-
-        self.buildings.insert(index, building);
-
-        for x in position.x..position.x + size {
-            for y in position.y..position.y + size {
-                self.buildings_map.insert(Point2 { x, y }, index);
-            }
-        }
-    }
-
-    pub fn add_buildings<T>(&mut self, buildings: T)
-    where
-        T: IntoIterator<Item = Building>,
-    {
-        for building in buildings.into_iter() {
-            self.add_building(building);
-        }
-    }
-
-    pub fn add_schematic_tile(&mut self, tile: &SchematicTile) -> VMLoadResult<()> {
-        let building = Building::from_schematic_tile(tile, self)?;
-        self.add_building(building);
-        Ok(())
-    }
-
-    pub fn add_schematic_tiles(&mut self, tiles: &[SchematicTile]) -> VMLoadResult<()> {
-        for tile in tiles {
-            self.add_schematic_tile(tile)?;
-        }
-        Ok(())
+        let mut builder = LogicVMBuilder::new();
+        builder.add_schematic_tiles(tiles)?;
+        builder.build()
     }
 
     pub fn building(&self, position: Point2) -> Option<&Building> {
@@ -144,7 +91,7 @@ impl<'a> LogicVM<'a> {
         let time = self.time.get() + duration_millis_f64(delta).max(0.);
         self.time.set(time);
 
-        for processor in self.buildings.iter().take(self.total_processors) {
+        for processor in self.iter_processors() {
             processor
                 .data
                 .borrow_mut()
@@ -152,9 +99,104 @@ impl<'a> LogicVM<'a> {
                 .do_tick(self, time);
         }
     }
+
+    fn iter_processors(&self) -> impl Iterator<Item = &Building> {
+        self.buildings.iter().take(self.total_processors)
+    }
 }
 
-impl Default for LogicVM<'_> {
+pub struct LogicVMBuilder {
+    vm: LogicVM,
+    processors: Vec<Building>,
+    other_buildings: Vec<Building>,
+}
+
+impl LogicVMBuilder {
+    pub fn new() -> Self {
+        Self {
+            vm: LogicVM::new(),
+            processors: Vec::new(),
+            other_buildings: Vec::new(),
+        }
+    }
+
+    pub fn add_building(&mut self, building: Building) {
+        if matches!(*building.data.borrow(), BuildingData::Processor(_)) {
+            self.processors.push(building);
+        } else {
+            self.other_buildings.push(building);
+        };
+    }
+
+    pub fn add_buildings<T>(&mut self, buildings: T)
+    where
+        T: IntoIterator<Item = Building>,
+    {
+        for building in buildings.into_iter() {
+            self.add_building(building);
+        }
+    }
+
+    pub fn add_schematic_tile(&mut self, tile: &SchematicTile) -> VMLoadResult<()> {
+        let building = Building::from_schematic_tile(tile, self)?;
+        self.add_building(building);
+        Ok(())
+    }
+
+    pub fn add_schematic_tiles(&mut self, tiles: &[SchematicTile]) -> VMLoadResult<()> {
+        for tile in tiles {
+            self.add_schematic_tile(tile)?;
+        }
+        Ok(())
+    }
+
+    pub fn build(self) -> VMLoadResult<LogicVM> {
+        self.build_with_globals(Cow::Owned(LVar::create_globals()))
+    }
+
+    pub fn build_with_globals(
+        mut self,
+        globals: Cow<'_, HashMap<String, LVar>>,
+    ) -> VMLoadResult<LogicVM> {
+        // sort processors in update order
+        // 7 8 9
+        // 4 5 6
+        // 1 2 3
+        // a updates before b if a.y < b.y || a.y == b.y && a.x < b.x
+        self.processors
+            .sort_unstable_by_key(|p| (p.position.y, p.position.x));
+
+        let mut vm = self.vm;
+
+        vm.total_processors = self.processors.len();
+
+        vm.buildings = std::mem::take(&mut self.processors); // yoink
+        vm.buildings.extend(self.other_buildings.drain(0..));
+
+        for (i, building) in vm.buildings.iter().enumerate() {
+            let position = building.position;
+            let size = building.block.size;
+
+            for x in position.x..position.x + size {
+                for y in position.y..position.y + size {
+                    vm.buildings_map.insert(Point2 { x, y }, i);
+                }
+            }
+        }
+
+        for processor in vm.iter_processors() {
+            processor
+                .data
+                .borrow_mut()
+                .unwrap_processor_mut()
+                .late_init(&vm, processor, &globals)?;
+        }
+
+        Ok(vm)
+    }
+}
+
+impl Default for LogicVMBuilder {
     fn default() -> Self {
         Self::new()
     }
@@ -182,6 +224,9 @@ pub enum VMLoadError {
     #[error("failed to parse processor code: {0}")]
     BadProcessorCode(String),
 
+    #[error("attempted to call late_init on an already-initialized instruction")]
+    AlreadyInitialized,
+
     #[error("tried to place multiple blocks at {0}")]
     Overlap(Point2),
 }
@@ -190,50 +235,55 @@ pub enum VMLoadError {
 mod tests {
     use std::io::Cursor;
 
-    use binrw::BinWrite;
+    use binrw::{BinRead, BinWrite};
     use itertools::Itertools;
     use pretty_assertions::assert_eq;
+    use velcro::map_iter;
 
     use crate::{
         logic::vm::{
-            buildings::{HYPER_PROCESSOR, MICRO_PROCESSOR},
+            buildings::{HYPER_PROCESSOR, MEMORY_BANK, MEMORY_CELL, MICRO_PROCESSOR},
             variables::{Content, LValue, LVar},
         },
-        types::{Object, PackedPoint2, ProcessorConfig, Team, colors::COLORS},
+        types::{Object, PackedPoint2, ProcessorConfig, ProcessorLinkConfig, Team, colors::COLORS},
     };
 
-    use super::{buildings::WORLD_PROCESSOR, processor::Processor, *};
+    use super::{
+        buildings::WORLD_PROCESSOR,
+        processor::{Processor, ProcessorState},
+        *,
+    };
 
-    fn single_processor_vm<'a>(name: &str, code: &str) -> LogicVM<'a> {
-        let mut vm = LogicVM::new();
-        vm.add_building(
+    fn single_processor_vm(name: &str, code: &str) -> LogicVM {
+        let mut builder = LogicVMBuilder::new();
+        builder.add_building(
             Building::from_processor_config(
                 name,
                 Point2::new(0, 0),
                 &ProcessorConfig::from_code(code),
-                &vm,
+                &builder,
             )
             .unwrap(),
         );
-        vm
+        builder.build().unwrap()
     }
 
-    fn single_processor_vm_with_globals<'a>(
+    fn single_processor_vm_with_globals(
         name: &str,
         code: &str,
-        globals: &'a HashMap<String, LVar>,
-    ) -> LogicVM<'a> {
-        let mut vm = LogicVM::new_with_globals(Cow::Borrowed(globals));
-        vm.add_building(
+        globals: &HashMap<String, LVar>,
+    ) -> LogicVM {
+        let mut builder = LogicVMBuilder::new();
+        builder.add_building(
             Building::from_processor_config(
                 name,
                 Point2::new(0, 0),
                 &ProcessorConfig::from_code(code),
-                &vm,
+                &builder,
             )
             .unwrap(),
         );
-        vm
+        builder.build_with_globals(Cow::Borrowed(globals)).unwrap()
     }
 
     fn run(vm: &mut LogicVM, max_ticks: usize, want: bool) {
@@ -246,17 +296,50 @@ mod tests {
         );
     }
 
-    fn with_processor(vm: &mut LogicVM, idx: usize, f: impl FnOnce(&mut Processor)) {
-        f(vm.buildings[idx].data.borrow_mut().unwrap_processor_mut())
+    fn with_processor<T>(vm: &mut LogicVM, position: T, f: impl FnOnce(&mut Processor))
+    where
+        T: Into<Point2>,
+    {
+        f(vm.building(position.into())
+            .unwrap()
+            .data
+            .borrow_mut()
+            .unwrap_processor_mut())
     }
 
-    fn take_processor(vm: &mut LogicVM, idx: usize) -> Processor {
-        vm.buildings[idx]
+    fn take_processor<T>(vm: &mut LogicVM, position: T) -> Processor
+    where
+        T: Into<Point2>,
+    {
+        vm.building(position.into())
+            .unwrap()
             .data
             .replace(BuildingData::Unknown {
                 config: Object::Null,
             })
             .into_processor()
+    }
+
+    fn assert_variables<'a, T, V>(state: &ProcessorState, vars: T)
+    where
+        T: IntoIterator<Item = (&'a str, V)>,
+        V: Into<Option<LValue>>,
+    {
+        for (name, want) in vars {
+            match want.into() {
+                Some(want) => {
+                    assert!(
+                        state.variables.contains_key(name),
+                        "variable not found: {name}"
+                    );
+                    assert_eq!(state.variables[name].get(state), want, "{name}");
+                }
+                None => assert!(
+                    !state.variables.contains_key(name),
+                    "unexpected variable found: {name}"
+                ),
+            };
+        }
     }
 
     #[test]
@@ -281,9 +364,271 @@ mod tests {
 
         run(&mut vm, 1, true);
 
-        let processor = take_processor(&mut vm, 0);
+        let processor = take_processor(&mut vm, (0, 0));
         assert_eq!(processor.state.counter, 0);
         assert!(processor.state.stopped());
+    }
+
+    #[test]
+    fn test_auto_link_names() {
+        let mut builder = LogicVMBuilder::new();
+        builder.add_buildings(
+            [
+                Building::from_processor_config(
+                    MICRO_PROCESSOR,
+                    Point2 { x: 0, y: 0 },
+                    &ProcessorConfig::from_code("stop"),
+                    &builder,
+                ),
+                Building::from_processor_config(
+                    MICRO_PROCESSOR,
+                    Point2 { x: 1, y: 0 },
+                    &ProcessorConfig::from_code("stop"),
+                    &builder,
+                ),
+                Building::from_config(MEMORY_CELL, Point2 { x: 2, y: 0 }, &Object::Null, &builder),
+                Building::from_processor_config(
+                    MICRO_PROCESSOR,
+                    Point2 { x: 3, y: 0 },
+                    &ProcessorConfig {
+                        code: "
+                        set link0 processor0
+                        set link1 processor1
+                        set link2 processor2
+                        set link3 processor3
+                        set link4 cell0
+                        set link5 cell1
+                        set link6 cell2
+                        stop
+                        "
+                        .into(),
+                        links: vec![
+                            ProcessorLinkConfig {
+                                name: "".into(),
+                                x: -3,
+                                y: 0,
+                            },
+                            ProcessorLinkConfig {
+                                name: "".into(),
+                                x: -2,
+                                y: 0,
+                            },
+                            ProcessorLinkConfig {
+                                name: "".into(),
+                                x: -1,
+                                y: 0,
+                            },
+                        ],
+                    },
+                    &builder,
+                ),
+            ]
+            .map(|v| v.unwrap()),
+        );
+        let mut vm = builder.build().unwrap();
+
+        run(&mut vm, 4, true);
+
+        let state = take_processor(&mut vm, (3, 0)).state;
+        assert_variables(
+            &state,
+            map_iter! {
+                "link0": LValue::Null,
+                "link1": LValue::Building(Point2 { x: 0, y: 0 }),
+                "link2": LValue::Building(Point2 { x: 1, y: 0 }),
+                "link3": LValue::Null,
+                "link4": LValue::Null,
+                "link5": LValue::Building(Point2 { x: 2, y: 0 }),
+                "link6": LValue::Null,
+            },
+        );
+    }
+
+    #[test]
+    fn test_set_link_names() {
+        let mut builder = LogicVMBuilder::new();
+        builder.add_buildings(
+            [
+                Building::from_processor_config(
+                    MICRO_PROCESSOR,
+                    Point2 { x: 0, y: 0 },
+                    &ProcessorConfig::from_code("stop"),
+                    &builder,
+                ),
+                Building::from_processor_config(
+                    MICRO_PROCESSOR,
+                    Point2 { x: 1, y: 0 },
+                    &ProcessorConfig::from_code("stop"),
+                    &builder,
+                ),
+                Building::from_processor_config(
+                    MICRO_PROCESSOR,
+                    Point2 { x: 2, y: 0 },
+                    &ProcessorConfig::from_code("stop"),
+                    &builder,
+                ),
+                Building::from_processor_config(
+                    MICRO_PROCESSOR,
+                    Point2 { x: 3, y: 0 },
+                    &ProcessorConfig::from_code("stop"),
+                    &builder,
+                ),
+                Building::from_config(MEMORY_CELL, Point2 { x: 4, y: 0 }, &Object::Null, &builder),
+                Building::from_processor_config(
+                    MICRO_PROCESSOR,
+                    Point2 { x: 5, y: 0 },
+                    &ProcessorConfig {
+                        code: "stop".into(),
+                        links: vec![
+                            ProcessorLinkConfig {
+                                name: "processor1".into(),
+                                x: -5,
+                                y: 0,
+                            },
+                            ProcessorLinkConfig {
+                                name: "processor1".into(),
+                                x: -4,
+                                y: 0,
+                            },
+                            ProcessorLinkConfig {
+                                name: "processor10".into(),
+                                x: -3,
+                                y: 0,
+                            },
+                            ProcessorLinkConfig {
+                                name: "".into(),
+                                x: -2,
+                                y: 0,
+                            },
+                            ProcessorLinkConfig {
+                                name: "cellFoo".into(),
+                                x: -1,
+                                y: 0,
+                            },
+                        ],
+                    },
+                    &builder,
+                ),
+            ]
+            .map(|v| v.unwrap()),
+        );
+        let mut vm = builder.build().unwrap();
+
+        let state = take_processor(&mut vm, (5, 0)).state;
+        assert_variables(
+            &state,
+            map_iter! {
+                // conflicts should prefer the last building linked
+                "processor1": Some(LValue::Building(Point2 { x: 1, y: 0 })),
+                "processor2": Some(LValue::Building(Point2 { x: 3, y: 0 })),
+                "processor3": None,
+                "processor10": Some(LValue::Building(Point2 { x: 2, y: 0 })),
+                "cell1": None,
+                "cellFoo": Some(LValue::Building(Point2 { x: 4, y: 0 })),
+            },
+        );
+    }
+
+    #[test]
+    fn test_link_max_range() {
+        let data = include_bytes!("../../../tests/logic/vm/test_link_max_range.msch");
+        let schematic = Schematic::read(&mut Cursor::new(data)).unwrap();
+        let mut vm = LogicVM::from_schematic(&schematic).unwrap();
+
+        let state = take_processor(&mut vm, (0, 0)).state;
+        assert_variables(
+            &state,
+            map_iter! {
+                "cell1": Some(LValue::Building(Point2 { x: 0, y: 10 })),
+                "cell2": Some(LValue::Building(Point2 { x: 7, y: 7 })),
+                "cell3": Some(LValue::Building(Point2 { x: 9, y: 5 })),
+                "bank1": Some(LValue::Building(Point2 { x: 10, y: 2 })),
+            },
+        );
+    }
+
+    #[test]
+    fn test_link_out_of_range() {
+        let mut builder = LogicVMBuilder::new();
+        builder.add_buildings(
+            [
+                Building::from_processor_config(
+                    MICRO_PROCESSOR,
+                    Point2 { x: 1, y: 1 },
+                    &ProcessorConfig {
+                        code: "stop".into(),
+                        links: vec![
+                            ProcessorLinkConfig {
+                                name: "cell1".into(),
+                                x: 0,
+                                y: 10,
+                            },
+                            ProcessorLinkConfig {
+                                name: "cell2".into(),
+                                x: 0,
+                                y: 11,
+                            },
+                            ProcessorLinkConfig {
+                                name: "bank1".into(),
+                                x: 6,
+                                y: 9,
+                            },
+                            ProcessorLinkConfig {
+                                name: "cell3".into(),
+                                x: 7,
+                                y: 7,
+                            },
+                            ProcessorLinkConfig {
+                                name: "cell4".into(),
+                                x: 8,
+                                y: 8,
+                            },
+                            ProcessorLinkConfig {
+                                name: "cell5".into(),
+                                x: 8,
+                                y: 7,
+                            },
+                            ProcessorLinkConfig {
+                                name: "cell6".into(),
+                                x: 9,
+                                y: 5,
+                            },
+                            ProcessorLinkConfig {
+                                name: "bank2".into(),
+                                x: 10,
+                                y: 2,
+                            },
+                        ],
+                    },
+                    &builder,
+                ),
+                Building::from_config(MEMORY_CELL, Point2 { x: 1, y: 11 }, &Object::Null, &builder),
+                Building::from_config(MEMORY_CELL, Point2 { x: 1, y: 12 }, &Object::Null, &builder),
+                Building::from_config(MEMORY_BANK, Point2 { x: 7, y: 10 }, &Object::Null, &builder),
+                Building::from_config(MEMORY_CELL, Point2 { x: 8, y: 8 }, &Object::Null, &builder),
+                Building::from_config(MEMORY_CELL, Point2 { x: 9, y: 9 }, &Object::Null, &builder),
+                Building::from_config(MEMORY_CELL, Point2 { x: 9, y: 8 }, &Object::Null, &builder),
+                Building::from_config(MEMORY_CELL, Point2 { x: 10, y: 6 }, &Object::Null, &builder),
+                Building::from_config(MEMORY_BANK, Point2 { x: 11, y: 3 }, &Object::Null, &builder),
+            ]
+            .map(|v| v.unwrap()),
+        );
+        let mut vm = builder.build().unwrap();
+
+        let state = take_processor(&mut vm, (1, 1)).state;
+        assert_variables(
+            &state,
+            map_iter! {
+                "cell1": Some(LValue::Building(Point2 { x: 1, y: 11 })),
+                "cell2": None,
+                "bank1": None,
+                "cell3": Some(LValue::Building(Point2 { x: 8, y: 8 })),
+                "cell4": None,
+                "cell5": None,
+                "cell6": Some(LValue::Building(Point2 { x: 10, y: 6 })),
+                "bank2": Some(LValue::Building(Point2 { x: 11, y: 3 })),
+            },
+        );
     }
 
     #[test]
@@ -299,7 +644,7 @@ mod tests {
 
         run(&mut vm, 1, false);
 
-        let processor = take_processor(&mut vm, 0);
+        let processor = take_processor(&mut vm, (0, 0));
         assert_eq!(processor.state.counter, 2);
         assert!(!processor.state.stopped());
     }
@@ -323,7 +668,7 @@ mod tests {
 
         run(&mut vm, 1, true);
 
-        let processor = take_processor(&mut vm, 0);
+        let processor = take_processor(&mut vm, (0, 0));
         assert_eq!(
             processor.state.decode_printbuffer(),
             "foobar\n10\n1.5nullnull♥"
@@ -351,7 +696,7 @@ mod tests {
 
         run(&mut vm, 2, false);
 
-        let processor = take_processor(&mut vm, 0);
+        let processor = take_processor(&mut vm, (0, 0));
         assert_eq!(processor.state.counter, 3);
         assert!(!processor.state.stopped());
         assert_eq!(processor.state.decode_printbuffer(), "11");
@@ -383,26 +728,26 @@ mod tests {
             "#,
         );
 
-        with_processor(&mut vm, 0, |p| {
+        with_processor(&mut vm, (0, 0), |p| {
             assert_eq!(p.state.variables["foo"].get(&p.state), LValue::Null);
         });
 
         vm.do_tick(Duration::ZERO);
 
-        with_processor(&mut vm, 0, |p| {
+        with_processor(&mut vm, (0, 0), |p| {
             assert_eq!(p.state.variables["foo"].get(&p.state), LValue::Number(1.));
         });
 
         vm.do_tick(Duration::ZERO);
 
-        with_processor(&mut vm, 0, |p| {
+        with_processor(&mut vm, (0, 0), |p| {
             assert_eq!(p.state.variables["foo"].get(&p.state), LValue::Number(2.));
             assert_eq!(p.state.counter, 6);
         });
 
         vm.do_tick(Duration::ZERO);
 
-        with_processor(&mut vm, 0, |p| {
+        with_processor(&mut vm, (0, 0), |p| {
             assert_eq!(p.state.counter, 8);
         });
 
@@ -410,10 +755,7 @@ mod tests {
         vm.do_tick(Duration::ZERO);
         vm.do_tick(Duration::ZERO);
 
-        assert_eq!(vm.globals["@ipt"], LVar::Ipt);
-        assert_eq!(vm.globals["true"].try_get().unwrap(), LValue::Number(1.));
-
-        with_processor(&mut vm, 0, |p| {
+        with_processor(&mut vm, (0, 0), |p| {
             assert_eq!(p.state.variables.get("@ipt"), None);
             assert_eq!(p.state.variables.get("true"), None);
             assert_eq!(
@@ -433,7 +775,7 @@ mod tests {
         vm.do_tick(Duration::ZERO);
         vm.do_tick(Duration::ZERO);
 
-        with_processor(&mut vm, 0, |p| {
+        with_processor(&mut vm, (0, 0), |p| {
             assert_eq!(p.state.variables["a"].get(&p.state), LValue::Number(1e308));
             assert_eq!(p.state.variables["b"].get(&p.state), LValue::Null);
             assert_eq!(p.state.variables["c"].get(&p.state), LValue::Number(-1e308));
@@ -465,7 +807,7 @@ mod tests {
         );
 
         for ipt in [8, 1, 10, 1, 1000, 500, 1000, 5] {
-            with_processor(&mut vm, 0, |p| {
+            with_processor(&mut vm, (0, 0), |p| {
                 assert_eq!(
                     p.state.ipt, ipt,
                     "incorrect ipt at counter {}",
@@ -483,7 +825,7 @@ mod tests {
     fn test_setrate_unpriv() {
         let mut vm = single_processor_vm(MICRO_PROCESSOR, "setrate 10; stop");
         run(&mut vm, 1, true);
-        let processor = take_processor(&mut vm, 0);
+        let processor = take_processor(&mut vm, (0, 0));
         assert_eq!(processor.state.ipt, 2);
     }
 
@@ -620,7 +962,7 @@ mod tests {
 
         run(&mut vm, 2, true);
 
-        let state = take_processor(&mut vm, 0).state;
+        let state = take_processor(&mut vm, (0, 0)).state;
         assert_eq!(
             state.variables["canary"].get(&state),
             LValue::Number(0xdeadbeefu64 as f64)
@@ -651,25 +993,25 @@ mod tests {
 
         vm.do_tick(Duration::ZERO);
 
-        with_processor(&mut vm, 0, |p| {
+        with_processor(&mut vm, (0, 0), |p| {
             assert_eq!(p.state.decode_printbuffer(), "123");
         });
 
         vm.do_tick(Duration::from_secs_f64(1. / 60.));
 
-        with_processor(&mut vm, 0, |p| {
+        with_processor(&mut vm, (0, 0), |p| {
             assert_eq!(p.state.decode_printbuffer(), "1234");
         });
 
         vm.do_tick(Duration::from_millis(500));
 
-        with_processor(&mut vm, 0, |p| {
+        with_processor(&mut vm, (0, 0), |p| {
             assert_eq!(p.state.decode_printbuffer(), "1234");
         });
 
         vm.do_tick(Duration::from_millis(500));
 
-        with_processor(&mut vm, 0, |p| {
+        with_processor(&mut vm, (0, 0), |p| {
             assert_eq!(p.state.decode_printbuffer(), "12345");
         });
     }
@@ -698,7 +1040,7 @@ mod tests {
 
         run(&mut vm, 1, true);
 
-        let state = take_processor(&mut vm, 0).state;
+        let state = take_processor(&mut vm, (0, 0)).state;
         assert_eq!(
             state.printbuffer,
             &[
@@ -734,7 +1076,7 @@ mod tests {
 
         vm.do_tick(Duration::ZERO);
 
-        with_processor(&mut vm, 0, |p| {
+        with_processor(&mut vm, (0, 0), |p| {
             assert_eq!(
                 p.state.decode_printbuffer(),
                 r#"{0} {1} {/} {9} {:} {10} {0}"#
@@ -743,7 +1085,7 @@ mod tests {
 
         vm.do_tick(Duration::ZERO);
 
-        with_processor(&mut vm, 0, |p| {
+        with_processor(&mut vm, (0, 0), |p| {
             assert_eq!(
                 p.state.decode_printbuffer(),
                 r#"4 {1} {/} {9} {:} {10} {0}"#
@@ -752,7 +1094,7 @@ mod tests {
 
         vm.do_tick(Duration::ZERO);
 
-        with_processor(&mut vm, 0, |p| {
+        with_processor(&mut vm, (0, 0), |p| {
             assert_eq!(
                 p.state.decode_printbuffer(),
                 r#"4 {1} {/} {9} {:} {10} abcde"#
@@ -761,7 +1103,7 @@ mod tests {
 
         vm.do_tick(Duration::ZERO);
 
-        with_processor(&mut vm, 0, |p| {
+        with_processor(&mut vm, (0, 0), |p| {
             assert_eq!(
                 p.state.decode_printbuffer(),
                 r#"4 aa {/} {9} {:} {10} abcde"#
@@ -770,13 +1112,13 @@ mod tests {
 
         vm.do_tick(Duration::ZERO);
 
-        with_processor(&mut vm, 0, |p| {
+        with_processor(&mut vm, (0, 0), |p| {
             assert_eq!(p.state.decode_printbuffer(), r#"4 aa {/}  {:} {10} abcde"#);
         });
 
         vm.do_tick(Duration::ZERO);
 
-        with_processor(&mut vm, 0, |p| {
+        with_processor(&mut vm, (0, 0), |p| {
             assert_eq!(p.state.decode_printbuffer(), r#"4 aa {/}  {:} {10} abcde"#);
         });
     }
@@ -796,7 +1138,7 @@ mod tests {
 
         run(&mut vm, 1, true);
 
-        let state = take_processor(&mut vm, 0).state;
+        let state = take_processor(&mut vm, (0, 0)).state;
 
         assert_eq!(
             state.variables["packed1"].get(&state),
@@ -860,7 +1202,7 @@ mod tests {
 
             run(&mut vm, 1, true);
 
-            let state = take_processor(&mut vm, 0).state;
+            let state = take_processor(&mut vm, (0, 0)).state;
             let want_value = if want_true {
                 0xdeadbeefu64
             } else {
@@ -1003,7 +1345,7 @@ mod tests {
 
             run(&mut vm, 1, true);
 
-            let state = take_processor(&mut vm, 0).state;
+            let state = take_processor(&mut vm, (0, 0)).state;
             let got = state.variables["got"].get(&state);
             if let Some(epsilon) = epsilon {
                 assert!(
@@ -1200,7 +1542,7 @@ mod tests {
 
             run(&mut vm, 1, true);
 
-            let state = take_processor(&mut vm, 0).state;
+            let state = take_processor(&mut vm, (0, 0)).state;
             assert_eq!(state.variables["got"].get(&state), want, "{op} {x} {y}");
         }
     }
@@ -1246,7 +1588,7 @@ mod tests {
 
         run(&mut vm, 1, true);
 
-        let state = take_processor(&mut vm, 0).state;
+        let state = take_processor(&mut vm, (0, 0)).state;
 
         assert_eq!(state.variables["blocks"].get(&state), LValue::Number(260.));
         assert_eq!(state.variables["items"].get(&state), LValue::Number(20.));

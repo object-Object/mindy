@@ -1,10 +1,19 @@
-use std::{cell::Cell, cmp::min, collections::HashMap, io::Cursor, rc::Rc};
+use std::{
+    cell::Cell,
+    cmp::min,
+    collections::{HashMap, HashSet},
+    io::Cursor,
+    rc::Rc,
+};
 
 use binrw::BinRead;
+use itertools::Itertools;
+use replace_with::replace_with_and_return;
 
 use super::{
     LogicVM, VMLoadError, VMLoadResult,
-    instructions::{Instruction, InstructionResult, parse_instruction},
+    buildings::Building,
+    instructions::{Instruction, InstructionBuilder, InstructionResult, Noop},
     variables::LVar,
 };
 use crate::{
@@ -16,7 +25,6 @@ pub(super) const MAX_TEXT_BUFFER: usize = 400;
 const MAX_INSTRUCTION_SCALE: usize = 5;
 
 pub struct Processor {
-    range: f32,
     privileged: bool,
     instructions: Vec<Box<dyn Instruction>>,
     links: Vec<ProcessorLink>,
@@ -24,6 +32,114 @@ pub struct Processor {
 }
 
 impl Processor {
+    pub fn late_init(
+        &mut self,
+        vm: &LogicVM,
+        building: &Building,
+        globals: &HashMap<String, LVar>,
+    ) -> VMLoadResult<()> {
+        // init links
+        // this is the only reason for the late init logic to exist
+        // TODO: this may produce different link names than mindustry in specific cases
+        // ie. if a custom link name is specified for a building that would be built after this processor
+        let mut taken_names = HashMap::new();
+        self.links.retain_mut(|link| {
+            // check if the other building exists
+
+            let Some(other) = vm.building(link.position) else {
+                return false;
+            };
+
+            // check range
+
+            let self_size = (building.block.size as f64) / 2.;
+            let other_size = (other.block.size as f64) / 2.;
+
+            let here = (
+                building.position.x as f64 + self_size,
+                building.position.y as f64 + self_size,
+            );
+            let there = (
+                other.position.x as f64 + other_size,
+                other.position.y as f64 + other_size,
+            );
+
+            let dist_sq = (here.0 - there.0).powf(2.) + (here.1 - there.1).powf(2.);
+            let range = building.block.range + other_size;
+            if dist_sq > range * range {
+                return false;
+            }
+
+            // finally, get the link name
+
+            // link name prefix, eg "processor"
+            let split = other.block.name.split('-').collect_vec();
+            let name_prefix = if split.len() >= 2
+                && (split[split.len() - 1] == "large"
+                    || split[split.len() - 1].parse::<f64>().is_ok())
+            {
+                split[split.len() - 2]
+            } else {
+                split[split.len() - 1]
+            };
+
+            // link indices that are already in use for this prefix
+            if !taken_names.contains_key(name_prefix) {
+                taken_names.insert(name_prefix.to_string(), HashSet::new());
+            }
+            let taken = taken_names.get_mut(name_prefix).unwrap();
+
+            // if the name from the config has the correct prefix, use it
+            // this means multiple buildings may be configured with the same link name
+            // but this is how mindustry behaves, so we should allow it too
+            if let Some(num) = link.name.strip_prefix(name_prefix) {
+                if let Ok(num) = num.parse() {
+                    taken.insert(num);
+                }
+                return true;
+            }
+
+            // otherwise, take the first available index
+            for i in 1usize.. {
+                if taken.insert(i) {
+                    link.name = format!("{name_prefix}{i}");
+                    return true;
+                }
+            }
+            false // should never happen
+        });
+
+        // now that we know which links are valid, set up the per-processor constants
+        LVar::late_init_locals(&mut self.state.variables, building.position, &self.links);
+
+        // finally, finish parsing the instructions
+        // this must only be done after the link variables have been added
+        for instruction in self.instructions.iter_mut() {
+            // at this point, all instructions should be InstructionBuilders
+            // for each instruction, we take ownership of the builder and convert it to the final instruction
+            replace_with_and_return(
+                instruction,
+                // if a panic occurs, replace the builder with a Noop
+                || Box::new(Noop),
+                |instruction| -> (VMLoadResult<()>, _) {
+                    match instruction.late_init(
+                        &mut self.state.variables,
+                        globals,
+                        self.privileged,
+                        self.state.num_instructions,
+                    ) {
+                        // if the builder successfully parsed the instruction, put the new box into the vec
+                        Ok(new) => (Ok(()), new),
+                        // otherwise, put a Noop into the vec and return the error
+                        Err(e) => (Err(e), Box::new(Noop)),
+                    }
+                },
+            )?;
+        }
+
+        Ok(())
+    }
+
     pub fn do_tick(&mut self, vm: &LogicVM, time: f64) {
         if !self.state.enabled || self.state.wait_end_time > time {
             return;
@@ -129,17 +245,19 @@ impl ProcessorState {
     }
 }
 
+/// A representation of a link from this processor to a building.
 #[derive(Debug, Clone)]
-struct ProcessorLink {}
+pub struct ProcessorLink {
+    pub name: String,
+    pub position: Point2,
+}
 
 #[derive(Debug)]
 pub struct ProcessorBuilder<'a> {
     pub ipt: usize,
-    pub range: f32,
     pub privileged: bool,
     pub running_processors: Rc<Cell<usize>>,
     pub time: Rc<Cell<f64>>,
-    pub globals: &'a HashMap<String, LVar>,
     pub position: Point2,
     pub config: &'a ProcessorConfig,
 }
@@ -162,11 +280,9 @@ impl ProcessorBuilder<'_> {
     pub fn build(self) -> VMLoadResult<Processor> {
         let ProcessorBuilder {
             ipt,
-            range,
             privileged,
             running_processors,
             time,
-            globals,
             position,
             config,
         } = self;
@@ -177,44 +293,54 @@ impl ProcessorBuilder<'_> {
             .map_err(|e| VMLoadError::BadProcessorCode(e.to_string()))?;
 
         // TODO: this could be more efficient
-        let mut labels = HashMap::new();
         let mut num_instructions = 0;
-        for statement in &code {
-            match statement {
-                ast::Statement::Label(label) => {
-                    labels.insert(label.clone(), num_instructions);
-                }
-                ast::Statement::Instruction(_, _) => {
-                    num_instructions += 1;
+        let labels = {
+            let mut labels = HashMap::new();
+            for statement in &code {
+                match statement {
+                    ast::Statement::Label(label) => {
+                        labels.insert(label.clone(), num_instructions);
+                    }
+                    ast::Statement::Instruction(_, _) => {
+                        num_instructions += 1;
+                    }
                 }
             }
-        }
+            Rc::new(labels)
+        };
 
-        let mut variables = LVar::create_locals(position);
-
-        let mut instructions = Vec::with_capacity(num_instructions);
+        let mut instructions: Vec<Box<dyn Instruction>> = Vec::with_capacity(num_instructions);
         for statement in code.into_iter() {
             if let ast::Statement::Instruction(instruction, _) = statement {
-                instructions.push(parse_instruction(
+                instructions.push(Box::new(InstructionBuilder {
                     instruction,
-                    &mut variables,
-                    globals,
-                    &labels,
-                    privileged,
-                    num_instructions,
-                )?);
+                    labels: labels.clone(),
+                }));
             }
         }
 
-        // TODO: implement, late-init after adding all blocks
-        let links = Vec::new();
+        let enabled = !instructions.is_empty();
+        if enabled {
+            running_processors.update(|n| n + 1);
+        }
+
+        let links = config
+            .links
+            .iter()
+            .map(|link| ProcessorLink {
+                name: link.name.to_string(),
+                position: Point2 {
+                    x: position.x + link.x as i32,
+                    y: position.y + link.y as i32,
+                },
+            })
+            .collect();
 
         Ok(Processor {
-            range,
             privileged,
             links,
             state: ProcessorState {
-                enabled: !instructions.is_empty(),
+                enabled,
                 stopped: false,
                 wait_end_time: -1.,
                 num_instructions,
@@ -224,7 +350,7 @@ impl ProcessorBuilder<'_> {
                 running_processors,
                 time,
                 printbuffer: Vec::with_capacity(MAX_TEXT_BUFFER),
-                variables,
+                variables: HashMap::new(),
             },
             instructions,
         })

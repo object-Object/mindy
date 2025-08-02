@@ -8,12 +8,12 @@ pub struct Block {
     pub logic_id: i32,
     pub size: i32,
     pub legacy: bool,
+    pub range: f64,
     /*
     pub visibility: Visibility,
     pub subclass: String,
     pub configurable: bool,
     pub category: Category,
-    pub range: f64,
     pub has_items: bool,
     pub accepts_items: bool,
     pub separate_item_capacity: bool,

@@ -1,14 +1,14 @@
 use std::{cell::RefCell, collections::HashMap, rc::Rc};
 
 use num_traits::AsPrimitive;
-use velcro::hash_map_from;
+use velcro::{hash_map_from, map_iter_from};
 
 use crate::types::{
     Point2, Team, colors,
     content::{self, Block, Item, Liquid, Unit},
 };
 
-use super::processor::ProcessorState;
+use super::processor::{ProcessorLink, ProcessorState};
 
 #[allow(clippy::approx_constant)]
 pub const PI: f32 = 3.1415927;
@@ -113,14 +113,24 @@ impl LVar {
         globals
     }
 
-    pub fn create_locals(position: Point2) -> HashMap<String, LVar> {
-        hash_map_from! {
+    pub fn late_init_locals(
+        variables: &mut HashMap<String, LVar>,
+        position: Point2,
+        links: &[ProcessorLink],
+    ) {
+        variables.extend(map_iter_from! {
             // we want other processors to be able to write @counter as if it's a local
             "@counter": Self::Counter,
 
             "@this": constant(LValue::Building(position)),
             "@thisx": constant(position.x),
             "@thisy": constant(position.y),
+            "@links": constant(links.len()),
+        });
+
+        // if multiple links have the same name, the last one wins
+        for link in links {
+            variables.insert(link.name.clone(), constant(LValue::Building(link.position)));
         }
     }
 
@@ -248,6 +258,12 @@ impl From<Content> for LValue {
 impl From<Team> for LValue {
     fn from(value: Team) -> Self {
         Self::Team(value)
+    }
+}
+
+impl From<Point2> for LValue {
+    fn from(value: Point2) -> Self {
+        Self::Building(value)
     }
 }
 
