@@ -92,51 +92,55 @@ impl PartialEq for Unit {
 impl Eq for Unit {}
 
 macro_rules! include_content {
-    ($name:ident, $typ:ident, $file:expr) => {
-        pub mod $name {
-            use std::collections::HashMap;
+    ($typ:ident, $file:expr) => {
+        use std::collections::HashMap;
 
-            use lazy_static::lazy_static;
+        use lazy_static::lazy_static;
 
-            use super::$typ;
+        use super::$typ;
 
-            lazy_static! {
-                pub static ref VALUES: Vec<$typ> = csv::ReaderBuilder::new()
-                    .delimiter(b';')
-                    .comment(Some(b'/'))
-                    .from_reader(&include_bytes!($file)[..])
-                    .deserialize()
-                    .map(|v| v.unwrap())
-                    .collect();
-                pub static ref FROM_LOGIC_ID: HashMap<i32, &'static $typ> = VALUES
-                    .iter()
-                    .filter(|v| v.logic_id >= 0)
-                    .map(|v| (v.logic_id, v))
-                    .collect();
-                pub static ref FROM_NAME: HashMap<&'static str, &'static $typ> =
-                    VALUES.iter().map(|v| (v.name.as_str(), v)).collect();
-            }
+        lazy_static! {
+            pub static ref VALUES: Vec<$typ> = csv::ReaderBuilder::new()
+                .delimiter(b';')
+                .comment(Some(b'/'))
+                .from_reader(&include_bytes!($file)[..])
+                .deserialize()
+                .map(|v| v.unwrap())
+                .collect();
+            pub static ref FROM_LOGIC_ID: HashMap<i32, &'static $typ> = VALUES
+                .iter()
+                .filter(|v| v.logic_id >= 0)
+                .map(|v| (v.logic_id, v))
+                .collect();
+            pub static ref FROM_NAME: HashMap<&'static str, &'static $typ> =
+                VALUES.iter().map(|v| (v.name.as_str(), v)).collect();
         }
     };
 }
 
-include_content!(
-    blocks,
-    Block,
-    "../../submodules/mimex-data/data/be/mimex-blocks.txt"
-);
-include_content!(
-    items,
-    Item,
-    "../../submodules/mimex-data/data/be/mimex-items.txt"
-);
-include_content!(
-    liquids,
-    Liquid,
-    "../../submodules/mimex-data/data/be/mimex-liquids.txt"
-);
-include_content!(
-    units,
-    Unit,
-    "../../submodules/mimex-data/data/be/mimex-units.txt"
-);
+pub mod blocks {
+    include_content!(
+        Block,
+        "../../submodules/mimex-data/data/be/mimex-blocks.txt"
+    );
+
+    lazy_static! {
+        pub static ref AIR: &'static Block = FROM_NAME["air"];
+        pub static ref STONE: &'static Block = FROM_NAME["stone"];
+    }
+}
+
+pub mod items {
+    include_content!(Item, "../../submodules/mimex-data/data/be/mimex-items.txt");
+}
+
+pub mod liquids {
+    include_content!(
+        Liquid,
+        "../../submodules/mimex-data/data/be/mimex-liquids.txt"
+    );
+}
+
+pub mod units {
+    include_content!(Unit, "../../submodules/mimex-data/data/be/mimex-units.txt");
+}

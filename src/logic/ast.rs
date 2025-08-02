@@ -95,6 +95,12 @@ pub enum Instruction {
         y: Value,
     },
     // privileged
+    GetBlock {
+        layer: TileLayer,
+        result: Value,
+        x: Value,
+        y: Value,
+    },
     SetRate {
         value: Value,
     },
@@ -180,6 +186,14 @@ pub enum LogicOp {
     Asin,
     Acos,
     Atan,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum TileLayer {
+    Floor,
+    Ore,
+    Block,
+    Building,
 }
 
 #[derive(Debug, Clone, PartialEq)]

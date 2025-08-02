@@ -32,6 +32,7 @@ match {
     "stop",
     "end",
     "jump",
+    "getblock",
     "setrate",
 
     "clear",
@@ -121,6 +122,9 @@ match {
     "team",
     "unitCommand",
     "unitStance",
+
+    "ore",
+    "building",
 
     // https://github.com/Anuken/Arc/blob/071fdffaf220cd57cf971a0ee58db2f321f92ee1/arc-core/src/arc/util/Strings.java#L495
     // for example, -+1.--0. is a valid number literal
@@ -256,6 +260,9 @@ Instruction: Instruction = {
 
     // privileged
 
+    "getblock" <layer:TileLayer> <result:Value> <x:Value> <y:Value> =>
+        Instruction::GetBlock { <> },
+
     "setrate" <value:Value> =>
         Instruction::SetRate { <> },
 
@@ -386,7 +393,14 @@ ContentType: ContentType = {
     "team"           => ContentType::Team,
     "unitCommand"    => ContentType::UnitCommand,
     "unitStance"     => ContentType::UnitStance,
-}
+};
+
+TileLayer: TileLayer = {
+    "floor"    => TileLayer::Floor,
+    "ore"      => TileLayer::Ore,
+    "block"    => TileLayer::Block,
+    "building" => TileLayer::Building,
+};
 
 Value: Value = {
     <s:STRING> =>
@@ -465,6 +479,7 @@ Symbol = {
     "stop",
     "end",
     "jump",
+    "getblock",
     "setrate",
 
     "clear",
@@ -554,4 +569,7 @@ Symbol = {
     "team",
     "unitCommand",
     "unitStance",
+
+    "ore",
+    "building",
 };

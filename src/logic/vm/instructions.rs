@@ -11,11 +11,11 @@ use super::{
 };
 use crate::{
     logic::{
-        ast::{self, ConditionOp, LogicOp},
+        ast::{self, ConditionOp, LogicOp, TileLayer},
         vm::variables::{F64_DEG_RAD, F64_RAD_DEG},
     },
     types::{
-        ContentType, Team,
+        ContentType, Point2, Team,
         colors::{f32_to_double_bits, f64_from_double_bits},
         content,
     },
@@ -207,6 +207,17 @@ impl Instruction for InstructionBuilder {
             _ if !privileged => Box::new(Noop),
 
             // privileged
+            ast::Instruction::GetBlock {
+                layer,
+                result,
+                x,
+                y,
+            } => Box::new(GetBlock {
+                layer,
+                result: lvar(result),
+                x: lvar(x),
+                y: lvar(y),
+            }),
             ast::Instruction::SetRate { value } => Box::new(SetRate { value: lvar(value) }),
         })
     }
@@ -634,6 +645,31 @@ impl SimpleInstruction for Jump {
 }
 
 // privileged
+
+struct GetBlock {
+    layer: TileLayer,
+    result: LVar,
+    x: LVar,
+    y: LVar,
+}
+
+impl SimpleInstruction for GetBlock {
+    fn execute(&self, state: &mut ProcessorState, vm: &LogicVM) {
+        let result = match vm.building(Point2 {
+            x: self.x.get(state).numf().round() as i32,
+            y: self.y.get(state).numf().round() as i32,
+        }) {
+            Some(building) => match self.layer {
+                TileLayer::Floor => Content::Block(&content::blocks::STONE).into(),
+                TileLayer::Ore => Content::Block(&content::blocks::AIR).into(),
+                TileLayer::Block => Content::Block(building.block).into(),
+                TileLayer::Building => building.position.into(),
+            },
+            None => LValue::Null,
+        };
+        self.result.set(state, result);
+    }
+}
 
 struct SetRate {
     value: LVar,

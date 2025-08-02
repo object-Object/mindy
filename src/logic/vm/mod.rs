@@ -251,7 +251,10 @@ mod tests {
             },
             variables::{Content, LValue, LVar},
         },
-        types::{Object, PackedPoint2, ProcessorConfig, ProcessorLinkConfig, Team, colors::COLORS},
+        types::{
+            Object, PackedPoint2, ProcessorConfig, ProcessorLinkConfig, Team, colors::COLORS,
+            content,
+        },
     };
 
     use super::{
@@ -845,6 +848,66 @@ mod tests {
         assert!(
             matches!(err, VMLoadError::Overlap(Point2 { x: 2, y: 2 })),
             "{err:?}"
+        );
+    }
+
+    #[test]
+    fn test_getblock() {
+        let mut builder = LogicVMBuilder::new();
+        builder.add_buildings(
+            [
+                Building::from_processor_config(
+                    WORLD_PROCESSOR,
+                    Point2 { x: 1, y: 2 },
+                    &ProcessorConfig::from_code(
+                        "
+                        getblock floor floor1 @thisx @thisy
+                        getblock ore ore1 @thisx @thisy
+                        getblock block block1 @thisx @thisy
+                        getblock building building1 @thisx @thisy
+
+                        getblock floor floor2 1 3
+                        getblock ore ore2 1 3
+                        getblock block block2 1 3
+                        getblock building building2 1 3
+
+                        getblock floor floor3 1 1
+                        getblock ore ore3 1 1
+                        getblock block block3 1 1
+                        getblock building building3 1 1
+
+                        stop
+                        ",
+                    ),
+                    &builder,
+                ),
+                Building::from_config(SWITCH, Point2 { x: 1, y: 3 }, &Object::Null, &builder),
+            ]
+            .map(|v| v.unwrap()),
+        );
+        let mut vm = builder.build().unwrap();
+
+        run(&mut vm, 2, true);
+
+        let state = take_processor(&mut vm, (1, 2)).state;
+        assert_variables(
+            &state,
+            map_iter! {
+                "floor1": LValue::Content(Content::Block(&content::blocks::STONE)),
+                "ore1": LValue::Content(Content::Block(&content::blocks::AIR)),
+                "block1": LValue::Content(Content::Block(content::blocks::FROM_NAME["world-processor"])),
+                "building1": LValue::Building(Point2 { x: 1, y: 2 }),
+
+                "floor2": LValue::Content(Content::Block(&content::blocks::STONE)),
+                "ore2": LValue::Content(Content::Block(&content::blocks::AIR)),
+                "block2": LValue::Content(Content::Block(content::blocks::FROM_NAME["switch"])),
+                "building2": LValue::Building(Point2 { x: 1, y: 3 }),
+
+                "floor3": LValue::Null,
+                "ore3": LValue::Null,
+                "block3": LValue::Null,
+                "building3": LValue::Null,
+            },
         );
     }
 
