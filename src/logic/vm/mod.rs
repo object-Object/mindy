@@ -1,6 +1,6 @@
 #![allow(dead_code)]
 
-mod blocks;
+mod buildings;
 mod instructions;
 mod processor;
 mod variables;
@@ -16,7 +16,7 @@ use std::{
 use thiserror::Error;
 
 use self::{
-    blocks::{Block, BlockData},
+    buildings::{Building, BuildingData},
     variables::LVar,
 };
 use crate::types::{Point2, Schematic, SchematicTile};
@@ -25,8 +25,8 @@ const MILLIS_PER_SEC: u64 = 1_000;
 const NANOS_PER_MILLI: u32 = 1_000_000;
 
 pub struct LogicVM<'a> {
-    blocks: HashMap<Point2, Rc<RefCell<Block>>>,
-    processors: Vec<Rc<RefCell<Block>>>,
+    buildings: HashMap<Point2, Rc<RefCell<Building>>>,
+    processors: Vec<Rc<RefCell<Building>>>,
     running_processors: Rc<Cell<usize>>,
     time: Rc<Cell<f64>>,
     globals: Cow<'a, HashMap<String, LVar>>,
@@ -39,7 +39,7 @@ impl<'a> LogicVM<'a> {
 
     pub fn new_with_globals(globals: Cow<'a, HashMap<String, LVar>>) -> Self {
         Self {
-            blocks: HashMap::new(),
+            buildings: HashMap::new(),
             processors: Vec::new(),
             running_processors: Rc::new(Cell::new(0)),
             time: Rc::new(Cell::new(0.)),
@@ -57,20 +57,20 @@ impl<'a> LogicVM<'a> {
         Ok(vm)
     }
 
-    pub fn add_block(&mut self, block: Block) -> VMLoadResult<()> {
-        let position = block.position;
-        let size = block.content.size;
+    pub fn add_building(&mut self, building: Building) -> VMLoadResult<()> {
+        let position = building.position;
+        let size = building.block.size;
 
-        let block = Rc::new(RefCell::new(block));
+        let building = Rc::new(RefCell::new(building));
 
         for x in position.x..position.x + size {
             for y in position.y..position.y + size {
-                self.blocks.insert(Point2 { x, y }, block.clone());
+                self.buildings.insert(Point2 { x, y }, building.clone());
             }
         }
 
-        if let BlockData::Processor(processor) = &block.borrow().data {
-            self.processors.push(block.clone());
+        if let BuildingData::Processor(processor) = &building.borrow().data {
+            self.processors.push(building.clone());
             if processor.state.enabled() {
                 self.running_processors.update(|n| n + 1);
             }
@@ -79,19 +79,19 @@ impl<'a> LogicVM<'a> {
         Ok(())
     }
 
-    pub fn add_blocks<T>(&mut self, blocks: T) -> VMLoadResult<()>
+    pub fn add_buildings<T>(&mut self, buildings: T) -> VMLoadResult<()>
     where
-        T: IntoIterator<Item = Block>,
+        T: IntoIterator<Item = Building>,
     {
-        for block in blocks.into_iter() {
-            self.add_block(block)?;
+        for building in buildings.into_iter() {
+            self.add_building(building)?;
         }
         Ok(())
     }
 
     pub fn add_schematic_tile(&mut self, tile: &SchematicTile) -> VMLoadResult<()> {
-        let block = Block::from_schematic_tile(tile, self)?;
-        self.add_block(block)
+        let building = Building::from_schematic_tile(tile, self)?;
+        self.add_building(building)
     }
 
     pub fn add_schematic_tiles(&mut self, tiles: &[SchematicTile]) -> VMLoadResult<()> {
@@ -186,18 +186,18 @@ mod tests {
 
     use crate::{
         logic::vm::{
-            blocks::{HYPER_PROCESSOR, MICRO_PROCESSOR},
+            buildings::{HYPER_PROCESSOR, MICRO_PROCESSOR},
             variables::{Content, LValue, LVar},
         },
         types::{Object, PackedPoint2, ProcessorConfig, Team, colors::COLORS, content},
     };
 
-    use super::{blocks::WORLD_PROCESSOR, processor::Processor, *};
+    use super::{buildings::WORLD_PROCESSOR, processor::Processor, *};
 
     fn single_processor_vm<'a>(name: &str, code: &str) -> LogicVM<'a> {
         let mut vm = LogicVM::new();
-        vm.add_block(
-            Block::new_processor(
+        vm.add_building(
+            Building::new_processor(
                 name,
                 Point2::new(0, 0),
                 &ProcessorConfig::from_code(code),
@@ -215,8 +215,8 @@ mod tests {
         globals: &'a HashMap<String, LVar>,
     ) -> LogicVM<'a> {
         let mut vm = LogicVM::new_with_globals(Cow::Borrowed(globals));
-        vm.add_block(
-            Block::new_processor(
+        vm.add_building(
+            Building::new_processor(
                 name,
                 Point2::new(0, 0),
                 &ProcessorConfig::from_code(code),
@@ -244,11 +244,10 @@ mod tests {
 
     fn take_processor(vm: &mut LogicVM, idx: usize) -> Processor {
         vm.processors[idx]
-            .replace(Block {
-                name: "".into(),
+            .replace(Building {
                 position: Point2::new(0, 0),
-                content: &content::blocks::VALUES[0],
-                data: BlockData::Unknown {
+                block: &content::blocks::VALUES[0],
+                data: BuildingData::Unknown {
                     config: Object::Null,
                 },
             })

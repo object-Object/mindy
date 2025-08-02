@@ -6,7 +6,10 @@ use super::{
     LogicVM, VMLoadError, VMLoadResult,
     processor::{Processor, ProcessorBuilder, ProcessorState},
 };
-use crate::types::{Object, Point2, ProcessorConfig, SchematicTile, content};
+use crate::types::{
+    Object, Point2, ProcessorConfig, SchematicTile,
+    content::{self, Block},
+};
 
 pub const MICRO_PROCESSOR: &str = "micro-processor";
 pub const LOGIC_PROCESSOR: &str = "logic-processor";
@@ -26,14 +29,13 @@ pub const WORLD_SWITCH: &str = "world-switch";
 const MESSAGE_MAX_LEN: usize = 220;
 const MESSAGE_MAX_LINES: usize = 24;
 
-pub struct Block {
-    pub name: String,
+pub struct Building {
+    pub block: &'static Block,
     pub position: Point2,
-    pub content: &'static content::Block,
-    pub data: BlockData,
+    pub data: BuildingData,
 }
 
-impl Block {
+impl Building {
     pub fn new(name: &str, position: Point2, config: &Object, vm: &LogicVM) -> VMLoadResult<Self> {
         let data = match name {
             MICRO_PROCESSOR | LOGIC_PROCESSOR | HYPER_PROCESSOR | WORLD_PROCESSOR => {
@@ -45,11 +47,11 @@ impl Block {
                 );
             }
 
-            MEMORY_CELL => BlockData::Memory([0.; 64].into()),
-            MEMORY_BANK => BlockData::Memory([0.; 512].into()),
-            WORLD_CELL => BlockData::Memory([0.; 512].into()),
+            MEMORY_CELL => BuildingData::Memory([0.; 64].into()),
+            MEMORY_BANK => BuildingData::Memory([0.; 512].into()),
+            WORLD_CELL => BuildingData::Memory([0.; 512].into()),
 
-            MESSAGE | WORLD_MESSAGE => BlockData::Message(match config {
+            MESSAGE | WORLD_MESSAGE => BuildingData::Message(match config {
                 Object::String(Some(value)) if value.len() <= MESSAGE_MAX_LEN => {
                     let mut result = String::new();
                     let mut count = 0;
@@ -67,12 +69,12 @@ impl Block {
                 _ => Vec::new(),
             }),
 
-            SWITCH | WORLD_SWITCH => BlockData::Switch(match config {
+            SWITCH | WORLD_SWITCH => BuildingData::Switch(match config {
                 &Object::Bool(value) => value,
                 _ => false,
             }),
 
-            _ => BlockData::Unknown {
+            _ => BuildingData::Unknown {
                 config: config.clone(),
             },
         };
@@ -87,7 +89,7 @@ impl Block {
         vm: &LogicVM,
     ) -> VMLoadResult<Self> {
         let data = match name {
-            MICRO_PROCESSOR => BlockData::Processor(
+            MICRO_PROCESSOR => BuildingData::Processor(
                 ProcessorBuilder {
                     ipt: 2,
                     range: 8. * 10.,
@@ -99,7 +101,7 @@ impl Block {
                 }
                 .build()?,
             ),
-            LOGIC_PROCESSOR => BlockData::Processor(
+            LOGIC_PROCESSOR => BuildingData::Processor(
                 ProcessorBuilder {
                     ipt: 8,
                     range: 8. * 22.,
@@ -111,7 +113,7 @@ impl Block {
                 }
                 .build()?,
             ),
-            HYPER_PROCESSOR => BlockData::Processor(
+            HYPER_PROCESSOR => BuildingData::Processor(
                 ProcessorBuilder {
                     ipt: 25,
                     range: 8. * 42.,
@@ -123,7 +125,7 @@ impl Block {
                 }
                 .build()?,
             ),
-            WORLD_PROCESSOR => BlockData::Processor(
+            WORLD_PROCESSOR => BuildingData::Processor(
                 ProcessorBuilder {
                     ipt: 8,
                     range: f32::MAX,
@@ -158,22 +160,21 @@ impl Block {
         Self::new(name, (*position).into(), config, vm)
     }
 
-    pub fn from_data(name: &str, position: Point2, data: BlockData) -> VMLoadResult<Self> {
-        let content = *content::blocks::FROM_NAME
+    pub fn from_data(name: &str, position: Point2, data: BuildingData) -> VMLoadResult<Self> {
+        let block = *content::blocks::FROM_NAME
             .get(name)
             .ok_or_else(|| VMLoadError::UnknownBlockType(name.to_string()))?;
 
         Ok(Self {
-            name: name.to_string(),
+            block,
             position,
-            content,
             data,
         })
     }
 }
 
 #[derive(IntoStaticStr)]
-pub enum BlockData {
+pub enum BuildingData {
     Processor(Processor),
     Memory(Box<[f64]>),
     Message(Vec<u16>),
@@ -181,15 +182,15 @@ pub enum BlockData {
     Unknown { config: Object },
 }
 
-impl BlockData {
+impl BuildingData {
     /// # Panics
     ///
-    /// Panics if this block is not a processor.
+    /// Panics if this building is not a processor.
     pub fn into_processor(self) -> Processor {
         match self {
             Self::Processor(processor) => processor,
             _ => panic!(
-                "called `BlockData::into_processor()` on a `BlockData::{}` value",
+                "called `BuildingData::into_processor()` on a `BuildingData::{}` value",
                 <&str>::from(self)
             ),
         }
@@ -197,12 +198,12 @@ impl BlockData {
 
     /// # Panics
     ///
-    /// Panics if this block is not a processor.
+    /// Panics if this building is not a processor.
     pub fn unwrap_processor(&self) -> &Processor {
         match self {
-            BlockData::Processor(processor) => processor,
+            BuildingData::Processor(processor) => processor,
             _ => panic!(
-                "called `BlockData::unwrap_processor()` on a `BlockData::{}` value",
+                "called `BuildingData::unwrap_processor()` on a `BuildingData::{}` value",
                 <&str>::from(self)
             ),
         }
@@ -210,12 +211,12 @@ impl BlockData {
 
     /// # Panics
     ///
-    /// Panics if this block is not a processor.
+    /// Panics if this building is not a processor.
     pub fn unwrap_processor_mut(&mut self) -> &mut Processor {
         match self {
-            BlockData::Processor(processor) => processor,
+            BuildingData::Processor(processor) => processor,
             _ => panic!(
-                "called `BlockData::unwrap_processor_mut()` on a `BlockData::{}` value",
+                "called `BuildingData::unwrap_processor_mut()` on a `BuildingData::{}` value",
                 <&str>::from(&*self)
             ),
         }

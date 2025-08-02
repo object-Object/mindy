@@ -4,7 +4,7 @@ use num_traits::AsPrimitive;
 use velcro::hash_map_from;
 
 use crate::types::{
-    Team, colors,
+    Point2, Team, colors,
     content::{self, Block, Item, Liquid, Unit},
 };
 
@@ -179,6 +179,10 @@ pub enum LValue {
     String(Rc<str>),
     Content(Content),
     Team(Team),
+    Building {
+        block: &'static Block,
+        position: Point2,
+    },
 }
 
 impl LValue {

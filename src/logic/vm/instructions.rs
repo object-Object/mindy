@@ -206,6 +206,7 @@ impl Print {
             LValue::String(s) => Cow::Borrowed(s),
             LValue::Content(content) => Cow::Borrowed(content.name()),
             LValue::Team(team) => team.name(),
+            LValue::Building { block, .. } => Cow::Borrowed(&block.name),
         }
     }
 }
