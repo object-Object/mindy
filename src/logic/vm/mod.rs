@@ -16,7 +16,7 @@ use std::{
 use thiserror::Error;
 
 use self::{
-    blocks::{Block, BlockType},
+    blocks::{Block, BlockData},
     variables::LVar,
 };
 use crate::types::{Point2, Schematic, SchematicTile};
@@ -24,11 +24,9 @@ use crate::types::{Point2, Schematic, SchematicTile};
 const MILLIS_PER_SEC: u64 = 1_000;
 const NANOS_PER_MILLI: u32 = 1_000_000;
 
-type BlockPtr = Rc<RefCell<Block>>;
-
 pub struct LogicVM<'a> {
-    blocks: HashMap<Point2, BlockPtr>,
-    processors: Vec<BlockPtr>,
+    blocks: HashMap<Point2, Rc<RefCell<Block>>>,
+    processors: Vec<Rc<RefCell<Block>>>,
     running_processors: Rc<Cell<usize>>,
     time: Rc<Cell<f64>>,
     globals: Cow<'a, HashMap<String, LVar>>,
@@ -59,7 +57,10 @@ impl<'a> LogicVM<'a> {
         Ok(vm)
     }
 
-    pub fn add_block(&mut self, block: Block, size: i32, position: Point2) -> VMLoadResult<()> {
+    pub fn add_block(&mut self, block: Block) -> VMLoadResult<()> {
+        let position = block.position;
+        let size = block.content.size;
+
         let block = Rc::new(RefCell::new(block));
 
         for x in position.x..position.x + size {
@@ -68,7 +69,7 @@ impl<'a> LogicVM<'a> {
             }
         }
 
-        if let Block::Processor(processor) = &*block.borrow() {
+        if let BlockData::Processor(processor) = &block.borrow().data {
             self.processors.push(block.clone());
             if processor.state.enabled() {
                 self.running_processors.update(|n| n + 1);
@@ -80,18 +81,17 @@ impl<'a> LogicVM<'a> {
 
     pub fn add_blocks<T>(&mut self, blocks: T) -> VMLoadResult<()>
     where
-        T: IntoIterator<Item = ((Block, i32), Point2)>,
+        T: IntoIterator<Item = Block>,
     {
-        for ((block, size), position) in blocks.into_iter() {
-            self.add_block(block, size, position)?;
+        for block in blocks.into_iter() {
+            self.add_block(block)?;
         }
         Ok(())
     }
 
     pub fn add_schematic_tile(&mut self, tile: &SchematicTile) -> VMLoadResult<()> {
-        let (block, size) = Block::from_schematic_tile(tile, self)?;
-        let position = Point2::from(tile.position);
-        self.add_block(block, size, position)
+        let block = Block::from_schematic_tile(tile, self)?;
+        self.add_block(block)
     }
 
     pub fn add_schematic_tiles(&mut self, tiles: &[SchematicTile]) -> VMLoadResult<()> {
@@ -137,6 +137,7 @@ impl<'a> LogicVM<'a> {
         for processor in &self.processors {
             processor
                 .borrow_mut()
+                .data
                 .unwrap_processor_mut()
                 .do_tick(self, time);
         }
@@ -159,8 +160,11 @@ pub type VMLoadResult<T> = Result<T, VMLoadError>;
 
 #[derive(Error, Debug)]
 pub enum VMLoadError {
+    #[error("unknown block type: {0}")]
+    UnknownBlockType(String),
+
     #[error("expected {want} block type but got {got}")]
-    BadBlockType { want: String, got: BlockType },
+    BadBlockType { want: String, got: String },
 
     #[error("failed to decode processor config")]
     BadProcessorConfig(#[from] binrw::Error),
@@ -181,32 +185,45 @@ mod tests {
     use pretty_assertions::assert_eq;
 
     use crate::{
-        logic::vm::variables::{Content, LValue, LVar},
-        types::{Object, PackedPoint2, ProcessorConfig, Team, colors::COLORS},
+        logic::vm::{
+            blocks::{HYPER_PROCESSOR, MICRO_PROCESSOR},
+            variables::{Content, LValue, LVar},
+        },
+        types::{Object, PackedPoint2, ProcessorConfig, Team, colors::COLORS, content},
     };
 
-    use super::{processor::Processor, *};
+    use super::{blocks::WORLD_PROCESSOR, processor::Processor, *};
 
-    fn single_processor_vm<'a>(block: BlockType, code: &str) -> LogicVM<'a> {
+    fn single_processor_vm<'a>(name: &str, code: &str) -> LogicVM<'a> {
         let mut vm = LogicVM::new();
-        vm.add_blocks([(
-            Block::new_processor(block, &ProcessorConfig::from_code(code), &vm).unwrap(),
-            Point2 { x: 0, y: 0 },
-        )])
+        vm.add_block(
+            Block::new_processor(
+                name,
+                Point2::new(0, 0),
+                &ProcessorConfig::from_code(code),
+                &vm,
+            )
+            .unwrap(),
+        )
         .unwrap();
         vm
     }
 
     fn single_processor_vm_with_globals<'a>(
-        block: BlockType,
+        name: &str,
         code: &str,
         globals: &'a HashMap<String, LVar>,
     ) -> LogicVM<'a> {
         let mut vm = LogicVM::new_with_globals(Cow::Borrowed(globals));
-        vm.add_blocks([(
-            Block::new_processor(block, &ProcessorConfig::from_code(code), &vm).unwrap(),
-            Point2 { x: 0, y: 0 },
-        )])
+        vm.add_block(
+            Block::new_processor(
+                name,
+                Point2::new(0, 0),
+                &ProcessorConfig::from_code(code),
+                &vm,
+            )
+            .unwrap(),
+        )
         .unwrap();
         vm
     }
@@ -222,15 +239,20 @@ mod tests {
     }
 
     fn with_processor(vm: &mut LogicVM, idx: usize, f: impl FnOnce(&mut Processor)) {
-        f(vm.processors[idx].borrow_mut().unwrap_processor_mut())
+        f(vm.processors[idx].borrow_mut().data.unwrap_processor_mut())
     }
 
     fn take_processor(vm: &mut LogicVM, idx: usize) -> Processor {
         vm.processors[idx]
-            .replace(Block::Unknown {
-                block: "".into(),
-                config: Object::Null,
+            .replace(Block {
+                name: "".into(),
+                position: Point2::new(0, 0),
+                content: &content::blocks::VALUES[0],
+                data: BlockData::Unknown {
+                    config: Object::Null,
+                },
             })
+            .data
             .into_processor()
     }
 
@@ -264,7 +286,7 @@ mod tests {
     #[test]
     fn test_max_ticks() {
         let mut vm = single_processor_vm(
-            BlockType::MicroProcessor,
+            MICRO_PROCESSOR,
             "
             noop
             noop
@@ -282,7 +304,7 @@ mod tests {
     #[test]
     fn test_print() {
         let mut vm = single_processor_vm(
-            BlockType::HyperProcessor,
+            HYPER_PROCESSOR,
             r#"
             print "foo"
             print "bar\n"
@@ -316,7 +338,7 @@ mod tests {
     #[test]
     fn test_end() {
         let mut vm = single_processor_vm(
-            BlockType::MicroProcessor,
+            MICRO_PROCESSOR,
             "
             print 1
             end
@@ -335,7 +357,7 @@ mod tests {
     #[test]
     fn test_set() {
         let mut vm = single_processor_vm(
-            BlockType::MicroProcessor,
+            MICRO_PROCESSOR,
             r#"
             set foo 1
             noop
@@ -419,7 +441,7 @@ mod tests {
     #[test]
     fn test_setrate() {
         let mut vm = single_processor_vm(
-            BlockType::WorldProcessor,
+            WORLD_PROCESSOR,
             "
             noop
             setrate 0
@@ -456,7 +478,7 @@ mod tests {
 
     #[test]
     fn test_setrate_unpriv() {
-        let mut vm = single_processor_vm(BlockType::MicroProcessor, "setrate 10; stop");
+        let mut vm = single_processor_vm(MICRO_PROCESSOR, "setrate 10; stop");
         run(&mut vm, 1, true);
         let processor = take_processor(&mut vm, 0);
         assert_eq!(processor.state.ipt, 2);
@@ -591,7 +613,7 @@ mod tests {
         stop
         ";
 
-        let mut vm = single_processor_vm(BlockType::WorldProcessor, &code);
+        let mut vm = single_processor_vm(WORLD_PROCESSOR, &code);
 
         run(&mut vm, 2, true);
 
@@ -605,7 +627,7 @@ mod tests {
     #[test]
     fn test_wait() {
         let mut vm = single_processor_vm(
-            BlockType::HyperProcessor,
+            HYPER_PROCESSOR,
             "
             print 1
             wait -1
@@ -653,7 +675,7 @@ mod tests {
     fn test_printchar() {
         // TODO: test full range (requires op add)
         let mut vm = single_processor_vm(
-            BlockType::HyperProcessor,
+            HYPER_PROCESSOR,
             "
             printchar 0
             printchar 10
@@ -685,7 +707,7 @@ mod tests {
     #[test]
     fn test_format() {
         let mut vm = single_processor_vm(
-            BlockType::MicroProcessor,
+            MICRO_PROCESSOR,
             r#"
             print "{0} {1} {/} {9} {:} {10} {0}"
             noop
@@ -759,7 +781,7 @@ mod tests {
     #[test]
     fn test_pack_unpack_color() {
         let mut vm = single_processor_vm(
-            BlockType::HyperProcessor,
+            HYPER_PROCESSOR,
             "
             packcolor packed1 0 0.5 0.75 1
             unpackcolor r1 g1 b1 a1 packed1
@@ -818,7 +840,7 @@ mod tests {
 
         for &(cond, x, y, want_true) in CONDITION_TESTS {
             let mut vm = single_processor_vm_with_globals(
-                BlockType::HyperProcessor,
+                HYPER_PROCESSOR,
                 &format!(
                     "
                     set x {x}
@@ -966,7 +988,7 @@ mod tests {
             ("atan", "0.5", 26.56505117707799.into(), Some(1e-13)),
         ] {
             let mut vm = single_processor_vm_with_globals(
-                BlockType::HyperProcessor,
+                HYPER_PROCESSOR,
                 &format!(
                     "
                     op {op} got {x}
@@ -1163,7 +1185,7 @@ mod tests {
                 .map(|&(op, x, y, want)| (op, x, y, want.into())),
         ) {
             let mut vm = single_processor_vm_with_globals(
-                BlockType::HyperProcessor,
+                HYPER_PROCESSOR,
                 &format!(
                     "
                     op {op} got {x} {y}
@@ -1183,7 +1205,7 @@ mod tests {
     #[test]
     pub fn test_lookup() {
         let mut vm = single_processor_vm(
-            BlockType::HyperProcessor,
+            HYPER_PROCESSOR,
             "
             set blocks @blockCount
             set items @itemCount

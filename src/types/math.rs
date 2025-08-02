@@ -10,6 +10,12 @@ pub struct Point2 {
     pub y: i32,
 }
 
+impl Point2 {
+    pub fn new(x: i32, y: i32) -> Self {
+        Self { x, y }
+    }
+}
+
 impl From<PackedPoint2> for Point2 {
     fn from(value: PackedPoint2) -> Self {
         Self {
@@ -31,6 +37,12 @@ impl Display for Point2 {
 pub struct PackedPoint2 {
     pub x: i16,
     pub y: i16,
+}
+
+impl PackedPoint2 {
+    pub fn new(x: i16, y: i16) -> Self {
+        Self { x, y }
+    }
 }
 
 impl TryFrom<Point2> for PackedPoint2 {
