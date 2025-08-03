@@ -167,7 +167,7 @@ impl LVar {
             Self::Counter => {
                 if let LValue::Number(n) = value {
                     let counter = n as usize;
-                    state.counter = if (0..state.num_instructions).contains(&counter) {
+                    state.counter = if (0..state.num_instructions()).contains(&counter) {
                         counter
                     } else {
                         0

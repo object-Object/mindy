@@ -25,7 +25,6 @@ pub(super) const MAX_TEXT_BUFFER: usize = 400;
 const MAX_INSTRUCTION_SCALE: usize = 5;
 
 pub struct Processor {
-    privileged: bool,
     instructions: Vec<Box<dyn Instruction>>,
     pub(super) state: ProcessorState,
 }
@@ -108,6 +107,10 @@ impl Processor {
             false // should never happen
         });
 
+        self.state
+            .linked_positions
+            .extend(self.state.links.iter().map(|l| l.position));
+
         // now that we know which links are valid, set up the per-processor constants
         LVar::late_init_locals(
             &mut self.state.variables,
@@ -128,7 +131,7 @@ impl Processor {
                     match instruction.late_init(
                         &mut self.state.variables,
                         globals,
-                        self.privileged,
+                        self.state.privileged,
                         self.state.num_instructions,
                     ) {
                         // if the builder successfully parsed the instruction, put the new box into the vec
@@ -181,8 +184,10 @@ pub struct ProcessorState {
     stopped: bool,
     pub(super) wait_end_time: f64,
 
-    pub(super) num_instructions: usize,
+    privileged: bool,
+    num_instructions: usize,
     links: Vec<ProcessorLink>,
+    linked_positions: HashSet<Point2>,
 
     pub(super) counter: usize,
     accumulator: usize,
@@ -251,6 +256,18 @@ impl ProcessorState {
 
     pub fn link(&self, index: usize) -> Option<Point2> {
         self.links.get(index).map(|l| l.position)
+    }
+
+    pub fn linked_positions(&self) -> &HashSet<Point2> {
+        &self.linked_positions
+    }
+
+    pub fn privileged(&self) -> bool {
+        self.privileged
+    }
+
+    pub fn num_instructions(&self) -> usize {
+        self.num_instructions
     }
 }
 
@@ -346,13 +363,14 @@ impl ProcessorBuilder<'_> {
             .collect();
 
         Ok(Processor {
-            privileged,
             state: ProcessorState {
                 enabled,
                 stopped: false,
                 wait_end_time: -1.,
+                privileged,
                 num_instructions,
                 links,
+                linked_positions: HashSet::new(),
                 counter: 0,
                 accumulator: 0,
                 ipt,

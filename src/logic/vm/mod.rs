@@ -1134,6 +1134,67 @@ mod tests {
     }
 
     #[test]
+    fn test_control() {
+        let mut builder = LogicVMBuilder::new();
+        builder.add_buildings(
+            [
+                Building::from_processor_config(
+                    WORLD_PROCESSOR,
+                    Point2 { x: 0, y: 0 },
+                    &ProcessorConfig {
+                        code: "
+                        getblock building unlinked 4 0
+
+                        control enabled processor1 false
+                        control enabled switch1 true
+                        control enabled cell1 false
+                        control enabled unlinked false
+
+                        sensor got1 processor1 @enabled
+                        sensor got2 switch1 @enabled
+                        sensor got3 cell1 @enabled
+                        sensor got4 unlinked @enabled
+
+                        stop
+                        "
+                        .into(),
+                        links: vec![
+                            ProcessorLinkConfig::unnamed(1, 0),
+                            ProcessorLinkConfig::unnamed(2, 0),
+                            ProcessorLinkConfig::unnamed(3, 0),
+                        ],
+                    },
+                    &builder,
+                ),
+                Building::from_processor_config(
+                    MICRO_PROCESSOR,
+                    Point2 { x: 1, y: 0 },
+                    &ProcessorConfig::from_code("noop"),
+                    &builder,
+                ),
+                Building::from_config(SWITCH, Point2 { x: 2, y: 0 }, &false.into(), &builder),
+                Building::from_config(MEMORY_CELL, Point2 { x: 3, y: 0 }, &Object::Null, &builder),
+                Building::from_config(SWITCH, Point2 { x: 4, y: 0 }, &true.into(), &builder),
+            ]
+            .map(|v| v.unwrap()),
+        );
+        let mut vm = builder.build().unwrap();
+
+        run(&mut vm, 2, true);
+
+        let state = take_processor(&mut vm, (0, 0)).state;
+        assert_variables(
+            &state,
+            map_iter! {
+                "got1": LValue::Number(0.),
+                "got2": LValue::Number(1.),
+                "got3": LValue::Number(1.),
+                "got4": LValue::Number(0.),
+            },
+        );
+    }
+
+    #[test]
     fn test_max_ticks() {
         let mut vm = single_processor_vm(
             MICRO_PROCESSOR,

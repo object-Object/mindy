@@ -43,6 +43,13 @@ pub enum Instruction {
         result: Value,
         index: Value,
     },
+    Control {
+        control: LAccess,
+        target: Value,
+        p1: Value,
+        p2: Value,
+        p3: Value,
+    },
     Sensor {
         result: Value,
         target: Value,
@@ -293,4 +300,4 @@ macro_rules! optional_args {
 
 pub(super) use optional_args;
 
-use crate::types::ContentType;
+use crate::types::{ContentType, LAccess};

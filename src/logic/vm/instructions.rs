@@ -132,6 +132,16 @@ impl Instruction for InstructionBuilder {
                 result: lvar(result),
                 index: lvar(index),
             }),
+            ast::Instruction::Control {
+                control,
+                target,
+                p1,
+                ..
+            } => Box::new(Control {
+                control,
+                target: lvar(target),
+                p1: lvar(p1),
+            }),
             ast::Instruction::Sensor {
                 result,
                 target,
@@ -368,6 +378,39 @@ impl SimpleInstruction for GetLink {
             Err(_) => LValue::Null,
         };
         self.result.set(state, result);
+    }
+}
+
+struct Control {
+    control: LAccess,
+    target: LVar,
+    p1: LVar,
+}
+
+impl SimpleInstruction for Control {
+    fn execute(&self, state: &mut ProcessorState, vm: &LogicVM) {
+        if self.control == LAccess::Enabled
+            && let LValue::Building(position) = self.target.get(state)
+            && (state.privileged() || state.linked_positions().contains(&position))
+            && let Some(building) = vm.building(position)
+        {
+            let enabled = self.p1.get(state);
+            if !enabled.isobj() {
+                let enabled = enabled.numf() != 0.;
+                match building.data.try_borrow_mut().as_deref_mut().as_mut() {
+                    Ok(BuildingData::Processor(processor)) => {
+                        processor.state.set_enabled(enabled);
+                    }
+                    Err(_) => {
+                        state.set_enabled(enabled);
+                    }
+                    Ok(BuildingData::Switch(value)) => {
+                        *value = enabled;
+                    }
+                    _ => {}
+                }
+            }
+        }
     }
 }
 
@@ -761,7 +804,7 @@ struct End;
 
 impl SimpleInstruction for End {
     fn execute(&self, state: &mut ProcessorState, _: &LogicVM) {
-        state.counter = state.num_instructions;
+        state.counter = state.num_instructions();
     }
 }
 

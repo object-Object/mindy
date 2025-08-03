@@ -1,7 +1,7 @@
 // -*- mode: Rust; -*-
 
 use super::ast::*;
-use crate::types::{colors::{COLORS, to_double_bits}, ContentType};
+use crate::types::{colors::{COLORS, to_double_bits}, ContentType, LAccess};
 
 grammar;
 
@@ -21,6 +21,7 @@ match {
     "drawflush",
     "printflush",
     "getlink",
+    "control",
     "sensor",
     "set",
     "op",
@@ -127,6 +128,11 @@ match {
     "ore",
     "building",
 
+    "enabled",
+    "shoot",
+    "shootp",
+    "config",
+
     // https://github.com/Anuken/Arc/blob/071fdffaf220cd57cf971a0ee58db2f321f92ee1/arc-core/src/arc/util/Strings.java#L495
     // for example, -+1.--0. is a valid number literal
     r"(?x)
@@ -212,6 +218,15 @@ Instruction: Instruction = {
 
     "getlink" <result:Value> <index:Value> =>
         Instruction::GetLink { <> },
+
+    "control" <control:ControlType1> <target:Value> <p1:Value> =>
+        optional_args!(Instruction::Control { <>; p2, p3 }),
+
+    "control" <control:ControlType2> <target:Value> <p1:Value> <p2:Value> =>
+        optional_args!(Instruction::Control { <>; p3 }),
+
+    "control" <control:ControlType3> <target:Value> <p1:Value> <p2:Value> <p3:Value> =>
+        Instruction::Control { <> },
 
     "sensor" <result:Value> <target:Value> <sensor:Value> =>
         Instruction::Sensor { <> },
@@ -406,6 +421,20 @@ TileLayer: TileLayer = {
     "building" => TileLayer::Building,
 };
 
+ControlType1: LAccess = {
+    "enabled" => LAccess::Enabled,
+    "config"  => LAccess::Config,
+    "color"   => LAccess::Color,
+};
+
+ControlType2: LAccess = {
+    "shootp" => LAccess::Shootp,
+};
+
+ControlType3: LAccess = {
+    "shoot" => LAccess::Shoot,
+};
+
 Value: Value = {
     <s:STRING> =>
         Value::String(s[1..s.len() - 1].replace(r"\n", "\n")),
@@ -472,6 +501,7 @@ Symbol = {
     "drawflush",
     "printflush",
     "getlink",
+    "control",
     "sensor",
     "set",
     "op",
@@ -577,4 +607,9 @@ Symbol = {
 
     "ore",
     "building",
+
+    "enabled",
+    "shoot",
+    "shootp",
+    "config",
 };
