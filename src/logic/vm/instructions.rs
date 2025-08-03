@@ -414,7 +414,7 @@ impl Print {
             }
             LValue::String(string) => Cow::Borrowed(string),
             LValue::Content(content) => Cow::Borrowed(content.name()),
-            LValue::Team(team) => Cow::from(team.as_ref()),
+            LValue::Team(team) => Cow::from(team.name()),
             LValue::Building(position) => vm
                 .building(*position)
                 .map(|b| Cow::Borrowed(b.block.name.as_str()))
@@ -613,8 +613,8 @@ impl SimpleInstruction for Sensor {
                 },
 
                 LValue::Team(team) => match sensor {
-                    Name => LString::Static(team.into()).into(),
-                    Id => team.id().into(),
+                    Name => LString::Static(team.name()).into(),
+                    Id => team.0.into(),
                     Color => team.color().into(),
                     _ => LValue::Null,
                 },
@@ -626,7 +626,7 @@ impl SimpleInstruction for Sensor {
                         Y => building.position.y.into(),
                         Color => colors::TEAM_SHARDED.into(),
                         Dead => false.into(),
-                        Team => crate::types::Team::Sharded.id().into(),
+                        Team => crate::types::Team::SHARDED.0.into(),
                         Efficiency => 1.into(),
                         Timescale => 1.into(),
                         Range => building.block.range.into(),
@@ -853,7 +853,7 @@ impl SimpleInstruction for Lookup {
                 .map(|v| Content::Unit(v))
                 .into(),
 
-            ContentType::Team => id.try_into().ok().map(Team::from_id).into(),
+            ContentType::Team => id.try_into().ok().map(Team).into(),
 
             _ => LValue::Null,
         };

@@ -2475,11 +2475,8 @@ mod tests {
         // teams
 
         assert_eq!(variables["team1"].get(&state), LValue::Null);
-        assert_eq!(variables["team2"].get(&state), LValue::Team(Team::Derelict));
-        assert_eq!(
-            variables["team3"].get(&state),
-            LValue::Team(Team::Unknown(255))
-        );
+        assert_eq!(variables["team2"].get(&state), LValue::Team(Team::DERELICT));
+        assert_eq!(variables["team3"].get(&state), LValue::Team(Team(255)));
         assert_eq!(variables["team4"].get(&state), LValue::Null);
     }
 

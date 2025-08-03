@@ -3,7 +3,9 @@
 use std::hash::Hash;
 
 use binrw::prelude::*;
+use lazy_static::lazy_static;
 use strum_macros::{AsRefStr, IntoStaticStr, VariantArray};
+use velcro::vec;
 
 use super::colors;
 
@@ -118,74 +120,60 @@ pub enum LAccess {
     Color,
 }
 
-#[binrw]
-#[brw(big)]
-#[derive(
-    Debug, Clone, Copy, PartialEq, Eq, Hash, AsRefStr, IntoStaticStr, strum_macros::Display,
-)]
-#[strum(serialize_all = "camelCase")]
-pub enum Team {
-    #[brw(magic = 0u8)]
-    Derelict,
-    #[brw(magic = 1u8)]
-    Sharded,
-    #[brw(magic = 2u8)]
-    Crux,
-    #[brw(magic = 3u8)]
-    Malis,
-    #[brw(magic = 4u8)]
-    Green,
-    #[brw(magic = 5u8)]
-    Blue,
-    #[brw(magic = 6u8)]
-    Neoplastic,
-    #[strum(to_string = "team#{0}")]
-    Unknown(u8),
+lazy_static! {
+    static ref TEAM_NAMES: Vec<&'static str> = vec![
+        "derelict",
+        "sharded",
+        "crux",
+        "malis",
+        "green",
+        "blue",
+        "neoplastic",
+        ..(Team::BASE_TEAMS.len()..256).map(|i| -> &'static str { format!("team#{i}").leak() }),
+    ];
 }
 
+const TEAM_COLORS: &[f64] = &[
+    colors::TEAM_DERELICT_F64,
+    colors::TEAM_SHARDED_F64,
+    colors::TEAM_CRUX_F64,
+    colors::TEAM_MALIS_F64,
+    colors::TEAM_GREEN_F64,
+    colors::TEAM_BLUE_F64,
+    colors::TEAM_NEOPLASTIC_F64,
+    // TODO: unnamed teams
+];
+
+#[binrw]
+#[brw(big)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub struct Team(pub u8);
+
 impl Team {
-    pub fn base_teams() -> impl Iterator<Item = Self> {
-        (0u8..=6u8).map(Self::from_id)
-    }
+    pub const DERELICT: Self = Self(0);
+    pub const SHARDED: Self = Self(1);
+    pub const CRUX: Self = Self(2);
+    pub const MALIS: Self = Self(3);
+    pub const GREEN: Self = Self(4);
+    pub const BLUE: Self = Self(5);
+    pub const NEOPLASTIC: Self = Self(6);
 
-    pub fn from_id(id: u8) -> Self {
-        match id {
-            0 => Self::Derelict,
-            1 => Self::Sharded,
-            2 => Self::Crux,
-            3 => Self::Malis,
-            4 => Self::Green,
-            5 => Self::Blue,
-            6 => Self::Neoplastic,
-            _ => Self::Unknown(id),
-        }
-    }
+    pub const BASE_TEAMS: &[Self] = &[
+        Self::DERELICT,
+        Self::SHARDED,
+        Self::CRUX,
+        Self::MALIS,
+        Self::GREEN,
+        Self::BLUE,
+        Self::NEOPLASTIC,
+    ];
 
-    pub fn id(&self) -> u8 {
-        match self {
-            Self::Derelict => 0,
-            Self::Sharded => 1,
-            Self::Crux => 2,
-            Self::Malis => 3,
-            Self::Green => 4,
-            Self::Blue => 5,
-            Self::Neoplastic => 6,
-            Self::Unknown(id) => *id,
-        }
+    pub fn name(&self) -> &'static str {
+        TEAM_NAMES[self.0 as usize]
     }
 
     pub fn color(&self) -> f64 {
-        match self {
-            Self::Derelict => colors::TEAM_DERELICT_F64,
-            Self::Sharded => colors::TEAM_SHARDED_F64,
-            Self::Crux => colors::TEAM_CRUX_F64,
-            Self::Malis => colors::TEAM_MALIS_F64,
-            Self::Green => colors::TEAM_GREEN_F64,
-            Self::Blue => colors::TEAM_BLUE_F64,
-            Self::Neoplastic => colors::TEAM_NEOPLASTIC_F64,
-            // TODO: implement
-            Self::Unknown(_) => 0.,
-        }
+        TEAM_COLORS.get(self.0 as usize).copied().unwrap_or(0.)
     }
 }
 

@@ -79,7 +79,11 @@ impl LVar {
             "@unitCount": constant(content::units::FROM_LOGIC_ID.len()),
         };
 
-        globals.extend(Team::base_teams().map(|t| named_constant(t, t)));
+        globals.extend(
+            Team::BASE_TEAMS
+                .iter()
+                .map(|&t| named_constant(t.name(), t)),
+        );
 
         globals.extend(
             content::items::VALUES
