@@ -14,6 +14,11 @@ pub enum Statement {
 #[derive(Debug, Clone, PartialEq)]
 pub enum Instruction {
     // input/output
+    Read {
+        result: Value,
+        target: Value,
+        address: Value,
+    },
     Draw {
         op: DrawOp,
         x: Value,

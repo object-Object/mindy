@@ -14,6 +14,7 @@ match {
 
     r"[^\r\n #\t;]+:" => LABEL,
 
+    "read",
     "draw",
     "print",
     "printchar",
@@ -177,6 +178,9 @@ Statement: Statement = {
 
 Instruction: Instruction = {
     // input/output
+
+    "read" <result:Value> <target:Value> <address:Value> =>
+        Instruction::Read { <> },
 
     "draw" <op:DrawOp0> =>
         optional_args!(Instruction::Draw { <>; x, y, p1, p2, p3, p4 }),
@@ -494,6 +498,7 @@ Symbol = {
     SYMBOL,
     LABEL,
 
+    "read",
     "draw",
     "print",
     "printchar",

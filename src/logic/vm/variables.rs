@@ -1,4 +1,12 @@
-use std::{cell::RefCell, collections::HashMap, fmt::Display, num::TryFromIntError, rc::Rc};
+use std::{
+    cell::RefCell,
+    collections::HashMap,
+    fmt::Display,
+    hash::{Hash, Hasher},
+    num::TryFromIntError,
+    ops::Deref,
+    rc::Rc,
+};
 
 use num_traits::AsPrimitive;
 use strum::VariantArray;
@@ -159,6 +167,14 @@ impl LVar {
         }
     }
 
+    /// Returns `None` if this is a variable for which `self.set` would be a no-op.
+    pub fn try_get_writable(&self, state: &ProcessorState) -> Option<LValue> {
+        match self {
+            Self::Variable(_) | Self::Counter => Some(self.get(state)),
+            _ => None,
+        }
+    }
+
     pub fn set(&self, state: &mut ProcessorState, value: LValue) {
         match self {
             Self::Variable(ptr) => {
@@ -202,8 +218,7 @@ where
 pub enum LValue {
     Null,
     Number(f64),
-    RcString(Rc<str>),
-    StaticString(&'static str),
+    String(LString),
     Content(Content),
     Team(Team),
     Building(Point2),
@@ -253,15 +268,21 @@ impl From<bool> for LValue {
     }
 }
 
+impl From<LString> for LValue {
+    fn from(value: LString) -> Self {
+        Self::String(value)
+    }
+}
+
 impl From<Rc<str>> for LValue {
     fn from(value: Rc<str>) -> Self {
-        Self::RcString(value)
+        LString::Rc(value).into()
     }
 }
 
 impl From<&'static str> for LValue {
     fn from(value: &'static str) -> Self {
-        Self::StaticString(value)
+        LString::Static(value).into()
     }
 }
 
@@ -303,6 +324,49 @@ where
 
 fn invalid(n: f64) -> bool {
     n.is_nan() || n.is_infinite()
+}
+
+#[derive(Debug, Clone)]
+pub enum LString {
+    Rc(Rc<str>),
+    Static(&'static str),
+}
+
+impl Deref for LString {
+    type Target = str;
+
+    fn deref(&self) -> &Self::Target {
+        match self {
+            Self::Rc(rc) => rc,
+            Self::Static(s) => s,
+        }
+    }
+}
+
+impl PartialEq for LString {
+    fn eq(&self, other: &Self) -> bool {
+        **self == **other
+    }
+}
+
+impl Eq for LString {}
+
+impl PartialOrd for LString {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
+impl Ord for LString {
+    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+        (**self).cmp(&**other)
+    }
+}
+
+impl Hash for LString {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        (**self).hash(state)
+    }
 }
 
 #[derive(Debug, Clone, PartialEq)]

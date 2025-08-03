@@ -1,11 +1,11 @@
-use std::{cell::RefCell, rc::Rc};
+use std::{cell::RefCell, collections::HashMap, rc::Rc};
 
 use strum_macros::IntoStaticStr;
 
 use super::{
     LogicVMBuilder, VMLoadError, VMLoadResult,
     processor::{Processor, ProcessorBuilder, ProcessorState},
-    variables::LValue,
+    variables::{LValue, LVar},
 };
 use crate::types::{
     Object, Point2, ProcessorConfig, SchematicTile,
@@ -176,6 +176,46 @@ impl Building {
         builder: &LogicVMBuilder,
     ) -> VMLoadResult<Self> {
         Self::from_config(name, (*position).into(), config, builder)
+    }
+
+    pub fn borrow_data<T, U, R>(
+        &self,
+        state: &ProcessorState,
+        variables: &HashMap<String, LVar>,
+        f_processor: T,
+        f_other: U,
+    ) -> R
+    where
+        T: FnOnce(&ProcessorState, &HashMap<String, LVar>) -> R,
+        U: FnOnce(&BuildingData) -> R,
+    {
+        match self.data.try_borrow() {
+            Ok(data) => match &*data {
+                BuildingData::Processor(p) => f_processor(&p.state, &p.variables),
+                other => f_other(other),
+            },
+            Err(_) => f_processor(state, variables),
+        }
+    }
+
+    pub fn borrow_data_mut<T, U, R>(
+        &self,
+        state: &mut ProcessorState,
+        variables: &HashMap<String, LVar>,
+        f_processor: T,
+        f_other: U,
+    ) -> R
+    where
+        T: FnOnce(&mut ProcessorState, &HashMap<String, LVar>) -> R,
+        U: FnOnce(&mut BuildingData) -> R,
+    {
+        match self.data.try_borrow_mut() {
+            Ok(mut data) => match &mut *data {
+                BuildingData::Processor(p) => f_processor(&mut p.state, &p.variables),
+                other => f_other(other),
+            },
+            Err(_) => f_processor(state, variables),
+        }
     }
 }
 

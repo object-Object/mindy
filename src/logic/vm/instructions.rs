@@ -12,7 +12,7 @@ use super::{
 use crate::{
     logic::{
         ast::{self, ConditionOp, LogicOp, TileLayer},
-        vm::variables::{F64_DEG_RAD, F64_RAD_DEG},
+        vm::variables::{F64_DEG_RAD, F64_RAD_DEG, LString},
     },
     types::{
         ContentType, LAccess, Point2, Team,
@@ -48,16 +48,26 @@ pub trait Instruction {
 
     /// Returns true if more instructions can be executed,
     /// or false if the processor should yield for the rest of this tick.
-    fn execute(&self, state: &mut ProcessorState, vm: &LogicVM) -> InstructionResult;
+    fn execute(
+        &self,
+        state: &mut ProcessorState,
+        variables: &HashMap<String, LVar>,
+        vm: &LogicVM,
+    ) -> InstructionResult;
 }
 
 trait SimpleInstruction {
-    fn execute(&self, state: &mut ProcessorState, vm: &LogicVM);
+    fn execute(&self, state: &mut ProcessorState, variables: &HashMap<String, LVar>, vm: &LogicVM);
 }
 
 impl<T: SimpleInstruction> Instruction for T {
-    fn execute(&self, state: &mut ProcessorState, vm: &LogicVM) -> InstructionResult {
-        self.execute(state, vm);
+    fn execute(
+        &self,
+        state: &mut ProcessorState,
+        variables: &HashMap<String, LVar>,
+        vm: &LogicVM,
+    ) -> InstructionResult {
+        self.execute(state, variables, vm);
         InstructionResult::Ok
     }
 }
@@ -87,7 +97,7 @@ impl Instruction for InstructionBuilder {
                     var
                 }
             }
-            ast::Value::String(value) => LVar::Constant(LValue::RcString(value.into())),
+            ast::Value::String(value) => LVar::Constant(LString::Rc(value.into()).into()),
             ast::Value::Number(value) => LVar::Constant(value.into()),
             ast::Value::None => LVar::Constant(LValue::Null),
         };
@@ -117,6 +127,15 @@ impl Instruction for InstructionBuilder {
 
         Ok(match self.instruction {
             // input/output
+            ast::Instruction::Read {
+                result,
+                target,
+                address,
+            } => Box::new(Read {
+                result: lvar(result),
+                target: lvar(target),
+                address: lvar(address),
+            }),
             // TODO: implement draw?
             ast::Instruction::Draw { .. } => Box::new(Noop),
             ast::Instruction::Print { value } => Box::new(Print { value: lvar(value) }),
@@ -241,12 +260,92 @@ impl Instruction for InstructionBuilder {
         })
     }
 
-    fn execute(&self, _: &mut ProcessorState, _: &LogicVM) -> InstructionResult {
+    fn execute(
+        &self,
+        _: &mut ProcessorState,
+        _: &HashMap<String, LVar>,
+        _: &LogicVM,
+    ) -> InstructionResult {
         unreachable!("InstructionBuilder should always be replaced during late init")
     }
 }
 
 // input/output
+
+struct Read {
+    result: LVar,
+    target: LVar,
+    address: LVar,
+}
+
+impl SimpleInstruction for Read {
+    fn execute(&self, state: &mut ProcessorState, variables: &HashMap<String, LVar>, vm: &LogicVM) {
+        let address = self.address.get(state);
+
+        let result = match self.target.get(state) {
+            LValue::Building(position) => match vm.building(position) {
+                Some(building) => building.borrow_data(
+                    state,
+                    variables,
+                    |state, variables| match address.clone() {
+                        // read variable with name, returning null for constants and undefined
+                        LValue::String(name) => variables
+                            .get(&*name)
+                            .and_then(|v| v.try_get_writable(state))
+                            .or(Some(LValue::Null)),
+
+                        // no-op if the address is not a string
+                        _ => None,
+                    },
+                    |data| match data {
+                        // read value at index
+                        BuildingData::Memory(memory) => {
+                            // coerce the address to a number, and return null if the address is not in range
+                            Some(
+                                address
+                                    .num_usize()
+                                    .ok()
+                                    .and_then(|i| memory.get(i))
+                                    .copied()
+                                    .into(),
+                            )
+                        }
+
+                        // read char at index
+                        BuildingData::Message(buf) => Some(
+                            address
+                                .num_usize()
+                                .ok()
+                                .and_then(|i| buf.get(i))
+                                .copied()
+                                .into(),
+                        ),
+
+                        // no-op if the target doesn't support reading
+                        _ => None,
+                    },
+                ),
+                None => None,
+            },
+
+            // read char at index
+            // TODO: inefficient
+            LValue::String(string) => Some(
+                address
+                    .num_usize()
+                    .ok()
+                    .and_then(|i| string.encode_utf16().nth(i))
+                    .into(),
+            ),
+
+            _ => None,
+        };
+
+        if let Some(result) = result {
+            self.result.set(state, result);
+        }
+    }
+}
 
 struct Print {
     value: LVar,
@@ -264,8 +363,7 @@ impl Print {
                     n.to_string()
                 })
             }
-            LValue::RcString(s) => Cow::Borrowed(s),
-            LValue::StaticString(s) => Cow::from(*s),
+            LValue::String(string) => Cow::Borrowed(string),
             LValue::Content(content) => Cow::Borrowed(content.name()),
             LValue::Team(team) => Cow::from(team.as_ref()),
             LValue::Building(position) => vm
@@ -278,7 +376,7 @@ impl Print {
 }
 
 impl SimpleInstruction for Print {
-    fn execute(&self, state: &mut ProcessorState, vm: &LogicVM) {
+    fn execute(&self, state: &mut ProcessorState, _: &HashMap<String, LVar>, vm: &LogicVM) {
         if state.printbuffer.len() >= MAX_TEXT_BUFFER {
             return;
         }
@@ -293,7 +391,7 @@ struct PrintChar {
 }
 
 impl SimpleInstruction for PrintChar {
-    fn execute(&self, state: &mut ProcessorState, _: &LogicVM) {
+    fn execute(&self, state: &mut ProcessorState, _: &HashMap<String, LVar>, _: &LogicVM) {
         if state.printbuffer.len() >= MAX_TEXT_BUFFER {
             return;
         }
@@ -311,7 +409,7 @@ struct Format {
 }
 
 impl SimpleInstruction for Format {
-    fn execute(&self, state: &mut ProcessorState, vm: &LogicVM) {
+    fn execute(&self, state: &mut ProcessorState, _: &HashMap<String, LVar>, vm: &LogicVM) {
         if state.printbuffer.len() >= MAX_TEXT_BUFFER {
             return;
         }
@@ -351,7 +449,7 @@ struct PrintFlush {
 }
 
 impl SimpleInstruction for PrintFlush {
-    fn execute(&self, state: &mut ProcessorState, vm: &LogicVM) {
+    fn execute(&self, state: &mut ProcessorState, _: &HashMap<String, LVar>, vm: &LogicVM) {
         if let LValue::Building(position) = self.target.get(state)
             && let Some(target) = vm.building(position)
             && let Ok(mut data) = target.data.try_borrow_mut()
@@ -372,7 +470,7 @@ struct GetLink {
 }
 
 impl SimpleInstruction for GetLink {
-    fn execute(&self, state: &mut ProcessorState, _: &LogicVM) {
+    fn execute(&self, state: &mut ProcessorState, _: &HashMap<String, LVar>, _: &LogicVM) {
         let result = match self.index.get(state).num_usize() {
             Ok(index) => state.link(index).into(),
             Err(_) => LValue::Null,
@@ -388,7 +486,7 @@ struct Control {
 }
 
 impl SimpleInstruction for Control {
-    fn execute(&self, state: &mut ProcessorState, vm: &LogicVM) {
+    fn execute(&self, state: &mut ProcessorState, variables: &HashMap<String, LVar>, vm: &LogicVM) {
         if self.control == LAccess::Enabled
             && let LValue::Building(position) = self.target.get(state)
             && (state.privileged() || state.linked_positions().contains(&position))
@@ -397,18 +495,16 @@ impl SimpleInstruction for Control {
             let enabled = self.p1.get(state);
             if !enabled.isobj() {
                 let enabled = enabled.numf() != 0.;
-                match building.data.try_borrow_mut().as_deref_mut().as_mut() {
-                    Ok(BuildingData::Processor(processor)) => {
-                        processor.state.set_enabled(enabled);
-                    }
-                    Err(_) => {
-                        state.set_enabled(enabled);
-                    }
-                    Ok(BuildingData::Switch(value)) => {
-                        *value = enabled;
-                    }
-                    _ => {}
-                }
+                building.borrow_data_mut(
+                    state,
+                    variables,
+                    |state, _| state.set_enabled(enabled),
+                    |data| {
+                        if let BuildingData::Switch(value) = data {
+                            *value = enabled;
+                        }
+                    },
+                );
             }
         }
     }
@@ -420,17 +516,8 @@ struct Sensor {
     sensor: LVar,
 }
 
-impl Sensor {
-    fn sense_processor(sensor: LAccess, state: &ProcessorState) -> LValue {
-        match sensor {
-            LAccess::Enabled => state.enabled().into(),
-            _ => LValue::Null,
-        }
-    }
-}
-
 impl SimpleInstruction for Sensor {
-    fn execute(&self, state: &mut ProcessorState, vm: &LogicVM) {
+    fn execute(&self, state: &mut ProcessorState, variables: &HashMap<String, LVar>, vm: &LogicVM) {
         use LAccess::*;
 
         let target = self.target.get(state);
@@ -450,34 +537,34 @@ impl SimpleInstruction for Sensor {
                         ItemCapacity => block.item_capacity.into(),
                         LiquidCapacity => block.liquid_capacity.into(),
                         Id => block.logic_id.into(),
-                        Name => LValue::StaticString(&block.name),
+                        Name => LString::Static(&block.name).into(),
                         _ => LValue::Null,
                     },
 
                     // TODO: color
                     Content::Item(item) => match sensor {
                         Id => item.logic_id.into(),
-                        Name => LValue::StaticString(&item.name),
+                        Name => LString::Static(&item.name).into(),
                         _ => LValue::Null,
                     },
 
                     // TODO: color
                     Content::Liquid(liquid) => match sensor {
                         Id => liquid.logic_id.into(),
-                        Name => LValue::StaticString(&liquid.name),
+                        Name => LString::Static(&liquid.name).into(),
                         _ => LValue::Null,
                     },
 
                     // TODO: health, maxHealth, size, itemCapacity, speed, payloadCapacity
                     Content::Unit(unit) => match sensor {
                         Id => unit.logic_id.into(),
-                        Name => LValue::StaticString(&unit.name),
+                        Name => LString::Static(&unit.name).into(),
                         _ => LValue::Null,
                     },
                 },
 
                 LValue::Team(team) => match sensor {
-                    Name => LValue::StaticString(team.into()),
+                    Name => LString::Static(team.into()).into(),
                     Id => team.id().into(),
                     Color => team.color().into(),
                     _ => LValue::Null,
@@ -507,47 +594,48 @@ impl SimpleInstruction for Sensor {
                         FirstItem => LValue::Null,
                         PayloadType => LValue::Null,
 
-                        _ => match building.data.try_borrow().as_deref().as_ref() {
-                            Ok(BuildingData::Processor(processor)) => {
-                                Self::sense_processor(sensor, &processor.state)
-                            }
-                            // if the building is already mutably borrowed, we're sensing @this
-                            Err(_) => Self::sense_processor(sensor, state),
-
-                            Ok(BuildingData::Memory(memory)) => match sensor {
-                                MemoryCapacity => memory.len().into(),
-                                Enabled => true.into(),
+                        _ => building.borrow_data(
+                            state,
+                            variables,
+                            |state, _| match sensor {
+                                LAccess::Enabled => state.enabled().into(),
                                 _ => LValue::Null,
                             },
+                            |data| match data {
+                                BuildingData::Memory(memory) => match sensor {
+                                    MemoryCapacity => memory.len().into(),
+                                    Enabled => true.into(),
+                                    _ => LValue::Null,
+                                },
 
-                            Ok(BuildingData::Message(buf)) => match sensor {
-                                BufferSize => buf.len().into(),
-                                Enabled => true.into(),
-                                _ => LValue::Null,
-                            },
+                                BuildingData::Message(buf) => match sensor {
+                                    BufferSize => buf.len().into(),
+                                    Enabled => true.into(),
+                                    _ => LValue::Null,
+                                },
 
-                            Ok(BuildingData::Switch(enabled)) => match sensor {
-                                Enabled => (*enabled).into(),
-                                _ => LValue::Null,
-                            },
+                                BuildingData::Switch(enabled) => match sensor {
+                                    Enabled => (*enabled).into(),
+                                    _ => LValue::Null,
+                                },
 
-                            Ok(BuildingData::Unknown {
-                                senseable_config, ..
-                            }) => match sensor {
-                                Config => senseable_config.clone().unwrap_or(LValue::Null),
-                                Enabled => true.into(),
-                                _ => LValue::Null,
+                                BuildingData::Unknown {
+                                    senseable_config, ..
+                                } => match sensor {
+                                    Config => senseable_config.clone().unwrap_or(LValue::Null),
+                                    Enabled => true.into(),
+                                    _ => LValue::Null,
+                                },
+
+                                BuildingData::Processor(_) => unreachable!(),
                             },
-                        },
+                        ),
                     },
                     None => LValue::Null,
                 },
 
                 // string length
-                LValue::RcString(string) if matches!(sensor, BufferSize | Size) => {
-                    string.len().into()
-                }
-                LValue::StaticString(string) if matches!(sensor, BufferSize | Size) => {
+                LValue::String(string) if matches!(sensor, BufferSize | Size) => {
                     string.len().into()
                 }
 
@@ -582,7 +670,7 @@ struct Set {
 }
 
 impl SimpleInstruction for Set {
-    fn execute(&self, state: &mut ProcessorState, _: &LogicVM) {
+    fn execute(&self, state: &mut ProcessorState, _: &HashMap<String, LVar>, _: &LogicVM) {
         self.to.set_from(state, &self.from);
     }
 }
@@ -595,7 +683,7 @@ struct Op {
 }
 
 impl SimpleInstruction for Op {
-    fn execute(&self, state: &mut ProcessorState, _: &LogicVM) {
+    fn execute(&self, state: &mut ProcessorState, _: &HashMap<String, LVar>, _: &LogicVM) {
         // TODO: this seems inefficient for unary and condition ops
         let x = self.x.get(state).num();
         let y = self.y.get(state).num();
@@ -675,7 +763,7 @@ struct Select {
 }
 
 impl SimpleInstruction for Select {
-    fn execute(&self, state: &mut ProcessorState, _: &LogicVM) {
+    fn execute(&self, state: &mut ProcessorState, _: &HashMap<String, LVar>, _: &LogicVM) {
         let result = if Jump::test(self.op, &self.x, &self.y, state) {
             &self.if_true
         } else {
@@ -692,7 +780,7 @@ struct Lookup {
 }
 
 impl SimpleInstruction for Lookup {
-    fn execute(&self, state: &mut ProcessorState, _: &LogicVM) {
+    fn execute(&self, state: &mut ProcessorState, _: &HashMap<String, LVar>, _: &LogicVM) {
         let id = self.id.get(state).numi();
 
         let result = match self.content_type {
@@ -734,7 +822,7 @@ struct PackColor {
 }
 
 impl SimpleInstruction for PackColor {
-    fn execute(&self, state: &mut ProcessorState, _: &LogicVM) {
+    fn execute(&self, state: &mut ProcessorState, _: &HashMap<String, LVar>, _: &LogicVM) {
         self.result.set(
             state,
             f32_to_double_bits(
@@ -757,7 +845,7 @@ struct UnpackColor {
 }
 
 impl SimpleInstruction for UnpackColor {
-    fn execute(&self, state: &mut ProcessorState, _: &LogicVM) {
+    fn execute(&self, state: &mut ProcessorState, _: &HashMap<String, LVar>, _: &LogicVM) {
         let (r, g, b, a) = f64_from_double_bits(self.value.get(state).num());
         self.r.set(state, r.into());
         self.g.set(state, g.into());
@@ -771,7 +859,7 @@ impl SimpleInstruction for UnpackColor {
 pub(super) struct Noop;
 
 impl SimpleInstruction for Noop {
-    fn execute(&self, _: &mut ProcessorState, _: &LogicVM) {}
+    fn execute(&self, _: &mut ProcessorState, _: &HashMap<String, LVar>, _: &LogicVM) {}
 }
 
 struct Wait {
@@ -779,7 +867,12 @@ struct Wait {
 }
 
 impl Instruction for Wait {
-    fn execute(&self, state: &mut ProcessorState, _: &LogicVM) -> InstructionResult {
+    fn execute(
+        &self,
+        state: &mut ProcessorState,
+        _: &HashMap<String, LVar>,
+        _: &LogicVM,
+    ) -> InstructionResult {
         let wait_ms = self.value.get(state).num() * 1000.;
         if wait_ms <= 0. {
             InstructionResult::Ok
@@ -793,7 +886,12 @@ impl Instruction for Wait {
 struct Stop;
 
 impl Instruction for Stop {
-    fn execute(&self, state: &mut ProcessorState, _: &LogicVM) -> InstructionResult {
+    fn execute(
+        &self,
+        state: &mut ProcessorState,
+        _: &HashMap<String, LVar>,
+        _: &LogicVM,
+    ) -> InstructionResult {
         state.counter -= 1;
         state.set_stopped(true);
         InstructionResult::Yield
@@ -803,7 +901,7 @@ impl Instruction for Stop {
 struct End;
 
 impl SimpleInstruction for End {
-    fn execute(&self, state: &mut ProcessorState, _: &LogicVM) {
+    fn execute(&self, state: &mut ProcessorState, _: &HashMap<String, LVar>, _: &LogicVM) {
         state.counter = state.num_instructions();
     }
 }
@@ -850,7 +948,7 @@ impl Jump {
 }
 
 impl SimpleInstruction for Jump {
-    fn execute(&self, state: &mut ProcessorState, _: &LogicVM) {
+    fn execute(&self, state: &mut ProcessorState, _: &HashMap<String, LVar>, _: &LogicVM) {
         if Self::test(self.op, &self.x, &self.y, state) {
             // we do the bounds check while parsing
             state.counter = self.target;
@@ -868,7 +966,7 @@ struct GetBlock {
 }
 
 impl SimpleInstruction for GetBlock {
-    fn execute(&self, state: &mut ProcessorState, vm: &LogicVM) {
+    fn execute(&self, state: &mut ProcessorState, _: &HashMap<String, LVar>, vm: &LogicVM) {
         let result = match vm.building(Point2 {
             x: self.x.get(state).numf().round() as i32,
             y: self.y.get(state).numf().round() as i32,
@@ -890,7 +988,7 @@ struct SetRate {
 }
 
 impl SimpleInstruction for SetRate {
-    fn execute(&self, state: &mut ProcessorState, _: &LogicVM) {
+    fn execute(&self, state: &mut ProcessorState, _: &HashMap<String, LVar>, _: &LogicVM) {
         state.ipt = (self.value.get(state).num() as usize).clamp(1, MAX_IPT);
     }
 }

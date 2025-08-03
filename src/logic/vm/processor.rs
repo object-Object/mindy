@@ -27,6 +27,7 @@ const MAX_INSTRUCTION_SCALE: usize = 5;
 pub struct Processor {
     instructions: Vec<Box<dyn Instruction>>,
     pub(super) state: ProcessorState,
+    pub(super) variables: HashMap<String, LVar>,
 }
 
 impl Processor {
@@ -112,11 +113,7 @@ impl Processor {
             .extend(self.state.links.iter().map(|l| l.position));
 
         // now that we know which links are valid, set up the per-processor constants
-        LVar::late_init_locals(
-            &mut self.state.variables,
-            building.position,
-            &self.state.links,
-        );
+        LVar::late_init_locals(&mut self.variables, building.position, &self.state.links);
 
         // finally, finish parsing the instructions
         // this must only be done after the link variables have been added
@@ -129,7 +126,7 @@ impl Processor {
                 || Box::new(Noop),
                 |instruction| -> (VMLoadResult<()>, _) {
                     match instruction.late_init(
-                        &mut self.state.variables,
+                        &mut self.variables,
                         globals,
                         self.state.privileged,
                         self.state.num_instructions,
@@ -173,7 +170,7 @@ impl Processor {
         }
 
         self.state.counter = counter + 1;
-        self.instructions[counter].execute(&mut self.state, vm)
+        self.instructions[counter].execute(&mut self.state, &self.variables, vm)
     }
 }
 
@@ -199,7 +196,6 @@ pub struct ProcessorState {
     // this behaviour is user-visible with printchar and when reading from a message
     // https://users.rust-lang.org/t/why-is-a-char-valid-in-jvm-but-invalid-in-rust/73524
     pub(super) printbuffer: Vec<u16>,
-    pub(super) variables: HashMap<String, LVar>,
 }
 
 impl ProcessorState {
@@ -363,6 +359,8 @@ impl ProcessorBuilder<'_> {
             .collect();
 
         Ok(Processor {
+            instructions,
+            variables: HashMap::new(),
             state: ProcessorState {
                 enabled,
                 stopped: false,
@@ -377,9 +375,7 @@ impl ProcessorBuilder<'_> {
                 running_processors,
                 time,
                 printbuffer: Vec::with_capacity(MAX_TEXT_BUFFER),
-                variables: HashMap::new(),
             },
-            instructions,
         })
     }
 }
