@@ -15,8 +15,8 @@ use crate::{
         vm::variables::{F64_DEG_RAD, F64_RAD_DEG},
     },
     types::{
-        ContentType, Point2, Team,
-        colors::{f32_to_double_bits, f64_from_double_bits},
+        ContentType, LAccess, Point2, Team,
+        colors::{self, f32_to_double_bits, f64_from_double_bits},
         content,
     },
 };
@@ -87,7 +87,7 @@ impl Instruction for InstructionBuilder {
                     var
                 }
             }
-            ast::Value::String(value) => LVar::Constant(LValue::String(value.into())),
+            ast::Value::String(value) => LVar::Constant(LValue::RcString(value.into())),
             ast::Value::Number(value) => LVar::Constant(value.into()),
             ast::Value::None => LVar::Constant(LValue::Null),
         };
@@ -131,6 +131,15 @@ impl Instruction for InstructionBuilder {
             ast::Instruction::GetLink { result, index } => Box::new(GetLink {
                 result: lvar(result),
                 index: lvar(index),
+            }),
+            ast::Instruction::Sensor {
+                result,
+                target,
+                sensor,
+            } => Box::new(Sensor {
+                result: lvar(result),
+                target: lvar(target),
+                sensor: lvar(sensor),
             }),
 
             // operations
@@ -245,13 +254,15 @@ impl Print {
                     n.to_string()
                 })
             }
-            LValue::String(s) => Cow::Borrowed(s),
+            LValue::RcString(s) => Cow::Borrowed(s),
+            LValue::StaticString(s) => Cow::from(*s),
             LValue::Content(content) => Cow::Borrowed(content.name()),
-            LValue::Team(team) => team.name(),
+            LValue::Team(team) => Cow::from(team.as_ref()),
             LValue::Building(position) => vm
                 .building(*position)
                 .map(|b| Cow::Borrowed(b.block.name.as_str()))
                 .unwrap_or(Cow::from("null")),
+            LValue::Sensor(sensor) => Cow::from(sensor.as_ref()),
         }
     }
 }
@@ -356,6 +367,166 @@ impl SimpleInstruction for GetLink {
             Ok(index) => state.link(index).into(),
             Err(_) => LValue::Null,
         };
+        self.result.set(state, result);
+    }
+}
+
+struct Sensor {
+    result: LVar,
+    target: LVar,
+    sensor: LVar,
+}
+
+impl Sensor {
+    fn sense_processor(sensor: LAccess, state: &ProcessorState) -> LValue {
+        match sensor {
+            LAccess::Enabled => state.enabled().into(),
+            _ => LValue::Null,
+        }
+    }
+}
+
+impl SimpleInstruction for Sensor {
+    fn execute(&self, state: &mut ProcessorState, vm: &LogicVM) {
+        use LAccess::*;
+
+        let target = self.target.get(state);
+        let sensor = self.sensor.get(state);
+
+        let result = match sensor {
+            // normal sensors
+            LValue::Sensor(sensor) => match target {
+                // dead
+                LValue::Null if sensor == Dead => true.into(),
+
+                // senseable
+                LValue::Content(content) => match content {
+                    // TODO: color, health, maxHealth, solid, powerCapacity
+                    Content::Block(block) => match sensor {
+                        Size => block.size.into(),
+                        ItemCapacity => block.item_capacity.into(),
+                        LiquidCapacity => block.liquid_capacity.into(),
+                        Id => block.logic_id.into(),
+                        Name => LValue::StaticString(&block.name),
+                        _ => LValue::Null,
+                    },
+
+                    // TODO: color
+                    Content::Item(item) => match sensor {
+                        Id => item.logic_id.into(),
+                        Name => LValue::StaticString(&item.name),
+                        _ => LValue::Null,
+                    },
+
+                    // TODO: color
+                    Content::Liquid(liquid) => match sensor {
+                        Id => liquid.logic_id.into(),
+                        Name => LValue::StaticString(&liquid.name),
+                        _ => LValue::Null,
+                    },
+
+                    // TODO: health, maxHealth, size, itemCapacity, speed, payloadCapacity
+                    Content::Unit(unit) => match sensor {
+                        Id => unit.logic_id.into(),
+                        Name => LValue::StaticString(&unit.name),
+                        _ => LValue::Null,
+                    },
+                },
+
+                LValue::Team(team) => match sensor {
+                    Name => LValue::StaticString(team.into()),
+                    Id => team.id().into(),
+                    Color => team.color().into(),
+                    _ => LValue::Null,
+                },
+
+                LValue::Building(position) => match vm.building(position) {
+                    // TODO: solid, health, maxHealth, powerCapacity
+                    Some(building) => match sensor {
+                        X => building.position.x.into(),
+                        Y => building.position.y.into(),
+                        Color => colors::TEAM_SHARDED.into(),
+                        Dead => false.into(),
+                        Team => crate::types::Team::Sharded.id().into(),
+                        Efficiency => 1.into(),
+                        Timescale => 1.into(),
+                        Range => building.block.range.into(),
+                        Rotation => 0.into(),
+                        TotalItems | TotalLiquids | TotalPower => 0.into(),
+                        ItemCapacity => building.block.item_capacity.into(),
+                        LiquidCapacity => building.block.liquid_capacity.into(),
+                        PowerNetIn | PowerNetOut | PowerNetStored | PowerNetCapacity => 0.into(),
+                        Controlled => false.into(),
+                        PayloadCount => 0.into(),
+                        Size => building.block.size.into(),
+                        CameraX | CameraY | CameraWidth | CameraHeight => 0.into(),
+                        Type => Content::Block(building.block).into(),
+                        FirstItem => LValue::Null,
+                        PayloadType => LValue::Null,
+
+                        _ => match building.data.try_borrow().as_deref().as_ref() {
+                            Ok(BuildingData::Processor(processor)) => {
+                                Self::sense_processor(sensor, &processor.state)
+                            }
+                            // if the building is already mutably borrowed, we're sensing @this
+                            Err(_) => Self::sense_processor(sensor, state),
+
+                            Ok(BuildingData::Memory(memory)) => match sensor {
+                                MemoryCapacity => memory.len().into(),
+                                Enabled => true.into(),
+                                _ => LValue::Null,
+                            },
+
+                            Ok(BuildingData::Message(buf)) => match sensor {
+                                BufferSize => buf.len().into(),
+                                Enabled => true.into(),
+                                _ => LValue::Null,
+                            },
+
+                            Ok(BuildingData::Switch(enabled)) => match sensor {
+                                Enabled => (*enabled).into(),
+                                _ => LValue::Null,
+                            },
+
+                            Ok(BuildingData::Unknown {
+                                senseable_config, ..
+                            }) => match sensor {
+                                Config => senseable_config.clone().unwrap_or(LValue::Null),
+                                Enabled => true.into(),
+                                _ => LValue::Null,
+                            },
+                        },
+                    },
+                    None => LValue::Null,
+                },
+
+                // string length
+                LValue::RcString(string) if matches!(sensor, BufferSize | Size) => {
+                    string.len().into()
+                }
+                LValue::StaticString(string) if matches!(sensor, BufferSize | Size) => {
+                    string.len().into()
+                }
+
+                _ => LValue::Null,
+            },
+
+            // if target doesn't implement Senseable, write null
+            _ if !matches!(
+                target,
+                LValue::Content(_) | LValue::Team(_) | LValue::Building(_)
+            ) =>
+            {
+                LValue::Null
+            }
+
+            // items/liquids aren't implemented, so always write null if sensing content
+            LValue::Content(_) => LValue::Null,
+
+            // if target is Senseable and sensor isn't Content or LAccess, do not write to result
+            _ => return,
+        };
+
         self.result.set(state, result);
     }
 }

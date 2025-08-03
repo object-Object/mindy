@@ -1,10 +1,12 @@
-use std::{cell::RefCell, collections::HashMap, num::TryFromIntError, rc::Rc};
+use std::{cell::RefCell, collections::HashMap, fmt::Display, num::TryFromIntError, rc::Rc};
 
 use num_traits::AsPrimitive;
+use strum::VariantArray;
+use thiserror::Error;
 use velcro::{hash_map_from, map_iter_from};
 
 use crate::types::{
-    Point2, Team, colors,
+    ContentID, ContentType, LAccess, Point2, Team, colors,
     content::{self, Block, Item, Liquid, Unit},
 };
 
@@ -69,25 +71,25 @@ impl LVar {
             "@unitCount": constant(content::units::FROM_LOGIC_ID.len()),
         };
 
-        globals.extend(Team::base_teams().map(|t| (format!("@{}", t.name()), constant(t))));
+        globals.extend(Team::base_teams().map(|t| named_constant(t, t)));
 
         globals.extend(
             content::items::VALUES
                 .iter()
-                .map(|v| (format!("@{}", v.name), constant(Content::Item(v)))),
+                .map(|v| named_constant(&v.name, Content::Item(v))),
         );
 
         globals.extend(
             content::liquids::VALUES
                 .iter()
-                .map(|v| (format!("@{}", v.name), constant(Content::Liquid(v)))),
+                .map(|v| named_constant(&v.name, Content::Liquid(v))),
         );
 
         globals.extend(
             content::blocks::VALUES
                 .iter()
                 .filter(|v| !content::items::FROM_NAME.contains_key(v.name.as_str()) && !v.legacy)
-                .map(|v| (format!("@{}", v.name), constant(Content::Block(v)))),
+                .map(|v| named_constant(&v.name, Content::Block(v))),
         );
 
         globals.extend(
@@ -104,10 +106,12 @@ impl LVar {
 
         // skip adding weathers and alignments since they aren't useful in a headless environment
 
+        globals.extend(LAccess::VARIANTS.iter().map(|&v| named_constant(v, v)));
+
         globals.extend(
             content::units::VALUES
                 .iter()
-                .map(|v| (format!("@{}", v.name), constant(Content::Unit(v)))),
+                .map(|v| named_constant(&v.name, Content::Unit(v))),
         );
 
         globals
@@ -186,14 +190,24 @@ where
     LVar::Constant(value.into())
 }
 
+fn named_constant<K, V>(name: K, value: V) -> (String, LVar)
+where
+    K: Display,
+    V: Into<LValue>,
+{
+    (format!("@{name}"), constant(value))
+}
+
 #[derive(Debug, Clone, PartialEq)]
 pub enum LValue {
     Null,
     Number(f64),
-    String(Rc<str>),
+    RcString(Rc<str>),
+    StaticString(&'static str),
     Content(Content),
     Team(Team),
     Building(Point2),
+    Sensor(LAccess),
 }
 
 impl LValue {
@@ -241,19 +255,13 @@ impl From<bool> for LValue {
 
 impl From<Rc<str>> for LValue {
     fn from(value: Rc<str>) -> Self {
-        Self::String(value)
+        Self::RcString(value)
     }
 }
 
-impl From<String> for LValue {
-    fn from(value: String) -> Self {
-        Self::String(value.into())
-    }
-}
-
-impl From<&str> for LValue {
-    fn from(value: &str) -> Self {
-        Self::String(value.into())
+impl From<&'static str> for LValue {
+    fn from(value: &'static str) -> Self {
+        Self::StaticString(value)
     }
 }
 
@@ -272,6 +280,12 @@ impl From<Team> for LValue {
 impl From<Point2> for LValue {
     fn from(value: Point2) -> Self {
         Self::Building(value)
+    }
+}
+
+impl From<LAccess> for LValue {
+    fn from(value: LAccess) -> Self {
+        Self::Sensor(value)
     }
 }
 
@@ -317,6 +331,42 @@ impl Content {
             Self::Unit(Unit { logic_id, .. }) => *logic_id,
         }
     }
+}
+
+impl TryFrom<ContentID> for Content {
+    type Error = ContentIDLookupError;
+
+    fn try_from(ContentID { type_, id }: ContentID) -> Result<Self, Self::Error> {
+        let id = id as i32;
+        let unknown_id_err = ContentIDLookupError::UnknownID(id);
+        match type_ {
+            ContentType::Block => content::blocks::FROM_ID
+                .get(&id)
+                .map(|&v| Self::Block(v))
+                .ok_or(unknown_id_err),
+            ContentType::Item => content::items::FROM_ID
+                .get(&id)
+                .map(|&v| Self::Item(v))
+                .ok_or(unknown_id_err),
+            ContentType::Liquid => content::liquids::FROM_ID
+                .get(&id)
+                .map(|&v| Self::Liquid(v))
+                .ok_or(unknown_id_err),
+            ContentType::Unit => content::units::FROM_ID
+                .get(&id)
+                .map(|&v| Self::Unit(v))
+                .ok_or(unknown_id_err),
+            _ => Err(ContentIDLookupError::UnsupportedType(type_)),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, Error)]
+pub enum ContentIDLookupError {
+    #[error("unsupported content type: {0:?}")]
+    UnsupportedType(ContentType),
+    #[error("id not found: {0}")]
+    UnknownID(i32),
 }
 
 // https://stackoverflow.com/a/66537661

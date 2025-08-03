@@ -7,7 +7,7 @@ use crate::types::JavaString;
 #[brw(big)]
 #[br(map_stream = |s| NoSeek::new(ZlibDecoder::new(s)))]
 #[bw(map_stream = |s| NoSeek::new(ZlibEncoder::new(s, Compression::default())))]
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct ProcessorConfig {
     #[brw(magic = 1u8)] // config format version
     #[bw(try_calc = code.len().try_into())]

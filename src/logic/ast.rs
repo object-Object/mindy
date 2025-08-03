@@ -43,6 +43,11 @@ pub enum Instruction {
         result: Value,
         index: Value,
     },
+    Sensor {
+        result: Value,
+        target: Value,
+        sensor: Value,
+    },
     // operations
     Set {
         to: Value,

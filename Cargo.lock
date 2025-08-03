@@ -382,7 +382,6 @@ dependencies = [
  "rand 0.9.2",
  "regex",
  "replace_with",
- "seekable_reader",
  "serde",
  "serde_json",
  "strum",
@@ -652,12 +651,6 @@ name = "scopeguard"
 version = "1.2.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "94143f37725109f92c262ed2cf5e59bce7498c01bcc1502d7b9afe439a4e9f49"
-
-[[package]]
-name = "seekable_reader"
-version = "0.1.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e537ba2d8a858ce748080c429318b33d74071242dbe6c2a8f0b4a19b20a518d0"
 
 [[package]]
 name = "serde"

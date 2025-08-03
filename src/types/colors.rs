@@ -47,6 +47,22 @@ pub const PURPLE: u32 = 0xa0_20_f0_ff;
 pub const VIOLET: u32 = 0xee_82_ee_ff;
 pub const MAROON: u32 = 0xb0_30_60_ff;
 
+pub const TEAM_DERELICT: u32 = 0x4d_4e_58_ff;
+pub const TEAM_SHARDED: u32 = 0xff_d3_7f_ff;
+pub const TEAM_CRUX: u32 = 0xf2_55_55_ff;
+pub const TEAM_MALIS: u32 = 0xa2_7c_e5_ff;
+pub const TEAM_GREEN: u32 = 0x54_d6_7d_ff;
+pub const TEAM_BLUE: u32 = 0x6c_87_fd_ff;
+pub const TEAM_NEOPLASTIC: u32 = 0xe0_54_38_ff;
+
+pub const TEAM_DERELICT_F64: f64 = rgba8888_to_double_bits(TEAM_DERELICT);
+pub const TEAM_SHARDED_F64: f64 = rgba8888_to_double_bits(TEAM_SHARDED);
+pub const TEAM_CRUX_F64: f64 = rgba8888_to_double_bits(TEAM_CRUX);
+pub const TEAM_MALIS_F64: f64 = rgba8888_to_double_bits(TEAM_MALIS);
+pub const TEAM_GREEN_F64: f64 = rgba8888_to_double_bits(TEAM_GREEN);
+pub const TEAM_BLUE_F64: f64 = rgba8888_to_double_bits(TEAM_BLUE);
+pub const TEAM_NEOPLASTIC_F64: f64 = rgba8888_to_double_bits(TEAM_NEOPLASTIC);
+
 lazy_static! {
     // https://github.com/Anuken/Arc/blob/071fdffaf220cd57cf971a0ee58db2f321f92ee1/arc-core/src/arc/graphics/Colors.java#L53
     pub static ref COLORS: HashMap<String, f64> = {
@@ -104,7 +120,7 @@ lazy_static! {
     };
 }
 
-pub fn f32_to_double_bits(r: f32, g: f32, b: f32, a: f32) -> f64 {
+pub const fn f32_to_double_bits(r: f32, g: f32, b: f32, a: f32) -> f64 {
     to_double_bits(
         (r * 255.) as i32,
         (g * 255.) as i32,
@@ -113,15 +129,15 @@ pub fn f32_to_double_bits(r: f32, g: f32, b: f32, a: f32) -> f64 {
     )
 }
 
-pub fn to_double_bits(r: i32, g: i32, b: i32, a: i32) -> f64 {
+pub const fn to_double_bits(r: i32, g: i32, b: i32, a: i32) -> f64 {
     rgba8888_to_double_bits(((r << 24) | (g << 16) | (b << 8) | a) as u32)
 }
 
-pub fn rgba8888_to_double_bits(value: u32) -> f64 {
+pub const fn rgba8888_to_double_bits(value: u32) -> f64 {
     f64::from_bits(value as u64)
 }
 
-pub fn from_double_bits(value: f64) -> (u8, u8, u8, u8) {
+pub const fn from_double_bits(value: f64) -> (u8, u8, u8, u8) {
     let value = value.to_bits();
     (
         (value >> 24) as u8,
@@ -131,7 +147,7 @@ pub fn from_double_bits(value: f64) -> (u8, u8, u8, u8) {
     )
 }
 
-pub fn f64_from_double_bits(value: f64) -> (f64, f64, f64, f64) {
+pub const fn f64_from_double_bits(value: f64) -> (f64, f64, f64, f64) {
     let (r, g, b, a) = from_double_bits(value);
     (
         (r as f64) / 255.,

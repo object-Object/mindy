@@ -9,6 +9,8 @@ pub struct Block {
     pub size: i32,
     pub legacy: bool,
     pub range: f64,
+    pub item_capacity: i32,
+    pub liquid_capacity: f32,
     /*
     pub visibility: Visibility,
     pub subclass: String,
@@ -17,12 +19,10 @@ pub struct Block {
     pub has_items: bool,
     pub accepts_items: bool,
     pub separate_item_capacity: bool,
-    pub item_capacity: i32,
     pub no_side_blend: bool,
     pub unloadable: bool,
     pub has_liquids: bool,
     pub outputs_liquid: bool,
-    pub liquid_capacity: f32,
     pub has_power: bool,
     pub consumes_power: bool,
     pub outputs_power: bool,
@@ -106,6 +106,12 @@ macro_rules! include_content {
                 .from_reader(&include_bytes!($file)[..])
                 .deserialize()
                 .map(|v| v.unwrap())
+                .collect();
+            /// Only includes values that have a valid logic id.
+            pub static ref FROM_ID: HashMap<i32, &'static $typ> = VALUES
+                .iter()
+                .filter(|v| v.logic_id >= 0)
+                .map(|v| (v.id, v))
                 .collect();
             pub static ref FROM_LOGIC_ID: HashMap<i32, &'static $typ> = VALUES
                 .iter()

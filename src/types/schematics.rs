@@ -1,6 +1,6 @@
 use std::{
     error::Error,
-    io::{self, Cursor},
+    io::{self, Cursor, Read, Seek},
     ops::Sub,
 };
 
@@ -9,13 +9,12 @@ use binrw::{helpers::count, io::NoSeek, prelude::*};
 use flate2::{Compression, read::ZlibDecoder, write::ZlibEncoder};
 use indexmap::{IndexMap, IndexSet};
 use itertools::{Itertools, MinMaxResult};
-use seekable_reader::SeekableReader;
 
 use crate::types::{JavaString, Object, PackedPoint2};
 
 #[binrw]
 #[brw(big, magic = b"msch\x01")]
-#[br(map_stream = |s| SeekableReader::new(ZlibDecoder::new(s), 64))]
+#[br(map_stream = make_stream)]
 #[bw(map_stream = |s| NoSeek::new(ZlibEncoder::new(s, Compression::default())))]
 #[derive(Debug, Clone, PartialEq, Default)]
 pub struct Schematic {
@@ -77,6 +76,44 @@ impl Schematic {
 
     pub fn tiles(&self) -> &Vec<SchematicTile> {
         &self.tiles
+    }
+
+    pub fn tile_mut(&mut self, index: usize) -> Option<&mut SchematicTile> {
+        self.tiles.get_mut(index)
+    }
+}
+
+enum ResultReader<R> {
+    Ok(R),
+    Err(io::Error),
+}
+
+impl<R: Read> Read for ResultReader<R> {
+    fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
+        match self {
+            Self::Ok(r) => r.read(buf),
+            Self::Err(e) => Err(io::Error::new(e.kind(), e.to_string())),
+        }
+    }
+}
+
+impl<R: Seek> Seek for ResultReader<R> {
+    fn seek(&mut self, pos: io::SeekFrom) -> io::Result<u64> {
+        match self {
+            Self::Ok(r) => r.seek(pos),
+            Self::Err(e) => Err(io::Error::new(e.kind(), e.to_string())),
+        }
+    }
+}
+
+fn make_stream<S>(s: S) -> ResultReader<impl Read + Seek>
+where
+    S: Read + Seek,
+{
+    let mut buf = Vec::new();
+    match ZlibDecoder::new(s).read_to_end(&mut buf) {
+        Ok(_) => ResultReader::Ok(Cursor::new(buf)),
+        Err(e) => ResultReader::Err(e),
     }
 }
 
@@ -156,7 +193,7 @@ mod tests {
 
     use velcro::map_iter_from;
 
-    use crate::types::{Content, ContentType};
+    use crate::types::{ContentID, ContentType};
 
     use super::*;
 
@@ -242,7 +279,7 @@ mod tests {
             .add_tile(SchematicTile {
                 block: "sorter".to_string(),
                 position: PackedPoint2 { x: 1, y: 0 },
-                config: Content {
+                config: ContentID {
                     type_: ContentType::Item,
                     id: 0
                 }
@@ -252,7 +289,7 @@ mod tests {
             .add_tile(SchematicTile {
                 block: "sorter".to_string(),
                 position: PackedPoint2 { x: 2, y: 0 },
-                config: Content {
+                config: ContentID {
                     type_: ContentType::Item,
                     id: 15
                 }
@@ -363,7 +400,7 @@ mod tests {
             .add_tile(SchematicTile {
                 block: "sorter".to_string(),
                 position: PackedPoint2 { x: 1, y: 0 },
-                config: Content {
+                config: ContentID {
                     type_: ContentType::Item,
                     id: 0,
                 }
@@ -373,7 +410,7 @@ mod tests {
             .add_tile(SchematicTile {
                 block: "sorter".to_string(),
                 position: PackedPoint2 { x: 2, y: 0 },
-                config: Content {
+                config: ContentID {
                     type_: ContentType::Item,
                     id: 15,
                 }

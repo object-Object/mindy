@@ -21,6 +21,7 @@ match {
     "drawflush",
     "printflush",
     "getlink",
+    "sensor",
     "set",
     "op",
     "select",
@@ -211,6 +212,9 @@ Instruction: Instruction = {
 
     "getlink" <result:Value> <index:Value> =>
         Instruction::GetLink { <> },
+
+    "sensor" <result:Value> <target:Value> <sensor:Value> =>
+        Instruction::Sensor { <> },
 
     // operations
 
@@ -468,6 +472,7 @@ Symbol = {
     "drawflush",
     "printflush",
     "getlink",
+    "sensor",
     "set",
     "op",
     "select",

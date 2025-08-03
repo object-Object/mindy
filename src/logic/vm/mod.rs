@@ -242,23 +242,25 @@ mod tests {
     use binrw::{BinRead, BinWrite};
     use itertools::Itertools;
     use pretty_assertions::assert_eq;
-    use velcro::map_iter;
+    use velcro::{map_iter, map_iter_from};
 
     use crate::{
         logic::vm::{
             buildings::{
                 HYPER_PROCESSOR, MEMORY_BANK, MEMORY_CELL, MESSAGE, MICRO_PROCESSOR, SWITCH,
+                WORLD_CELL,
             },
+            processor::ProcessorBuilder,
             variables::{Content, LValue, LVar},
         },
         types::{
-            Object, PackedPoint2, ProcessorConfig, ProcessorLinkConfig, Team, colors::COLORS,
-            content,
+            ContentID, ContentType, Object, PackedPoint2, ProcessorConfig, ProcessorLinkConfig,
+            Team, colors::COLORS, content,
         },
     };
 
     use super::{
-        buildings::WORLD_PROCESSOR,
+        buildings::{LOGIC_PROCESSOR, WORLD_PROCESSOR},
         processor::{Processor, ProcessorState},
         *,
     };
@@ -325,6 +327,7 @@ mod tests {
             .data
             .replace(BuildingData::Unknown {
                 config: Object::Null,
+                senseable_config: None,
             })
             .into_processor()
     }
@@ -833,7 +836,7 @@ mod tests {
                 Building::from_processor_config(
                     HYPER_PROCESSOR,
                     Point2 { x: 0, y: 0 },
-                    &ProcessorConfig::from_code(""),
+                    &ProcessorConfig::default(),
                     &builder,
                 ),
                 Building::from_config(SWITCH, Point2 { x: 2, y: 2 }, &Object::Null, &builder),
@@ -907,6 +910,225 @@ mod tests {
                 "ore3": LValue::Null,
                 "block3": LValue::Null,
                 "building3": LValue::Null,
+            },
+        );
+    }
+
+    thread_local! {
+        static SENSOR_TESTS: Vec<(String, &'static str, &'static str, LValue)> = map_iter_from![
+            ("null", "@dead"): true,
+
+            ("@hyper-processor", "@name"): "hyper-processor",
+            ("@hyper-processor", "@id"): 141,
+            ("@hyper-processor", "@size"): 3,
+
+            ("@titanium", "@name"): "titanium",
+            ("@titanium", "@id"): 6,
+
+            ("@cryofluid", "@name"): "cryofluid",
+            ("@cryofluid", "@id"): 3,
+
+            ("@flare", "@name"): "flare",
+            ("@flare", "@id"): 15,
+
+            (r#""123456789""#, "@size"): 9,
+
+            ("@sharded", "@id"): 1,
+
+            ("1", "@dead"): LValue::Null,
+
+            ("@this", "@enabled"): true,
+            ("@this", "@config"): LValue::Null,
+            ("@this", "@dead"): false,
+            ("@this", "@x"): 0,
+            ("@this", "@y"): 0,
+            ("@this", "@size"): 1,
+            ("@this", "@type"): Content::Block(content::blocks::FROM_NAME[WORLD_PROCESSOR]),
+
+            ("processor1", "@enabled"): false,
+            ("processor1", "@config"): LValue::Null,
+            ("processor1", "@dead"): false,
+            ("processor1", "@x"): 1,
+            ("processor1", "@y"): 0,
+            ("processor1", "@size"): 1,
+            ("processor1", "@type"): Content::Block(content::blocks::FROM_NAME[MICRO_PROCESSOR]),
+
+            ("processor2", "@enabled"): true,
+
+            ("cell1", "@enabled"): true,
+            ("cell1", "@config"): LValue::Null,
+            ("cell1", "@memoryCapacity"): 64,
+
+            ("cell2", "@enabled"): true,
+            ("cell2", "@memoryCapacity"): 512,
+
+            ("message1", "@enabled"): true,
+            ("message1", "@config"): LValue::Null,
+            ("message1", "@bufferSize"): 3,
+
+            ("switch1", "@enabled"): false,
+            ("switch1", "@config"): LValue::Null,
+
+            ("switch2", "@enabled"): true,
+
+            ("sorter1", "@enabled"): true,
+            ("sorter1", "@config"): Content::Item(content::items::FROM_NAME["graphite"]),
+            ("sorter1", "@graphite"): LValue::Null,
+        ]
+        .map(|((target, sensor), want)| (format!("_{target}_{sensor}"), target, sensor, want))
+        .collect();
+    }
+
+    #[test]
+    fn test_sensor() {
+        SENSOR_TESTS.with(|tests| {
+            let code = tests
+                .iter()
+                .map(|(var, target, sensor, _)| format!("sensor {var} {target} {sensor}"))
+                .join("\n");
+            let code = format!("setrate 1000\n{code}\nstop");
+
+            let mut builder = LogicVMBuilder::new();
+            builder.add_buildings(
+                [
+                    Building::from_processor_config(
+                        WORLD_PROCESSOR,
+                        Point2 { x: 0, y: 0 },
+                        &ProcessorConfig {
+                            code,
+                            links: vec![
+                                ProcessorLinkConfig::unnamed(1, 0),
+                                ProcessorLinkConfig::unnamed(1, 1),
+                                ProcessorLinkConfig::unnamed(2, 0),
+                                ProcessorLinkConfig::unnamed(2, 1),
+                                ProcessorLinkConfig::unnamed(3, 0),
+                                ProcessorLinkConfig::unnamed(4, 0),
+                                ProcessorLinkConfig::unnamed(4, 1),
+                                ProcessorLinkConfig::unnamed(5, 0),
+                            ],
+                        },
+                        &builder,
+                    ),
+                    Building::from_processor_config(
+                        MICRO_PROCESSOR,
+                        Point2 { x: 1, y: 0 },
+                        &ProcessorConfig::default(),
+                        &builder,
+                    ),
+                    Building::from_processor_config(
+                        MICRO_PROCESSOR,
+                        Point2 { x: 1, y: 1 },
+                        &ProcessorConfig::from_code("wait 0; wait 0; stop"),
+                        &builder,
+                    ),
+                    Building::from_config(
+                        MEMORY_CELL,
+                        Point2 { x: 2, y: 0 },
+                        &Object::Null,
+                        &builder,
+                    ),
+                    Building::from_config(
+                        WORLD_CELL,
+                        Point2 { x: 2, y: 1 },
+                        &Object::Null,
+                        &builder,
+                    ),
+                    Building::from_config(
+                        MESSAGE,
+                        Point2 { x: 3, y: 0 },
+                        &Object::String(Some("foo".into())),
+                        &builder,
+                    ),
+                    Building::from_config(SWITCH, Point2 { x: 4, y: 0 }, &false.into(), &builder),
+                    Building::from_config(SWITCH, Point2 { x: 4, y: 1 }, &true.into(), &builder),
+                    Building::from_config(
+                        "sorter",
+                        Point2 { x: 5, y: 0 },
+                        &Object::Content(ContentID {
+                            type_: ContentType::Item,
+                            id: content::items::FROM_NAME["graphite"].id as i16,
+                        }),
+                        &builder,
+                    ),
+                ]
+                .map(|v| v.unwrap()),
+            );
+            let mut vm = builder.build().unwrap();
+
+            run(&mut vm, 2, true);
+
+            let state = take_processor(&mut vm, (0, 0)).state;
+            assert_variables(
+                &state,
+                tests
+                    .iter()
+                    .map(|(var, _, _, want)| (var.as_str(), want.clone())),
+            );
+        });
+    }
+
+    #[test]
+    fn test_sensor_schematic() {
+        SENSOR_TESTS.with(|tests| {
+            let code = tests
+                .iter()
+                .map(|(var, target, sensor, _)| format!("sensor {var} {target} {sensor}"))
+                .join("\n");
+            let code = format!("setrate 1000\n{code}\nstop");
+
+            let data = include_bytes!("../../../tests/logic/vm/test_sensor_schematic.msch");
+            let mut schematic = Schematic::read(&mut Cursor::new(data)).unwrap();
+
+            // replace main processor code
+            let tile = schematic.tile_mut(0).unwrap();
+            assert_eq!(tile.block, "world-processor");
+            let mut config = ProcessorBuilder::parse_config(&tile.config).unwrap();
+            config.code = code;
+            match &mut tile.config {
+                Object::ByteArray { values } => {
+                    values.clear();
+                    config.write(&mut Cursor::new(values)).unwrap();
+                }
+                _ => unreachable!(),
+            };
+
+            let mut vm = LogicVM::from_schematic(&schematic).unwrap();
+
+            run(&mut vm, 2, true);
+
+            let state = take_processor(&mut vm, (0, 0)).state;
+            assert_variables(
+                &state,
+                tests
+                    .iter()
+                    .map(|(var, _, _, want)| (var.as_str(), want.clone())),
+            );
+        });
+    }
+
+    #[test]
+    fn test_sensor_invalid() {
+        let mut vm = single_processor_vm(
+            LOGIC_PROCESSOR,
+            r#"
+            set canary1 0xdeadbeef
+            sensor canary1 @this 1
+
+            set canary2 0xdeadbeef
+            sensor canary2 "foo" 1
+
+            stop
+            "#,
+        );
+
+        run(&mut vm, 1, true);
+
+        let state = take_processor(&mut vm, (0, 0)).state;
+        assert_variables(
+            &state,
+            map_iter! {
+                "canary1": LValue::Number(0xdeadbeefu32 as f64),
+                "canary2": LValue::Null,
             },
         );
     }

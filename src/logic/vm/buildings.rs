@@ -5,6 +5,7 @@ use strum_macros::IntoStaticStr;
 use super::{
     LogicVMBuilder, VMLoadError, VMLoadResult,
     processor::{Processor, ProcessorBuilder, ProcessorState},
+    variables::LValue,
 };
 use crate::types::{
     Object, Point2, ProcessorConfig, SchematicTile,
@@ -93,6 +94,10 @@ impl Building {
 
             _ => BuildingData::Unknown {
                 config: config.clone(),
+                senseable_config: match *config {
+                    Object::Content(content) => content.try_into().map(LValue::Content).ok(),
+                    _ => None,
+                },
             },
         };
 
@@ -180,7 +185,10 @@ pub enum BuildingData {
     Memory(Box<[f64]>),
     Message(Vec<u16>),
     Switch(bool),
-    Unknown { config: Object },
+    Unknown {
+        config: Object,
+        senseable_config: Option<LValue>,
+    },
 }
 
 impl BuildingData {

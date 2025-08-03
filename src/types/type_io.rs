@@ -31,7 +31,7 @@ pub enum Object {
     ),
 
     #[brw(magic = 5i8)]
-    Content(Content),
+    Content(ContentID),
 
     #[brw(magic = 6i8)]
     IntSeq {
@@ -53,7 +53,7 @@ pub enum Object {
     },
 
     #[brw(magic = 9i8)]
-    TechNode(Content),
+    TechNode(ContentID),
 
     #[brw(magic = 10i8)]
     Bool(
@@ -156,7 +156,7 @@ impl_object_from! { Option<JavaString>, String }
 impl_object_from! { value: Option<String>, String(value.map(|s| s.into())) }
 impl_object_from! { value: JavaString, String(Some(value)) }
 impl_object_from! { value: String, String(Some(value.into())) }
-impl_object_from! { Content }
+impl_object_from! { ContentID, Content }
 impl_object_from! { Point2 }
 impl_object_from! { Vec<PackedPoint2>, Point2Array }
 impl_object_from! { bool, Bool }
@@ -190,7 +190,7 @@ fn write_string(value: &Option<JavaString>) -> BinResult<()> {
 #[binrw]
 #[brw(big)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub struct Content {
+pub struct ContentID {
     pub type_: ContentType,
     pub id: i16,
 }

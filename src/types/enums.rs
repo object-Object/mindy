@@ -1,8 +1,11 @@
 #![allow(deprecated)]
 
-use std::{borrow::Cow, hash::Hash};
+use std::hash::Hash;
 
 use binrw::prelude::*;
+use strum_macros::{AsRefStr, IntoStaticStr, VariantArray};
+
+use super::colors;
 
 #[binrw]
 #[brw(big, repr = i8)]
@@ -35,7 +38,19 @@ pub enum ContentType {
 
 #[binrw]
 #[brw(big, repr = i16)]
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(
+    Debug,
+    Clone,
+    Copy,
+    PartialEq,
+    Eq,
+    Hash,
+    AsRefStr,
+    IntoStaticStr,
+    VariantArray,
+    strum_macros::Display,
+)]
+#[strum(serialize_all = "camelCase")]
 pub enum LAccess {
     TotalItems,
     FirstItem,
@@ -105,7 +120,10 @@ pub enum LAccess {
 
 #[binrw]
 #[brw(big)]
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(
+    Debug, Clone, Copy, PartialEq, Eq, Hash, AsRefStr, IntoStaticStr, strum_macros::Display,
+)]
+#[strum(serialize_all = "camelCase")]
 pub enum Team {
     #[brw(magic = 0u8)]
     Derelict,
@@ -121,6 +139,7 @@ pub enum Team {
     Blue,
     #[brw(magic = 6u8)]
     Neoplastic,
+    #[strum(to_string = "team#{0}")]
     Unknown(u8),
 }
 
@@ -142,17 +161,30 @@ impl Team {
         }
     }
 
-    pub fn name(&self) -> Cow<'_, str> {
+    pub fn id(&self) -> u8 {
         match self {
-            Self::Derelict => Cow::from("Derelict"),
-            Self::Sharded => Cow::from("Sharded"),
-            Self::Crux => Cow::from("Crux"),
-            Self::Malis => Cow::from("Malis"),
-            Self::Green => Cow::from("Green"),
-            Self::Blue => Cow::from("Blue"),
-            Self::Neoplastic => Cow::from("Neoplastic"),
-            // TODO: this probably shouldn't need to allocate
-            Self::Unknown(i) => Cow::Owned(format!("team#{i}")),
+            Self::Derelict => 0,
+            Self::Sharded => 1,
+            Self::Crux => 2,
+            Self::Malis => 3,
+            Self::Green => 4,
+            Self::Blue => 5,
+            Self::Neoplastic => 6,
+            Self::Unknown(id) => *id,
+        }
+    }
+
+    pub fn color(&self) -> f64 {
+        match self {
+            Self::Derelict => colors::TEAM_DERELICT_F64,
+            Self::Sharded => colors::TEAM_SHARDED_F64,
+            Self::Crux => colors::TEAM_CRUX_F64,
+            Self::Malis => colors::TEAM_MALIS_F64,
+            Self::Green => colors::TEAM_GREEN_F64,
+            Self::Blue => colors::TEAM_BLUE_F64,
+            Self::Neoplastic => colors::TEAM_NEOPLASTIC_F64,
+            // TODO: implement
+            Self::Unknown(_) => 0.,
         }
     }
 }
