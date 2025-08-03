@@ -224,7 +224,7 @@ impl ProcessorState {
         self.stopped
     }
 
-    /// For use by the `stop` instruction only.
+    /// For use by the `stop` and `write` instructions only.
     pub fn set_stopped(&mut self, stopped: bool) {
         self.stopped = stopped;
         self.set_enabled(!stopped);

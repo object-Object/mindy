@@ -1340,6 +1340,113 @@ mod tests {
     }
 
     #[test]
+    fn test_write() {
+        let mut builder = LogicVMBuilder::new();
+        builder.add_buildings(
+            [
+                Building::from_processor_config(
+                    LOGIC_PROCESSOR,
+                    Point2 { x: 0, y: 0 },
+                    &ProcessorConfig {
+                        code: r#"
+                        # if the world proc runs before this one, canary won't be set
+                        set canary 0xdeadbeef
+                        set var 0
+                        stop
+
+                        set jumped true
+                        stop
+                        "#
+                        .into(),
+                        links: vec![ProcessorLinkConfig::unnamed(0, 2)],
+                    },
+                    &builder,
+                ),
+                Building::from_config(MEMORY_CELL, Point2 { x: 0, y: 2 }, &Object::Null, &builder),
+                Building::from_config(WORLD_CELL, Point2 { x: 0, y: 3 }, &Object::Null, &builder),
+                Building::from_processor_config(
+                    WORLD_PROCESSOR,
+                    Point2 { x: 2, y: 0 },
+                    &ProcessorConfig {
+                        code: r#"
+                        setrate 1000
+
+                        write 10 processor1 "var"
+                        write 3 processor1 "@counter"
+                        write null processor1 0
+                        
+                        set var 0
+                        write 20 @this "var"
+
+                        write 30 cell1 0
+                        write 40 cell1 "a"
+                        write "b" cell1 2
+                        write 50 cell1 63
+                        write -1 cell1 -1
+                        write -1 cell1 64
+
+                        write 60 cell2 0
+                        write 70 cell2 511
+
+                        stop
+                        "#
+                        .into(),
+                        links: vec![
+                            ProcessorLinkConfig::unnamed(-2, 0),
+                            ProcessorLinkConfig::unnamed(-2, 2),
+                            ProcessorLinkConfig::unnamed(-2, 3),
+                        ],
+                    },
+                    &builder,
+                ),
+            ]
+            .map(|v| v.unwrap()),
+        );
+        let mut vm = builder.build().unwrap();
+
+        run(&mut vm, 2, true);
+
+        let processor = take_processor(&mut vm, (0, 0));
+        assert_eq!(processor.state.counter, 4);
+        assert_variables(
+            &processor,
+            map_iter! {
+                "canary": LValue::Number(0xdeadbeefu32 as f64),
+                "var": LValue::Number(10.),
+                "jumped": LValue::Number(1.),
+            },
+        );
+
+        let processor = take_processor(&mut vm, (2, 0));
+        assert_variables(
+            &processor,
+            map_iter! {
+                "var": LValue::Number(20.),
+            },
+        );
+
+        if let Some(building) = vm.building(Point2 { x: 0, y: 2 })
+            && let BuildingData::Memory(memory) = &mut *building.data.borrow_mut()
+        {
+            assert_eq!(memory[0], 30.);
+            assert_eq!(memory[1], 40.);
+            assert_eq!(memory[2], 1.);
+            assert_eq!(memory[63], 50.);
+        } else {
+            panic!("unexpected building");
+        }
+
+        if let Some(building) = vm.building(Point2 { x: 0, y: 3 })
+            && let BuildingData::Memory(memory) = &mut *building.data.borrow_mut()
+        {
+            assert_eq!(memory[0], 60.);
+            assert_eq!(memory[511], 70.);
+        } else {
+            panic!("unexpected building");
+        }
+    }
+
+    #[test]
     fn test_max_ticks() {
         let mut vm = single_processor_vm(
             MICRO_PROCESSOR,

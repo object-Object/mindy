@@ -15,6 +15,7 @@ match {
     r"[^\r\n #\t;]+:" => LABEL,
 
     "read",
+    "write",
     "draw",
     "print",
     "printchar",
@@ -181,6 +182,9 @@ Instruction: Instruction = {
 
     "read" <result:Value> <target:Value> <address:Value> =>
         Instruction::Read { <> },
+
+    "write" <value:Value> <target:Value> <address:Value> =>
+        Instruction::Write { <> },
 
     "draw" <op:DrawOp0> =>
         optional_args!(Instruction::Draw { <>; x, y, p1, p2, p3, p4 }),
@@ -499,6 +503,7 @@ Symbol = {
     LABEL,
 
     "read",
+    "write",
     "draw",
     "print",
     "printchar",

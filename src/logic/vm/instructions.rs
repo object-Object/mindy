@@ -136,6 +136,15 @@ impl Instruction for InstructionBuilder {
                 target: lvar(target),
                 address: lvar(address),
             }),
+            ast::Instruction::Write {
+                value,
+                target,
+                address,
+            } => Box::new(Write {
+                value: lvar(value),
+                target: lvar(target),
+                address: lvar(address),
+            }),
             // TODO: implement draw?
             ast::Instruction::Draw { .. } => Box::new(Noop),
             ast::Instruction::Print { value } => Box::new(Print { value: lvar(value) }),
@@ -343,6 +352,46 @@ impl SimpleInstruction for Read {
 
         if let Some(result) = result {
             self.result.set(state, result);
+        }
+    }
+}
+
+struct Write {
+    value: LVar,
+    target: LVar,
+    address: LVar,
+}
+
+impl SimpleInstruction for Write {
+    fn execute(&self, state: &mut ProcessorState, variables: &HashMap<String, LVar>, vm: &LogicVM) {
+        if let LValue::Building(position) = self.target.get(state)
+            && let Some(building) = vm.building(position)
+        {
+            let address = self.address.get(state);
+            let value = self.value.get(state);
+
+            building.borrow_data_mut(
+                state,
+                variables,
+                |state, variables| {
+                    if let LValue::String(name) = address.clone()
+                        && let Some(target) = variables.get(&*name)
+                    {
+                        target.set(state, value.clone());
+                        if matches!(target, LVar::Counter) {
+                            state.set_stopped(false);
+                        }
+                    }
+                },
+                |data| {
+                    if let BuildingData::Memory(memory) = data
+                        && let Ok(address) = address.num_usize()
+                        && address < memory.len()
+                    {
+                        memory[address] = value.num();
+                    }
+                },
+            );
         }
     }
 }

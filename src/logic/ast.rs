@@ -19,6 +19,11 @@ pub enum Instruction {
         target: Value,
         address: Value,
     },
+    Write {
+        value: Value,
+        target: Value,
+        address: Value,
+    },
     Draw {
         op: DrawOp,
         x: Value,
