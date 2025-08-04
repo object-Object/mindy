@@ -146,13 +146,32 @@ impl Instruction for InstructionBuilder {
                 address: lvar(address),
             }),
             // TODO: implement draw?
-            ast::Instruction::Draw { .. } => Box::new(Noop),
+            ast::Instruction::Draw {
+                op: _,
+                x,
+                y,
+                p1,
+                p2,
+                p3,
+                p4,
+            } => {
+                lvar(x);
+                lvar(y);
+                lvar(p1);
+                lvar(p2);
+                lvar(p3);
+                lvar(p4);
+                Box::new(Noop)
+            }
             ast::Instruction::Print { value } => Box::new(Print { value: lvar(value) }),
             ast::Instruction::PrintChar { value } => Box::new(PrintChar { value: lvar(value) }),
             ast::Instruction::Format { value } => Box::new(Format { value: lvar(value) }),
 
             // block control
-            ast::Instruction::DrawFlush { .. } => Box::new(Noop),
+            ast::Instruction::DrawFlush { target } => {
+                lvar(target);
+                Box::new(Noop)
+            }
             ast::Instruction::PrintFlush { target } => Box::new(PrintFlush {
                 target: lvar(target),
             }),
@@ -164,12 +183,17 @@ impl Instruction for InstructionBuilder {
                 control,
                 target,
                 p1,
-                ..
-            } => Box::new(Control {
-                control,
-                target: lvar(target),
-                p1: lvar(p1),
-            }),
+                p2,
+                p3,
+            } => {
+                lvar(p2);
+                lvar(p3);
+                Box::new(Control {
+                    control,
+                    target: lvar(target),
+                    p1: lvar(p1),
+                })
+            }
             ast::Instruction::Sensor {
                 result,
                 target,

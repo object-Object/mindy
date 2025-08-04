@@ -2510,10 +2510,25 @@ mod tests {
             draw rotate 0
             draw reset
 
+            draw triangle var1 var2 var3 var4 var5 var6
+
             drawflush display1
             stop
             ",
         );
         run(&mut vm, 1, true);
+
+        let processor = take_processor(&mut vm, (0, 0));
+        for name in ["var1", "var2", "var3", "var4", "var5", "var6"] {
+            assert!(
+                processor.variables.contains_key(name),
+                "variable not found: {name}"
+            );
+            let var = &processor.variables[name];
+            assert!(
+                matches!(var, LVar::Variable(_)),
+                "expected Variable but got {var:?}"
+            );
+        }
     }
 }
