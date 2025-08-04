@@ -1,22 +1,35 @@
 #![allow(dead_code)]
 
-use std::io::{Cursor, Read, Write};
+use std::io::{Cursor, Read};
+use std::sync::mpsc::{self, Receiver, Sender};
+use std::thread;
 use std::time::Duration;
 use std::{error::Error, fmt::Display, fs::File, path::PathBuf, time::Instant};
 
 use binrw::{BinRead, BinWrite};
 use clap::Parser;
+use cursive::theme::Theme;
+use cursive::view::{Nameable, Resizable};
+use cursive::views::{
+    Checkbox, EditView, LinearLayout, ListView, Panel, ScrollView, TextContent, TextView,
+};
 use indicatif::ProgressIterator;
 use itertools::Itertools;
 use mindustry_rs::{
     logic::vm::{
-        Building, BuildingData, LValue, LogicVM, LogicVMBuilder, MEMORY_BANK, MEMORY_CELL, MESSAGE,
+        Building, BuildingData, LValue, LogicVM, LogicVMBuilder, MEMORY_BANK, MESSAGE,
         MICRO_PROCESSOR, Processor, SWITCH, WORLD_PROCESSOR, decode_utf16,
     },
     types::{Object, Point2, ProcessorConfig, Schematic},
 };
-use prompted::input;
 use serde::Deserialize;
+
+// tx/rx are from our perspective, not the processor's
+const UART_TX_READ: usize = 254;
+const UART_TX_WRITE: usize = 255;
+const UART_RX_START: usize = 256;
+const UART_RX_READ: usize = 510;
+const UART_RX_WRITE: usize = 511;
 
 #[derive(Parser)]
 #[command(version)]
@@ -97,23 +110,186 @@ fn get_building<'a>(vm: &'a LogicVM, position: MetaPoint2, name: &str) -> &'a Bu
     building
 }
 
-fn print_var(processor: &Processor, name: &str, radix: Option<&&str>) {
-    match processor.variable(name) {
-        Some(value) => match radix {
-            Some(&"x") => println!("{name} = {:#010x}", value.num() as u32),
-            Some(&"b") => println!("{name} = {:#034b}", value.num() as u32),
-            _ => println!("{name} = {value:?}"),
-        },
-        None => println!("{name} = <undefined>"),
-    }
+macro_rules! tui_println {
+    ($text:ident) => {
+        $text.append("\n")
+    };
+    ($text:ident, $($arg:tt)*) => {
+        {
+            $text.append(format!($($arg)*));
+            $text.append("\n");
+        }
+    };
 }
 
-// tx/rx are from our perspective, not the processor's
-const UART_TX_READ: usize = 254;
-const UART_TX_WRITE: usize = 255;
-const UART_RX_START: usize = 256;
-const UART_RX_READ: usize = 510;
-const UART_RX_WRITE: usize = 511;
+enum VMCommand {
+    Exit,
+    Pause,
+    Step,
+    Continue,
+    Restart,
+    GetState,
+    SetBreakpoint(Option<u32>),
+    PrintVar(String, Option<String>),
+}
+
+enum VMEvent {
+    Power(bool),
+    Pause(bool),
+    SingleStep(bool),
+    PC(u32),
+}
+
+fn tui(stdout: TextContent, debug: TextContent, tx: Sender<VMCommand>, rx: Receiver<VMEvent>) {
+    let mut siv = cursive::crossterm().into_runner();
+
+    siv.set_fps(10);
+    siv.set_theme(Theme::terminal_default());
+
+    siv.add_fullscreen_layer(
+        LinearLayout::vertical()
+            .child(
+                Panel::new(ScrollView::new(TextView::new_with_content(stdout)))
+                    .title("UART0")
+                    .full_height(),
+            )
+            .child(
+                LinearLayout::horizontal()
+                    .child(
+                        Panel::new(
+                            LinearLayout::vertical()
+                                .child(
+                                    ScrollView::new(TextView::new_with_content(debug.clone()))
+                                        .full_height(),
+                                )
+                                .child(
+                                    EditView::new()
+                                        .on_submit({
+                                            let tx = tx.clone();
+                                            move |siv, cmd| {
+                                                if let Some(msg) = process_cmd(&debug, cmd) {
+                                                    tui_println!(debug, "> {cmd}");
+                                                    tx.send(msg).unwrap();
+                                                }
+                                                siv.call_on_name("debug", |view: &mut EditView| {
+                                                    view.set_content("");
+                                                });
+                                            }
+                                        })
+                                        .with_name("debug")
+                                        .full_width(),
+                                ),
+                        )
+                        .title("Debug")
+                        .full_screen(),
+                    )
+                    .child(
+                        Panel::new(
+                            ListView::new()
+                                .child("Power", Checkbox::new().disabled().with_name("power"))
+                                .child("Pause", Checkbox::new().disabled().with_name("pause"))
+                                .child("Step", Checkbox::new().disabled().with_name("single_step"))
+                                .child("PC", TextView::new("0x00000000").with_name("pc")),
+                        )
+                        .full_height(),
+                    ),
+            )
+            .full_screen(),
+    );
+
+    let mut last_state_time = Instant::now();
+    siv.refresh();
+    while siv.is_running() {
+        siv.step();
+        for event in rx.try_iter() {
+            match event {
+                VMEvent::Power(value) => {
+                    siv.call_on_name("power", |view: &mut Checkbox| view.set_checked(value));
+                }
+                VMEvent::Pause(value) => {
+                    siv.call_on_name("pause", |view: &mut Checkbox| view.set_checked(value));
+                }
+                VMEvent::SingleStep(value) => {
+                    siv.call_on_name("single_step", |view: &mut Checkbox| view.set_checked(value));
+                }
+                VMEvent::PC(value) => {
+                    siv.call_on_name("pc", |view: &mut TextView| {
+                        view.set_content(format!("{value:#010x}"))
+                    });
+                }
+            }
+        }
+        if last_state_time.elapsed().as_secs_f64() > (1. / 4.) {
+            tx.send(VMCommand::GetState).unwrap();
+            last_state_time = Instant::now();
+        }
+    }
+    tx.send(VMCommand::Exit).unwrap();
+}
+
+fn process_cmd(out: &TextContent, cmd: &str) -> Option<VMCommand> {
+    let cmd = cmd.split(' ').collect_vec();
+    Some(match cmd[0] {
+        "pause" => VMCommand::Pause,
+        "s" | "step" => VMCommand::Step,
+        "c" | "continue" => VMCommand::Continue,
+        "rs" | "restart" => VMCommand::Restart,
+        "b" | "break" if cmd.len() >= 2 => match cmd[1] {
+            "clear" => VMCommand::SetBreakpoint(None),
+            value => match u32::from_str_radix(value.trim_start_matches("0x"), 16) {
+                Ok(value) => VMCommand::SetBreakpoint(Some(value)),
+                Err(_) => {
+                    tui_println!(out, "Invalid address.");
+                    return None;
+                }
+            },
+        },
+        "p" | "print" | "v" | "var" if cmd.len() >= 2 => {
+            VMCommand::PrintVar(cmd[1].to_string(), cmd.get(2).map(|s| s.to_string()))
+        }
+        /*
+        "i" | "inspect" if cmd.len() >= 3 => {
+            let Ok(x) = cmd[1].parse() else {
+                println!("Invalid x.");
+                return None;
+            };
+            let Ok(y) = cmd[2].parse() else {
+                println!("Invalid y.");
+                return None;
+            };
+            match vm.building((x, y).into()) {
+                Some(b) => match b.data.try_borrow() {
+                    Ok(data) => match &*data {
+                        BuildingData::Processor(p) => match cmd.get(3) {
+                            Some(&"*") => {
+                                for name in p.variables.keys().sorted() {
+                                    print_var(p, name, cmd.get(4));
+                                }
+                            }
+                            Some(addr) => print_var(p, addr, cmd.get(4)),
+                            None => println!("{}", b.block.name),
+                        },
+                        BuildingData::Memory(mem) => {
+                            let i = cmd.get(3).copied().unwrap_or("").parse().unwrap_or(0);
+                            println!("{}[{i}] = {:?}", b.block.name, mem.get(i));
+                        }
+                        BuildingData::Message(msg) => {
+                            println!("{} = {}", b.block.name, decode_utf16(msg))
+                        }
+                        BuildingData::Switch(on) => {
+                            println!("{} = {on}", b.block.name)
+                        }
+                        _ => println!("{}", b.block.name),
+                    },
+                    Err(_) => println!("Already borrowed."),
+                },
+                None => println!("No building found at ({x}, {y})."),
+            }
+        }
+        */
+        _ => return None,
+    })
+}
 
 fn main() -> Result<(), Box<dyn Error>> {
     let cli = Cli::parse();
@@ -198,7 +374,6 @@ fn main() -> Result<(), Box<dyn Error>> {
 
     let controller = get_building(&vm, meta.cpu, WORLD_PROCESSOR);
     let config = get_building(&vm, meta.config, MICRO_PROCESSOR);
-    let registers = get_building(&vm, meta.registers, MEMORY_CELL);
     let uart0 = get_building(&vm, meta.uarts[0], MEMORY_BANK);
     let error_output = get_building(&vm, meta.error_output, MESSAGE);
     let power_switch = get_building(&vm, meta.power_switch, SWITCH);
@@ -211,165 +386,158 @@ fn main() -> Result<(), Box<dyn Error>> {
         vm.do_tick(Duration::from_secs_f64(1. / 60.));
     }
 
-    println!("Starting.\n--------");
+    // switch to TUI
 
-    if let BuildingData::Switch(enabled) = &mut *power_switch.data.borrow_mut() {
-        *enabled = true;
+    let stdout = TextContent::new("");
+    let debug = TextContent::new("");
+
+    let (tx_event, rx_event) = mpsc::channel();
+    let (tx_cmd, rx_cmd) = mpsc::channel();
+
+    {
+        let stdout = stdout.clone();
+        let debug = debug.clone();
+        thread::spawn(move || {
+            tui(stdout, debug, tx_cmd, rx_event);
+        });
     }
-    if let BuildingData::Switch(enabled) = &mut *single_step_switch.data.borrow_mut() {
-        *enabled = cli.step;
+
+    let print_var = |processor: &Processor, name: String, radix: Option<String>| {
+        match processor.variable(&name) {
+            Some(value) => match radix.as_deref() {
+                Some("x") => tui_println!(debug, "{name} = {:#010x}", value.num() as u32),
+                Some("b") => tui_println!(debug, "{name} = {:#034b}", value.num() as u32),
+                _ => tui_println!(debug, "{name} = {value:?}"),
+            },
+            None => tui_println!(debug, "{name} = <undefined>"),
+        };
+    };
+
+    // start CPU
+
+    let mut prev_power = false;
+    let mut prev_pause = false;
+    let mut prev_single_step = false;
+    let mut prev_pc = 0xffffffffu32;
+
+    if let BuildingData::Switch(power) = &mut *power_switch.data.borrow_mut()
+        && let BuildingData::Switch(pause) = &*pause_switch.data.borrow()
+        && let BuildingData::Switch(single_step) = &mut *single_step_switch.data.borrow_mut()
+    {
+        *power = true;
+        *single_step = cli.step;
+
+        // this makes the main loop send events on the first iteration
+        prev_power = !*power;
+        prev_pause = !*pause;
+        prev_single_step = !*single_step;
     }
+
+    tui_println!(debug, "Starting.");
 
     let mut ticks = 0;
-    let mut uart_print = String::new();
     let mut now = Instant::now() - Duration::from_secs_f64(1. / 60.);
-    let start = Instant::now();
+    let mut start = Instant::now();
 
     loop {
         vm.do_tick(now.elapsed());
         ticks += 1;
         now = Instant::now();
 
-        if let BuildingData::Switch(paused) = &mut *pause_switch.data.borrow_mut()
-            && *paused
+        if let BuildingData::Switch(power) = &mut *power_switch.data.borrow_mut()
+            && let BuildingData::Switch(pause) = &mut *pause_switch.data.borrow_mut()
             && let BuildingData::Switch(single_step) = &mut *single_step_switch.data.borrow_mut()
-            && let BuildingData::Processor(ctrl) = &mut *controller.data.borrow_mut()
+            && let BuildingData::Memory(uart0) = &mut *uart0.data.borrow_mut()
+            && let BuildingData::Processor(controller) = &mut *controller.data.borrow_mut()
             && let BuildingData::Processor(config) = &mut *config.data.borrow_mut()
-            && let BuildingData::Memory(mem) = &*registers.data.borrow()
+            && let BuildingData::Message(error_output) = &*error_output.data.borrow()
         {
-            println!("\ntime: {:.3?}", vm.time());
-            println!("pc: {:#010x}", ctrl.variable("pc").unwrap().num() as u32);
-            for i in 0..16 {
-                println!(
-                    "x{i:<2} = {:#010x}  x{:<2} = {:#010x}",
-                    mem[i] as u32,
-                    i + 16,
-                    mem[i + 16] as u32
-                );
-            }
-
-            loop {
-                let cmd = input!("> ");
-                let cmd = cmd.split(' ').collect_vec();
-                match cmd[0] {
-                    "" | "s" | "step" => {
-                        *single_step = true;
-                        break;
+            // handle commands
+            for cmd in rx_cmd.try_iter() {
+                match cmd {
+                    VMCommand::Exit => return Ok(()),
+                    VMCommand::Pause => {
+                        *pause = true;
                     }
-                    "c" | "continue" => {
+                    VMCommand::Step => {
+                        if *pause {
+                            *pause = false;
+                            *single_step = true;
+                        }
+                    }
+                    VMCommand::Continue => {
+                        *pause = false;
                         *single_step = false;
-                        break;
                     }
-                    "rs" | "restart" => {
-                        ctrl.set_variable("pc", 0.into())?;
-                        break;
+                    VMCommand::Restart => {
+                        controller.set_variable("pc", 0.into())?;
+                        *power = true;
+                        *pause = false;
+                        *single_step = false;
+                        start = Instant::now();
                     }
-                    "b" | "break" if cmd.len() >= 2 => match cmd[1] {
-                        "clear" => {
-                            config.set_variable("BREAKPOINT_ADDRESS", LValue::Null)?;
-                            println!("Breakpoint cleared.");
-                        }
-                        pc => match u64::from_str_radix(pc.trim_start_matches("0x"), 16) {
-                            Ok(pc) => {
-                                config.set_variable("BREAKPOINT_ADDRESS", pc.into())?;
-                                println!("Breakpoint set: {pc:#010x}")
+                    VMCommand::SetBreakpoint(Some(value)) => {
+                        config.set_variable("BREAKPOINT_ADDRESS", value.into())?;
+                        tui_println!(debug, "Breakpoint set: {value:#010x}");
+                    }
+                    VMCommand::SetBreakpoint(None) => {
+                        config.set_variable("BREAKPOINT_ADDRESS", LValue::Null)?;
+                        tui_println!(debug, "Breakpoint cleared.");
+                    }
+                    VMCommand::PrintVar(name, radix) => print_var(controller, name, radix),
+                    VMCommand::GetState => {
+                        // send state change events
+                        if *power != prev_power {
+                            tx_event.send(VMEvent::Power(*power))?;
+                            prev_power = *power;
+                            if !*power {
+                                let elapsed = start.elapsed();
+                                tui_println!(debug, "Processor halted.");
+                                if !error_output.is_empty() {
+                                    tui_println!(
+                                        debug,
+                                        "Error output: {}",
+                                        decode_utf16(error_output)
+                                    );
+                                }
+                                tui_println!(debug, "Runtime: {elapsed:?}");
+                                tui_println!(debug, "Ticks completed: {ticks}");
+                                tui_println!(debug, "Average time per tick: {:?}", elapsed / ticks);
+                                tui_println!(
+                                    debug,
+                                    "Average ticks per second: {:.1}",
+                                    (ticks as f64) / elapsed.as_secs_f64()
+                                );
                             }
-                            Err(_) => println!("Invalid address."),
-                        },
-                    },
-                    "p" | "print" | "v" | "var" if cmd.len() >= 2 => {
-                        print_var(ctrl, cmd[1], cmd.get(2))
-                    }
-                    "i" | "inspect" if cmd.len() >= 3 => {
-                        let Ok(x) = cmd[1].parse() else {
-                            println!("Invalid x.");
-                            continue;
-                        };
-                        let Ok(y) = cmd[2].parse() else {
-                            println!("Invalid y.");
-                            continue;
-                        };
-                        match vm.building((x, y).into()) {
-                            Some(b) => match b.data.try_borrow() {
-                                Ok(data) => match &*data {
-                                    BuildingData::Processor(p) => match cmd.get(3) {
-                                        Some(&"*") => {
-                                            for name in p.variables.keys().sorted() {
-                                                print_var(p, name, cmd.get(4));
-                                            }
-                                        }
-                                        Some(addr) => print_var(p, addr, cmd.get(4)),
-                                        None => println!("{}", b.block.name),
-                                    },
-                                    BuildingData::Memory(mem) => {
-                                        let i =
-                                            cmd.get(3).copied().unwrap_or("").parse().unwrap_or(0);
-                                        println!("{}[{i}] = {:?}", b.block.name, mem.get(i));
-                                    }
-                                    BuildingData::Message(msg) => {
-                                        println!("{} = {}", b.block.name, decode_utf16(msg))
-                                    }
-                                    BuildingData::Switch(on) => {
-                                        println!("{} = {on}", b.block.name)
-                                    }
-                                    _ => println!("{}", b.block.name),
-                                },
-                                Err(_) => println!("Already borrowed."),
-                            },
-                            None => println!("No building found at ({x}, {y})."),
+                        }
+                        if *pause != prev_pause {
+                            tx_event.send(VMEvent::Pause(*pause))?;
+                            prev_pause = *pause;
+                        }
+                        if *single_step != prev_single_step {
+                            tx_event.send(VMEvent::SingleStep(*single_step))?;
+                            prev_single_step = *single_step;
+                        }
+                        let pc = controller.variable("pc").unwrap().num() as u32;
+                        if pc != prev_pc {
+                            tx_event.send(VMEvent::PC(pc))?;
+                            prev_pc = pc;
                         }
                     }
-                    _ => {}
                 }
             }
 
-            *paused = false;
-        }
-
-        if vm.running_processors() == 0 {
-            println!("\n--------\nAll processors halted, exiting.");
-            break;
-        }
-
-        if let BuildingData::Switch(enabled) = &*power_switch.data.borrow()
-            && !*enabled
-        {
-            println!("\n--------\nPower switch disabled, exiting.");
-            break;
-        }
-
-        if let BuildingData::Memory(memory) = &mut *uart0.data.borrow_mut() {
-            let mut rx_read = (memory[UART_RX_READ] as usize) % uart_fifo_modulo;
-            let rx_write = (memory[UART_RX_WRITE] as usize) % uart_fifo_modulo;
+            // UART0 terminal
+            let mut rx_read = (uart0[UART_RX_READ] as usize) % uart_fifo_modulo;
+            let rx_write = (uart0[UART_RX_WRITE] as usize) % uart_fifo_modulo;
             if rx_read != rx_write {
-                uart_print.clear();
                 while rx_read != rx_write {
-                    let c = memory[UART_RX_START + rx_read] as u8;
-                    uart_print.push(c as char);
+                    let c = uart0[UART_RX_START + rx_read] as u8;
+                    stdout.append(c as char);
                     rx_read = (rx_read + 1) % uart_fifo_modulo;
                 }
-                memory[UART_RX_READ] = rx_write as f64;
-                print!("{uart_print}");
-                std::io::stdout().flush()?;
+                uart0[UART_RX_READ] = rx_write as f64;
             }
         }
     }
-
-    let elapsed = start.elapsed();
-
-    if let BuildingData::Message(buf) = &*error_output.data.borrow()
-        && !buf.is_empty()
-    {
-        println!("Error output: {}", decode_utf16(buf));
-    }
-
-    println!("Runtime: {elapsed:?}");
-    println!("Ticks completed: {ticks}");
-    println!("Average time per tick: {:?}", elapsed / ticks);
-    println!(
-        "Average ticks per second: {:.1}",
-        (ticks as f64) / elapsed.as_secs_f64()
-    );
-
-    Ok(())
 }
