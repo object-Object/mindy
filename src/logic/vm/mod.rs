@@ -61,12 +61,11 @@ impl LogicVM {
     /// Run the simulation until all processors halt, or until a number of ticks are finished.
     /// Returns true if all processors halted, or false if the tick limit was reached.
     pub fn run(&self, max_ticks: Option<usize>) -> bool {
-        let mut now = Instant::now();
+        let start = Instant::now();
         let mut tick = 0;
 
         loop {
-            self.do_tick(now.elapsed());
-            now = Instant::now();
+            self.do_tick(start.elapsed());
 
             if self.running_processors.get() == 0 {
                 // all processors finished, return true
@@ -85,10 +84,10 @@ impl LogicVM {
 
     /// Execute one tick of the simulation.
     ///
-    /// Note: negative delta values will be ignored.
-    pub fn do_tick(&self, delta: Duration) {
+    /// Note: `time` is the time elapsed since the *start* of the simulation.
+    pub fn do_tick(&self, time: Duration) {
         // never move time backwards
-        let time = self.time.get() + duration_millis_f64(delta).max(0.);
+        let time = duration_millis_f64(time);
         self.time.set(time);
 
         for processor in self.iter_processors() {
@@ -1839,25 +1838,29 @@ mod tests {
             ",
         );
 
-        vm.do_tick(Duration::ZERO);
+        let mut time = Duration::ZERO;
+        vm.do_tick(time);
 
         with_processor(&mut vm, (0, 0), |p| {
             assert_eq!(p.state.decode_printbuffer(), "123");
         });
 
-        vm.do_tick(Duration::from_secs_f64(1. / 60.));
+        time += Duration::from_secs_f64(1. / 60.);
+        vm.do_tick(time);
 
         with_processor(&mut vm, (0, 0), |p| {
             assert_eq!(p.state.decode_printbuffer(), "1234");
         });
 
-        vm.do_tick(Duration::from_millis(500));
+        time += Duration::from_millis(500);
+        vm.do_tick(time);
 
         with_processor(&mut vm, (0, 0), |p| {
             assert_eq!(p.state.decode_printbuffer(), "1234");
         });
 
-        vm.do_tick(Duration::from_millis(500));
+        time += Duration::from_millis(500);
+        vm.do_tick(time);
 
         with_processor(&mut vm, (0, 0), |p| {
             assert_eq!(p.state.decode_printbuffer(), "12345");
@@ -2584,17 +2587,22 @@ mod tests {
             ",
         );
 
-        vm.do_tick(Duration::ZERO);
-        vm.do_tick(Duration::ZERO);
+        let mut time = Duration::ZERO;
 
-        vm.do_tick(Duration::from_secs(1));
-        vm.do_tick(Duration::ZERO);
+        vm.do_tick(time);
+        vm.do_tick(time);
 
-        vm.do_tick(Duration::from_millis(1));
-        vm.do_tick(Duration::ZERO);
+        time += Duration::from_secs(1);
+        vm.do_tick(time);
+        vm.do_tick(time);
 
-        vm.do_tick(Duration::from_secs(60));
-        vm.do_tick(Duration::ZERO);
+        time += Duration::from_millis(1);
+        vm.do_tick(time);
+        vm.do_tick(time);
+
+        time += Duration::from_secs(60);
+        vm.do_tick(time);
+        vm.do_tick(time);
 
         let processor = take_processor(&mut vm, (0, 0));
         assert_variables_epsilon(

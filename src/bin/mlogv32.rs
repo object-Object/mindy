@@ -143,7 +143,7 @@ enum VMEvent {
 fn tui(stdout: TextContent, debug: TextContent, tx: Sender<VMCommand>, rx: Receiver<VMEvent>) {
     let mut siv = cursive::crossterm().into_runner();
 
-    siv.set_fps(10);
+    siv.set_fps(20);
     siv.set_theme(Theme::terminal_default());
 
     siv.add_fullscreen_layer(
@@ -219,7 +219,7 @@ fn tui(stdout: TextContent, debug: TextContent, tx: Sender<VMCommand>, rx: Recei
                 }
             }
         }
-        if last_state_time.elapsed().as_secs_f64() > (1. / 4.) {
+        if last_state_time.elapsed().as_secs_f64() > (1. / 8.) {
             tx.send(VMCommand::GetState).unwrap();
             last_state_time = Instant::now();
         }
@@ -382,8 +382,10 @@ fn main() -> Result<(), Box<dyn Error>> {
 
     println!("Initializing processors...");
 
+    let mut time = Duration::ZERO;
     for _ in 0..500 {
-        vm.do_tick(Duration::from_secs_f64(1. / 60.));
+        vm.do_tick(time);
+        time += Duration::from_secs_f64(1. / 60.);
     }
 
     // switch to TUI
@@ -433,16 +435,12 @@ fn main() -> Result<(), Box<dyn Error>> {
         prev_single_step = !*single_step;
     }
 
-    tui_println!(debug, "Starting.");
-
     let mut ticks = 0;
-    let mut now = Instant::now() - Duration::from_secs_f64(1. / 60.);
     let mut start = Instant::now();
 
     loop {
-        vm.do_tick(now.elapsed());
+        vm.do_tick(start.elapsed());
         ticks += 1;
-        now = Instant::now();
 
         if let BuildingData::Switch(power) = &mut *power_switch.data.borrow_mut()
             && let BuildingData::Switch(pause) = &mut *pause_switch.data.borrow_mut()
@@ -490,7 +488,9 @@ fn main() -> Result<(), Box<dyn Error>> {
                         if *power != prev_power {
                             tx_event.send(VMEvent::Power(*power))?;
                             prev_power = *power;
-                            if !*power {
+                            if *power {
+                                tui_println!(debug, "Starting.");
+                            } else {
                                 let elapsed = start.elapsed();
                                 tui_println!(debug, "Processor halted.");
                                 if !error_output.is_empty() {
