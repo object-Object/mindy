@@ -404,10 +404,9 @@ fn main() -> Result<(), Box<dyn Error>> {
 
     println!("Initializing processors...");
 
-    let mut time = Duration::ZERO;
     for _ in 0..500 {
-        vm.do_tick(time);
-        time += Duration::from_secs_f64(1. / 60.);
+        // pin time at zero to avoid processors waiting based on invalid @time values
+        vm.do_tick(Duration::ZERO);
     }
 
     // switch to TUI
