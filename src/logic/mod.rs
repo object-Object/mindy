@@ -1,5 +1,5 @@
 pub mod ast;
-mod vm;
+pub mod vm;
 
 lalrpop_util::lalrpop_mod!(
     #[allow(deprecated)]
@@ -8,7 +8,6 @@ lalrpop_util::lalrpop_mod!(
 );
 
 pub use grammar::LogicParser;
-pub use vm::*;
 
 #[cfg(test)]
 mod tests {

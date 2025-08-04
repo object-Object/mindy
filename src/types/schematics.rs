@@ -29,11 +29,11 @@ pub struct Schematic {
     tags_count: i8,
     #[br(parse_with = count(tags_count as usize))]
     #[bw(write_with = write_tags, args(labels))]
-    tags: IndexMap<JavaString, JavaString>,
+    pub tags: IndexMap<JavaString, JavaString>,
 
     #[br(calc = calc_labels(&tags))]
     #[bw(ignore)]
-    labels: Vec<String>,
+    pub labels: Vec<String>,
 
     #[bw(try_calc = blocks.len().try_into())]
     blocks_count: u8,
@@ -76,6 +76,11 @@ impl Schematic {
 
     pub fn tiles(&self) -> &Vec<SchematicTile> {
         &self.tiles
+    }
+
+    /// WARNING: Inserting or removing tiles via this method will cause the serialized schematic to be invalid.
+    pub fn tiles_mut(&mut self) -> &mut Vec<SchematicTile> {
+        &mut self.tiles
     }
 
     pub fn tile_mut(&mut self, index: usize) -> Option<&mut SchematicTile> {

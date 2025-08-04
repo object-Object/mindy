@@ -4,7 +4,7 @@ use strum_macros::IntoStaticStr;
 
 use super::{
     LogicVMBuilder, VMLoadError, VMLoadResult,
-    processor::{Processor, ProcessorBuilder, ProcessorState},
+    processor::{Processor, ProcessorBuilder, ProcessorState, encode_utf16},
     variables::{LValue, LVar},
 };
 use crate::types::{
@@ -82,7 +82,7 @@ impl Building {
                         }
                         result.push(c);
                     }
-                    ProcessorState::encode_utf16(&result).collect()
+                    encode_utf16(&result).collect()
                 }
                 _ => Vec::new(),
             }),

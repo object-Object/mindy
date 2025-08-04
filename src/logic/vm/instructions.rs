@@ -6,7 +6,7 @@ use noise::{NoiseFn, Simplex};
 use super::{
     LogicVM, VMLoadError, VMLoadResult,
     buildings::BuildingData,
-    processor::{MAX_TEXT_BUFFER, ProcessorState},
+    processor::{MAX_TEXT_BUFFER, ProcessorState, encode_utf16},
     variables::{Content, LValue, LVar, RAD_DEG},
 };
 use crate::{
@@ -486,7 +486,7 @@ impl SimpleInstruction for Format {
         let value = self.value.get(state);
         state.printbuffer.splice(
             placeholder_index..placeholder_index + 3,
-            ProcessorState::encode_utf16(&Print::to_string(&value, vm)),
+            encode_utf16(&Print::to_string(&value, vm)),
         );
     }
 }

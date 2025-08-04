@@ -3,6 +3,10 @@ mod instructions;
 mod processor;
 mod variables;
 
+pub use buildings::*;
+pub use processor::{decode_utf16, encode_utf16};
+pub use variables::{Content, ContentIDLookupError, LString, LValue, LVar};
+
 use std::{
     borrow::Cow,
     cell::Cell,
@@ -13,10 +17,6 @@ use std::{
 
 use thiserror::Error;
 
-use self::{
-    buildings::{Building, BuildingData},
-    variables::LVar,
-};
 use crate::types::{Point2, Schematic, SchematicTile};
 
 const MILLIS_PER_SEC: u64 = 1_000;
@@ -60,7 +60,7 @@ impl LogicVM {
 
     /// Run the simulation until all processors halt, or until a number of ticks are finished.
     /// Returns true if all processors halted, or false if the tick limit was reached.
-    pub fn run(&mut self, max_ticks: Option<usize>) -> bool {
+    pub fn run(&self, max_ticks: Option<usize>) -> bool {
         let mut now = Instant::now();
         let mut tick = 0;
 
@@ -86,7 +86,7 @@ impl LogicVM {
     /// Execute one tick of the simulation.
     ///
     /// Note: negative delta values will be ignored.
-    pub fn do_tick(&mut self, delta: Duration) {
+    pub fn do_tick(&self, delta: Duration) {
         // never move time backwards
         let time = self.time.get() + duration_millis_f64(delta).max(0.);
         self.time.set(time);
@@ -102,6 +102,14 @@ impl LogicVM {
 
     fn iter_processors(&self) -> impl Iterator<Item = &Building> {
         self.buildings.iter().take(self.total_processors)
+    }
+
+    pub fn running_processors(&self) -> usize {
+        self.running_processors.get()
+    }
+
+    pub fn time(&self) -> Duration {
+        Duration::from_secs_f64(self.time.get() / 1000.)
     }
 }
 

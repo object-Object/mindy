@@ -1,0 +1,2 @@
+[alias]
+mlogv32 = "run --release --features mlogv32 --bin mlogv32 --"

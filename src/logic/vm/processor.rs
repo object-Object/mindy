@@ -11,7 +11,7 @@ use itertools::Itertools;
 use replace_with::replace_with_and_return;
 
 use super::{
-    LogicVM, VMLoadError, VMLoadResult,
+    LValue, LogicVM, VMLoadError, VMLoadResult,
     buildings::Building,
     instructions::{Instruction, InstructionBuilder, InstructionResult, Noop},
     variables::LVar,
@@ -26,8 +26,8 @@ const MAX_INSTRUCTION_SCALE: usize = 5;
 
 pub struct Processor {
     instructions: Vec<Box<dyn Instruction>>,
-    pub(super) state: ProcessorState,
-    pub(super) variables: HashMap<String, LVar>,
+    pub state: ProcessorState,
+    pub variables: HashMap<String, LVar>,
 }
 
 impl Processor {
@@ -172,6 +172,10 @@ impl Processor {
         self.state.counter = counter + 1;
         self.instructions[counter].execute(&mut self.state, &self.variables, vm)
     }
+
+    pub fn variable(&self, name: &str) -> Option<LValue> {
+        self.variables.get(name).map(|v| v.get(&self.state))
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -186,16 +190,16 @@ pub struct ProcessorState {
     links: Vec<ProcessorLink>,
     linked_positions: HashSet<Point2>,
 
-    pub(super) counter: usize,
+    pub counter: usize,
     accumulator: usize,
-    pub(super) ipt: usize,
+    pub ipt: usize,
 
     running_processors: Rc<Cell<usize>>,
     pub(super) time: Rc<Cell<f64>>,
     // we use Vec<u16> instead of String because Java strings allow invalid UTF-16
     // this behaviour is user-visible with printchar and when reading from a message
     // https://users.rust-lang.org/t/why-is-a-char-valid-in-jvm-but-invalid-in-rust/73524
-    pub(super) printbuffer: Vec<u16>,
+    pub printbuffer: Vec<u16>,
 }
 
 impl ProcessorState {
@@ -234,20 +238,12 @@ impl ProcessorState {
         self.time.get() * 60. / 1000.
     }
 
-    pub fn encode_utf16(value: &str) -> impl Iterator<Item = u16> {
-        value.encode_utf16()
-    }
-
-    pub fn decode_utf16(value: &[u16]) -> String {
-        String::from_utf16_lossy(value)
-    }
-
     pub fn append_printbuffer(&mut self, value: &str) {
-        self.printbuffer.extend(Self::encode_utf16(value))
+        self.printbuffer.extend(encode_utf16(value))
     }
 
     pub fn decode_printbuffer(&self) -> String {
-        Self::decode_utf16(&self.printbuffer)
+        decode_utf16(&self.printbuffer)
     }
 
     pub fn link(&self, index: usize) -> Option<Point2> {
@@ -265,6 +261,14 @@ impl ProcessorState {
     pub fn num_instructions(&self) -> usize {
         self.num_instructions
     }
+}
+
+pub fn encode_utf16(value: &str) -> impl Iterator<Item = u16> {
+    value.encode_utf16()
+}
+
+pub fn decode_utf16(value: &[u16]) -> String {
+    String::from_utf16_lossy(value)
 }
 
 /// A representation of a link from this processor to a building.
