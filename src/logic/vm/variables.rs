@@ -247,6 +247,10 @@ impl LValue {
         self.num() as i32
     }
 
+    pub fn numu(&self) -> u32 {
+        self.num() as u32
+    }
+
     pub fn num_usize(&self) -> Result<usize, TryFromIntError> {
         self.numi().try_into()
     }

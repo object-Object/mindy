@@ -48,3 +48,7 @@ mlogv32 = [
     "dep:cursive",
     "dep:indicatif",
 ]
+
+[profile.dev-debug]
+inherits = "dev"
+opt-level = 1

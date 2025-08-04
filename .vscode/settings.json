@@ -1,6 +1,6 @@
 {
     "files.associations": {
-        "**/mimex-*.txt": "csv",
+        "**/mimex-*.txt": "csv"
     },
-    "rust-analyzer.cargo.features": "all",
+    "rust-analyzer.cargo.features": "all"
 }

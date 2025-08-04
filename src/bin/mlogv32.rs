@@ -1,5 +1,6 @@
 #![allow(dead_code)]
 
+use std::borrow::Cow;
 use std::io::{Cursor, Read};
 use std::sync::mpsc::{self, Receiver, Sender};
 use std::thread;
@@ -9,12 +10,13 @@ use std::{error::Error, fmt::Display, fs::File, path::PathBuf, time::Instant};
 use binrw::{BinRead, BinWrite};
 use clap::Parser;
 use cursive::theme::Theme;
-use cursive::view::{Nameable, Resizable};
+use cursive::view::{Nameable, Resizable, ScrollStrategy};
 use cursive::views::{
     Checkbox, EditView, LinearLayout, ListView, Panel, ScrollView, TextContent, TextView,
 };
 use indicatif::ProgressIterator;
 use itertools::Itertools;
+use mindustry_rs::logic::vm::LVar;
 use mindustry_rs::{
     logic::vm::{
         Building, BuildingData, LValue, LogicVM, LogicVMBuilder, MEMORY_BANK, MESSAGE,
@@ -124,23 +126,27 @@ macro_rules! tui_println {
 
 enum VMCommand {
     Exit,
+    Freeze,
     Pause,
     Step,
     Continue,
     Restart,
-    GetState,
     SetBreakpoint(Option<u32>),
     PrintVar(String, Option<String>),
 }
 
-enum VMEvent {
-    Power(bool),
-    Pause(bool),
-    SingleStep(bool),
-    PC(u32),
+struct VMState {
+    power: bool,
+    pause: bool,
+    single_step: bool,
+    state: Option<String>,
+    pc: u32,
+    mtime: u32,
+    mcycle: u32,
+    minstret: u32,
 }
 
-fn tui(stdout: TextContent, debug: TextContent, tx: Sender<VMCommand>, rx: Receiver<VMEvent>) {
+fn tui(stdout: TextContent, debug: TextContent, tx: Sender<VMCommand>, rx: Receiver<VMState>) {
     let mut siv = cursive::crossterm().into_runner();
 
     siv.set_fps(20);
@@ -149,9 +155,12 @@ fn tui(stdout: TextContent, debug: TextContent, tx: Sender<VMCommand>, rx: Recei
     siv.add_fullscreen_layer(
         LinearLayout::vertical()
             .child(
-                Panel::new(ScrollView::new(TextView::new_with_content(stdout)))
-                    .title("UART0")
-                    .full_height(),
+                Panel::new(
+                    ScrollView::new(TextView::new_with_content(stdout))
+                        .scroll_strategy(ScrollStrategy::StickToBottom),
+                )
+                .title("UART0")
+                .full_height(),
             )
             .child(
                 LinearLayout::horizontal()
@@ -160,7 +169,8 @@ fn tui(stdout: TextContent, debug: TextContent, tx: Sender<VMCommand>, rx: Recei
                             LinearLayout::vertical()
                                 .child(
                                     ScrollView::new(TextView::new_with_content(debug.clone()))
-                                        .full_height(),
+                                        .scroll_strategy(ScrollStrategy::StickToBottom)
+                                        .min_height(16),
                                 )
                                 .child(
                                     EditView::new()
@@ -176,52 +186,59 @@ fn tui(stdout: TextContent, debug: TextContent, tx: Sender<VMCommand>, rx: Recei
                                                 });
                                             }
                                         })
-                                        .with_name("debug")
-                                        .full_width(),
-                                ),
+                                        .with_name("debug"),
+                                )
+                                .full_width(),
                         )
-                        .title("Debug")
-                        .full_screen(),
+                        .title("Debug"),
                     )
-                    .child(
-                        Panel::new(
-                            ListView::new()
-                                .child("Power", Checkbox::new().disabled().with_name("power"))
-                                .child("Pause", Checkbox::new().disabled().with_name("pause"))
-                                .child("Step", Checkbox::new().disabled().with_name("single_step"))
-                                .child("PC", TextView::new("0x00000000").with_name("pc")),
-                        )
-                        .full_height(),
-                    ),
+                    .child(Panel::new(
+                        ListView::new()
+                            .child("Power", Checkbox::new().disabled().with_name("power"))
+                            .child("Pause", Checkbox::new().disabled().with_name("pause"))
+                            .child("Step", Checkbox::new().disabled().with_name("single_step"))
+                            .child("State", TextView::new("???").with_name("state"))
+                            .child("PC", TextView::new("0x00000000").with_name("pc"))
+                            .child("time", TextView::new("0").with_name("mtime"))
+                            .child("cycle", TextView::new("0").with_name("mcycle"))
+                            .child("instret", TextView::new("0").with_name("minstret"))
+                            .min_width("State trap_breakpoint".len()),
+                    )),
             )
             .full_screen(),
     );
 
-    let mut last_state_time = Instant::now();
     siv.refresh();
     while siv.is_running() {
         siv.step();
-        for event in rx.try_iter() {
-            match event {
-                VMEvent::Power(value) => {
-                    siv.call_on_name("power", |view: &mut Checkbox| view.set_checked(value));
-                }
-                VMEvent::Pause(value) => {
-                    siv.call_on_name("pause", |view: &mut Checkbox| view.set_checked(value));
-                }
-                VMEvent::SingleStep(value) => {
-                    siv.call_on_name("single_step", |view: &mut Checkbox| view.set_checked(value));
-                }
-                VMEvent::PC(value) => {
-                    siv.call_on_name("pc", |view: &mut TextView| {
-                        view.set_content(format!("{value:#010x}"))
-                    });
-                }
-            }
-        }
-        if last_state_time.elapsed().as_secs_f64() > (1. / 8.) {
-            tx.send(VMCommand::GetState).unwrap();
-            last_state_time = Instant::now();
+        for VMState {
+            power,
+            pause,
+            single_step,
+            state,
+            pc,
+            mtime,
+            mcycle,
+            minstret,
+        } in rx.try_iter()
+        {
+            siv.call_on_name("power", |v: &mut Checkbox| v.set_checked(power));
+            siv.call_on_name("pause", |v: &mut Checkbox| v.set_checked(pause));
+            siv.call_on_name("single_step", |v: &mut Checkbox| v.set_checked(single_step));
+            siv.call_on_name("state", |v: &mut TextView| match state {
+                Some(state) => v.set_content(state),
+                None => v.set_content("???"),
+            });
+            siv.call_on_name("pc", |v: &mut TextView| {
+                v.set_content(format!("{pc:#010x}"))
+            });
+            siv.call_on_name("mtime", |v: &mut TextView| v.set_content(mtime.to_string()));
+            siv.call_on_name("mcycle", |v: &mut TextView| {
+                v.set_content(mcycle.to_string())
+            });
+            siv.call_on_name("minstret", |v: &mut TextView| {
+                v.set_content(minstret.to_string())
+            });
         }
     }
     tx.send(VMCommand::Exit).unwrap();
@@ -230,6 +247,7 @@ fn tui(stdout: TextContent, debug: TextContent, tx: Sender<VMCommand>, rx: Recei
 fn process_cmd(out: &TextContent, cmd: &str) -> Option<VMCommand> {
     let cmd = cmd.split(' ').collect_vec();
     Some(match cmd[0] {
+        "freeze" => VMCommand::Freeze,
         "pause" => VMCommand::Pause,
         "s" | "step" => VMCommand::Step,
         "c" | "continue" => VMCommand::Continue,
@@ -368,7 +386,8 @@ fn main() -> Result<(), Box<dyn Error>> {
     for tile in schematic.tiles().iter().progress() {
         builder.add_schematic_tile(tile)?;
     }
-    let vm = builder.build()?;
+    let globals = LVar::create_globals();
+    let vm = builder.build_with_globals(Cow::Borrowed(&globals))?;
 
     let uart_fifo_modulo = meta.uart_fifo_capacity + 1;
 
@@ -393,19 +412,22 @@ fn main() -> Result<(), Box<dyn Error>> {
     let stdout = TextContent::new("");
     let debug = TextContent::new("");
 
-    let (tx_event, rx_event) = mpsc::channel();
+    let (tx_state, rx_state) = mpsc::channel();
     let (tx_cmd, rx_cmd) = mpsc::channel();
 
     {
         let stdout = stdout.clone();
         let debug = debug.clone();
         thread::spawn(move || {
-            tui(stdout, debug, tx_cmd, rx_event);
+            tui(stdout, debug, tx_cmd, rx_state);
         });
     }
 
     let print_var = |processor: &Processor, name: String, radix: Option<String>| {
-        match processor.variable(&name) {
+        match processor
+            .variable(&name)
+            .or_else(|| globals.get(&name).map(|v| v.get(&processor.state)))
+        {
             Some(value) => match radix.as_deref() {
                 Some("x") => tui_println!(debug, "{name} = {:#010x}", value.num() as u32),
                 Some("b") => tui_println!(debug, "{name} = {:#034b}", value.num() as u32),
@@ -417,43 +439,58 @@ fn main() -> Result<(), Box<dyn Error>> {
 
     // start CPU
 
-    let mut prev_power = false;
-    let mut prev_pause = false;
-    let mut prev_single_step = false;
-    let mut prev_pc = 0xffffffffu32;
-
     if let BuildingData::Switch(power) = &mut *power_switch.data.borrow_mut()
-        && let BuildingData::Switch(pause) = &*pause_switch.data.borrow()
         && let BuildingData::Switch(single_step) = &mut *single_step_switch.data.borrow_mut()
     {
         *power = true;
         *single_step = cli.step;
-
-        // this makes the main loop send events on the first iteration
-        prev_power = !*power;
-        prev_pause = !*pause;
-        prev_single_step = !*single_step;
     }
 
+    let mut prev_power = false;
+    let mut frozen = false;
     let mut ticks = 0;
     let mut start = Instant::now();
+    let mut next_state_update = Duration::ZERO;
+    let state_update_interval = Duration::from_secs_f64(1. / 8.);
 
     loop {
-        vm.do_tick(start.elapsed());
-        ticks += 1;
+        let time = start.elapsed();
+        if !frozen {
+            vm.do_tick(time);
+            ticks += 1;
+        }
 
-        if let BuildingData::Switch(power) = &mut *power_switch.data.borrow_mut()
+        // UART0 terminal
+        if let BuildingData::Memory(uart0) = &mut *uart0.data.borrow_mut() {
+            let mut rx_read = (uart0[UART_RX_READ] as usize) % uart_fifo_modulo;
+            let rx_write = (uart0[UART_RX_WRITE] as usize) % uart_fifo_modulo;
+            if rx_read != rx_write {
+                while rx_read != rx_write {
+                    let c = uart0[UART_RX_START + rx_read] as u8;
+                    stdout.append(c as char);
+                    rx_read = (rx_read + 1) % uart_fifo_modulo;
+                }
+                uart0[UART_RX_READ] = rx_write as f64;
+            }
+        }
+
+        if time >= next_state_update
+            && let BuildingData::Switch(power) = &mut *power_switch.data.borrow_mut()
             && let BuildingData::Switch(pause) = &mut *pause_switch.data.borrow_mut()
             && let BuildingData::Switch(single_step) = &mut *single_step_switch.data.borrow_mut()
-            && let BuildingData::Memory(uart0) = &mut *uart0.data.borrow_mut()
             && let BuildingData::Processor(controller) = &mut *controller.data.borrow_mut()
             && let BuildingData::Processor(config) = &mut *config.data.borrow_mut()
             && let BuildingData::Message(error_output) = &*error_output.data.borrow()
         {
+            next_state_update = time + state_update_interval;
+
             // handle commands
             for cmd in rx_cmd.try_iter() {
                 match cmd {
                     VMCommand::Exit => return Ok(()),
+                    VMCommand::Freeze => {
+                        frozen = true;
+                    }
                     VMCommand::Pause => {
                         *pause = true;
                     }
@@ -464,6 +501,7 @@ fn main() -> Result<(), Box<dyn Error>> {
                         }
                     }
                     VMCommand::Continue => {
+                        frozen = false;
                         *pause = false;
                         *single_step = false;
                     }
@@ -483,60 +521,42 @@ fn main() -> Result<(), Box<dyn Error>> {
                         tui_println!(debug, "Breakpoint cleared.");
                     }
                     VMCommand::PrintVar(name, radix) => print_var(controller, name, radix),
-                    VMCommand::GetState => {
-                        // send state change events
-                        if *power != prev_power {
-                            tx_event.send(VMEvent::Power(*power))?;
-                            prev_power = *power;
-                            if *power {
-                                tui_println!(debug, "Starting.");
-                            } else {
-                                let elapsed = start.elapsed();
-                                tui_println!(debug, "Processor halted.");
-                                if !error_output.is_empty() {
-                                    tui_println!(
-                                        debug,
-                                        "Error output: {}",
-                                        decode_utf16(error_output)
-                                    );
-                                }
-                                tui_println!(debug, "Runtime: {elapsed:?}");
-                                tui_println!(debug, "Ticks completed: {ticks}");
-                                tui_println!(debug, "Average time per tick: {:?}", elapsed / ticks);
-                                tui_println!(
-                                    debug,
-                                    "Average ticks per second: {:.1}",
-                                    (ticks as f64) / elapsed.as_secs_f64()
-                                );
-                            }
-                        }
-                        if *pause != prev_pause {
-                            tx_event.send(VMEvent::Pause(*pause))?;
-                            prev_pause = *pause;
-                        }
-                        if *single_step != prev_single_step {
-                            tx_event.send(VMEvent::SingleStep(*single_step))?;
-                            prev_single_step = *single_step;
-                        }
-                        let pc = controller.variable("pc").unwrap().num() as u32;
-                        if pc != prev_pc {
-                            tx_event.send(VMEvent::PC(pc))?;
-                            prev_pc = pc;
-                        }
-                    }
                 }
             }
 
-            // UART0 terminal
-            let mut rx_read = (uart0[UART_RX_READ] as usize) % uart_fifo_modulo;
-            let rx_write = (uart0[UART_RX_WRITE] as usize) % uart_fifo_modulo;
-            if rx_read != rx_write {
-                while rx_read != rx_write {
-                    let c = uart0[UART_RX_START + rx_read] as u8;
-                    stdout.append(c as char);
-                    rx_read = (rx_read + 1) % uart_fifo_modulo;
+            // send state change event
+            tx_state.send(VMState {
+                power: *power,
+                pause: *pause,
+                single_step: *single_step,
+                state: match controller.variable("state").unwrap() {
+                    LValue::String(state) => Some(state.to_string()),
+                    _ => None,
+                },
+                pc: controller.variable("pc").unwrap().numu(),
+                mcycle: controller.variable("csr_mcycle").unwrap().numu(),
+                mtime: controller.variable("csr_mtime").unwrap().numu(),
+                minstret: controller.variable("csr_minstret").unwrap().numu(),
+            })?;
+
+            if *power != prev_power {
+                prev_power = *power;
+                if *power {
+                    tui_println!(debug, "Starting.");
+                } else {
+                    tui_println!(debug, "Processor halted.");
+                    if !error_output.is_empty() {
+                        tui_println!(debug, "Error output: {}", decode_utf16(error_output));
+                    }
+                    tui_println!(debug, "Runtime: {time:?}");
+                    tui_println!(debug, "Ticks completed: {ticks}");
+                    tui_println!(debug, "Average time per tick: {:?}", time / ticks);
+                    tui_println!(
+                        debug,
+                        "Average ticks per second: {:.1}",
+                        (ticks as f64) / time.as_secs_f64()
+                    );
                 }
-                uart0[UART_RX_READ] = rx_write as f64;
             }
         }
     }

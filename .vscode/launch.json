@@ -1,0 +1,20 @@
+{
+    "configurations": [
+        {
+            "name": "mlogv32",
+            "type": "cppvsdbg",
+            "request": "launch",
+            "preLaunchTask": "mlogv32: build",
+            "program": "${workspaceFolder}/target/dev-debug/mlogv32.exe",
+            "args": [
+                "schematics/mlogv32.msch",
+                "--bin",
+                "../mlogv32/coremark/coremark/coremark.bin"
+            ],
+            "stopAtEntry": false,
+            "cwd": "${workspaceFolder}",
+            "environment": [],
+            "console": "integratedTerminal"
+        }
+    ]
+}
