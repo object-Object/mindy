@@ -1,5 +1,6 @@
 use std::{borrow::Cow, collections::HashMap, rc::Rc};
 
+use enum_dispatch::enum_dispatch;
 use lazy_static::lazy_static;
 use noise::{NoiseFn, Simplex};
 
@@ -29,25 +30,8 @@ lazy_static! {
     static ref SIMPLEX: Simplex = Simplex::new(0);
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum InstructionResult {
-    Ok,
-    Yield,
-}
-
-pub trait Instruction {
-    fn late_init(
-        self: Box<Self>,
-        _variables: &mut HashMap<String, LVar>,
-        _globals: &HashMap<String, LVar>,
-        _privileged: bool,
-        _num_instructions: usize,
-    ) -> VMLoadResult<Box<dyn Instruction>> {
-        Err(VMLoadError::AlreadyInitialized)
-    }
-
-    /// Returns true if more instructions can be executed,
-    /// or false if the processor should yield for the rest of this tick.
+#[enum_dispatch]
+pub(super) trait InstructionTrait {
     fn execute(
         &self,
         state: &mut ProcessorState,
@@ -56,11 +40,11 @@ pub trait Instruction {
     ) -> InstructionResult;
 }
 
-trait SimpleInstruction {
+trait SimpleInstructionTrait {
     fn execute(&self, state: &mut ProcessorState, variables: &HashMap<String, LVar>, vm: &LogicVM);
 }
 
-impl<T: SimpleInstruction> Instruction for T {
+impl<T: SimpleInstructionTrait> InstructionTrait for T {
     fn execute(
         &self,
         state: &mut ProcessorState,
@@ -72,19 +56,64 @@ impl<T: SimpleInstruction> Instruction for T {
     }
 }
 
-pub(super) struct InstructionBuilder {
-    pub instruction: ast::Instruction,
-    pub labels: Rc<HashMap<String, usize>>,
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(super) enum InstructionResult {
+    Ok,
+    Yield,
 }
 
-impl Instruction for InstructionBuilder {
-    fn late_init(
-        self: Box<Self>,
+#[allow(clippy::enum_variant_names)]
+#[enum_dispatch(InstructionTrait)]
+pub(super) enum Instruction {
+    InstructionBuilder,
+    // input/output
+    Read,
+    Write,
+    Print,
+    PrintChar,
+    Format,
+    // block control
+    PrintFlush,
+    GetLink,
+    Control,
+    Sensor,
+    // operations
+    Set,
+    Op,
+    Select,
+    Lookup,
+    PackColor,
+    UnpackColor,
+    // flow control
+    Noop,
+    Wait,
+    Stop,
+    End,
+    Jump,
+    // privileged
+    GetBlock,
+    SetRate,
+}
+
+impl Default for Instruction {
+    fn default() -> Self {
+        Self::Noop(Noop)
+    }
+}
+
+pub(super) struct InstructionBuilder {
+    pub(super) instruction: ast::Instruction,
+    pub(super) labels: Rc<HashMap<String, usize>>,
+}
+
+impl InstructionBuilder {
+    pub(super) fn late_init(
+        self,
         variables: &mut HashMap<String, LVar>,
         globals: &HashMap<String, LVar>,
         privileged: bool,
         num_instructions: usize,
-    ) -> VMLoadResult<Box<dyn Instruction>> {
+    ) -> VMLoadResult<Instruction> {
         // helpers
 
         let mut lvar = |value| match value {
@@ -131,20 +160,22 @@ impl Instruction for InstructionBuilder {
                 result,
                 target,
                 address,
-            } => Box::new(Read {
+            } => Read {
                 result: lvar(result),
                 target: lvar(target),
                 address: lvar(address),
-            }),
+            }
+            .into(),
             ast::Instruction::Write {
                 value,
                 target,
                 address,
-            } => Box::new(Write {
+            } => Write {
                 value: lvar(value),
                 target: lvar(target),
                 address: lvar(address),
-            }),
+            }
+            .into(),
             // TODO: implement draw?
             ast::Instruction::Draw {
                 op: _,
@@ -161,24 +192,26 @@ impl Instruction for InstructionBuilder {
                 lvar(p2);
                 lvar(p3);
                 lvar(p4);
-                Box::new(Noop)
+                Noop.into()
             }
-            ast::Instruction::Print { value } => Box::new(Print { value: lvar(value) }),
-            ast::Instruction::PrintChar { value } => Box::new(PrintChar { value: lvar(value) }),
-            ast::Instruction::Format { value } => Box::new(Format { value: lvar(value) }),
+            ast::Instruction::Print { value } => Print { value: lvar(value) }.into(),
+            ast::Instruction::PrintChar { value } => PrintChar { value: lvar(value) }.into(),
+            ast::Instruction::Format { value } => Format { value: lvar(value) }.into(),
 
             // block control
             ast::Instruction::DrawFlush { target } => {
                 lvar(target);
-                Box::new(Noop)
+                Noop.into()
             }
-            ast::Instruction::PrintFlush { target } => Box::new(PrintFlush {
+            ast::Instruction::PrintFlush { target } => PrintFlush {
                 target: lvar(target),
-            }),
-            ast::Instruction::GetLink { result, index } => Box::new(GetLink {
+            }
+            .into(),
+            ast::Instruction::GetLink { result, index } => GetLink {
                 result: lvar(result),
                 index: lvar(index),
-            }),
+            }
+            .into(),
             ast::Instruction::Control {
                 control,
                 target,
@@ -188,33 +221,37 @@ impl Instruction for InstructionBuilder {
             } => {
                 lvar(p2);
                 lvar(p3);
-                Box::new(Control {
+                Control {
                     control,
                     target: lvar(target),
                     p1: lvar(p1),
-                })
+                }
+                .into()
             }
             ast::Instruction::Sensor {
                 result,
                 target,
                 sensor,
-            } => Box::new(Sensor {
+            } => Sensor {
                 result: lvar(result),
                 target: lvar(target),
                 sensor: lvar(sensor),
-            }),
+            }
+            .into(),
 
             // operations
-            ast::Instruction::Set { to, from } => Box::new(Set {
+            ast::Instruction::Set { to, from } => Set {
                 to: lvar(to),
                 from: lvar(from),
-            }),
-            ast::Instruction::Op { op, result, x, y } => Box::new(Op {
+            }
+            .into(),
+            ast::Instruction::Op { op, result, x, y } => Op {
                 op,
                 result: lvar(result),
                 x: lvar(x),
                 y: lvar(y),
-            }),
+            }
+            .into(),
             ast::Instruction::Select {
                 result,
                 op,
@@ -222,49 +259,54 @@ impl Instruction for InstructionBuilder {
                 y,
                 if_true,
                 if_false,
-            } => Box::new(Select {
+            } => Select {
                 result: lvar(result),
                 op,
                 x: lvar(x),
                 y: lvar(y),
                 if_true: lvar(if_true),
                 if_false: lvar(if_false),
-            }),
+            }
+            .into(),
             ast::Instruction::Lookup {
                 content_type,
                 result,
                 id,
-            } => Box::new(Lookup {
+            } => Lookup {
                 content_type,
                 result: lvar(result),
                 id: lvar(id),
-            }),
-            ast::Instruction::PackColor { result, r, g, b, a } => Box::new(PackColor {
+            }
+            .into(),
+            ast::Instruction::PackColor { result, r, g, b, a } => PackColor {
                 result: lvar(result),
                 r: lvar(r),
                 g: lvar(g),
                 b: lvar(b),
                 a: lvar(a),
-            }),
-            ast::Instruction::UnpackColor { r, g, b, a, value } => Box::new(UnpackColor {
+            }
+            .into(),
+            ast::Instruction::UnpackColor { r, g, b, a, value } => UnpackColor {
                 r: lvar(r),
                 g: lvar(g),
                 b: lvar(b),
                 a: lvar(a),
                 value: lvar(value),
-            }),
+            }
+            .into(),
 
             // flow control
-            ast::Instruction::Noop => Box::new(Noop),
-            ast::Instruction::Wait { value } => Box::new(Wait { value: lvar(value) }),
-            ast::Instruction::Stop => Box::new(Stop),
-            ast::Instruction::End => Box::new(End),
-            ast::Instruction::Jump { target, op, x, y } => Box::new(Jump {
+            ast::Instruction::Noop => Noop.into(),
+            ast::Instruction::Wait { value } => Wait { value: lvar(value) }.into(),
+            ast::Instruction::Stop => Stop.into(),
+            ast::Instruction::End => End.into(),
+            ast::Instruction::Jump { target, op, x, y } => Jump {
                 target: jump_target(target)?,
                 op,
                 x: lvar(x),
                 y: lvar(y),
-            }),
+            }
+            .into(),
 
             // unknown
             // do this here so it isn't ignored for unprivileged procs
@@ -275,7 +317,7 @@ impl Instruction for InstructionBuilder {
             }
 
             // convert privileged instructions to noops if the proc is unprivileged
-            _ if !privileged => Box::new(Noop),
+            _ if !privileged => Noop.into(),
 
             // privileged
             ast::Instruction::GetBlock {
@@ -283,16 +325,19 @@ impl Instruction for InstructionBuilder {
                 result,
                 x,
                 y,
-            } => Box::new(GetBlock {
+            } => GetBlock {
                 layer,
                 result: lvar(result),
                 x: lvar(x),
                 y: lvar(y),
-            }),
-            ast::Instruction::SetRate { value } => Box::new(SetRate { value: lvar(value) }),
+            }
+            .into(),
+            ast::Instruction::SetRate { value } => SetRate { value: lvar(value) }.into(),
         })
     }
+}
 
+impl InstructionTrait for InstructionBuilder {
     fn execute(
         &self,
         _: &mut ProcessorState,
@@ -305,13 +350,13 @@ impl Instruction for InstructionBuilder {
 
 // input/output
 
-struct Read {
+pub(super) struct Read {
     result: LVar,
     target: LVar,
     address: LVar,
 }
 
-impl SimpleInstruction for Read {
+impl SimpleInstructionTrait for Read {
     fn execute(&self, state: &mut ProcessorState, variables: &HashMap<String, LVar>, vm: &LogicVM) {
         let address = self.address.get(state);
 
@@ -380,13 +425,13 @@ impl SimpleInstruction for Read {
     }
 }
 
-struct Write {
+pub(super) struct Write {
     value: LVar,
     target: LVar,
     address: LVar,
 }
 
-impl SimpleInstruction for Write {
+impl SimpleInstructionTrait for Write {
     fn execute(&self, state: &mut ProcessorState, variables: &HashMap<String, LVar>, vm: &LogicVM) {
         if let LValue::Building(position) = self.target.get(state)
             && let Some(building) = vm.building(position)
@@ -420,7 +465,7 @@ impl SimpleInstruction for Write {
     }
 }
 
-struct Print {
+pub(super) struct Print {
     value: LVar,
 }
 
@@ -448,7 +493,7 @@ impl Print {
     }
 }
 
-impl SimpleInstruction for Print {
+impl SimpleInstructionTrait for Print {
     fn execute(&self, state: &mut ProcessorState, _: &HashMap<String, LVar>, vm: &LogicVM) {
         if state.printbuffer.len() >= MAX_TEXT_BUFFER {
             return;
@@ -459,11 +504,11 @@ impl SimpleInstruction for Print {
     }
 }
 
-struct PrintChar {
+pub(super) struct PrintChar {
     value: LVar,
 }
 
-impl SimpleInstruction for PrintChar {
+impl SimpleInstructionTrait for PrintChar {
     fn execute(&self, state: &mut ProcessorState, _: &HashMap<String, LVar>, _: &LogicVM) {
         if state.printbuffer.len() >= MAX_TEXT_BUFFER {
             return;
@@ -477,11 +522,11 @@ impl SimpleInstruction for PrintChar {
     }
 }
 
-struct Format {
+pub(super) struct Format {
     value: LVar,
 }
 
-impl SimpleInstruction for Format {
+impl SimpleInstructionTrait for Format {
     fn execute(&self, state: &mut ProcessorState, _: &HashMap<String, LVar>, vm: &LogicVM) {
         if state.printbuffer.len() >= MAX_TEXT_BUFFER {
             return;
@@ -517,11 +562,11 @@ impl SimpleInstruction for Format {
 
 // block control
 
-struct PrintFlush {
+pub(super) struct PrintFlush {
     target: LVar,
 }
 
-impl SimpleInstruction for PrintFlush {
+impl SimpleInstructionTrait for PrintFlush {
     fn execute(&self, state: &mut ProcessorState, _: &HashMap<String, LVar>, vm: &LogicVM) {
         if let LValue::Building(position) = self.target.get(state)
             && let Some(target) = vm.building(position)
@@ -537,12 +582,12 @@ impl SimpleInstruction for PrintFlush {
     }
 }
 
-struct GetLink {
+pub(super) struct GetLink {
     result: LVar,
     index: LVar,
 }
 
-impl SimpleInstruction for GetLink {
+impl SimpleInstructionTrait for GetLink {
     fn execute(&self, state: &mut ProcessorState, _: &HashMap<String, LVar>, _: &LogicVM) {
         let result = match self.index.get(state).num_usize() {
             Ok(index) => state.link(index).into(),
@@ -552,13 +597,13 @@ impl SimpleInstruction for GetLink {
     }
 }
 
-struct Control {
+pub(super) struct Control {
     control: LAccess,
     target: LVar,
     p1: LVar,
 }
 
-impl SimpleInstruction for Control {
+impl SimpleInstructionTrait for Control {
     fn execute(&self, state: &mut ProcessorState, variables: &HashMap<String, LVar>, vm: &LogicVM) {
         if self.control == LAccess::Enabled
             && let LValue::Building(position) = self.target.get(state)
@@ -583,13 +628,13 @@ impl SimpleInstruction for Control {
     }
 }
 
-struct Sensor {
+pub(super) struct Sensor {
     result: LVar,
     target: LVar,
     sensor: LVar,
 }
 
-impl SimpleInstruction for Sensor {
+impl SimpleInstructionTrait for Sensor {
     fn execute(&self, state: &mut ProcessorState, variables: &HashMap<String, LVar>, vm: &LogicVM) {
         use LAccess::*;
 
@@ -737,25 +782,25 @@ impl SimpleInstruction for Sensor {
 
 // operations
 
-struct Set {
+pub(super) struct Set {
     to: LVar,
     from: LVar,
 }
 
-impl SimpleInstruction for Set {
+impl SimpleInstructionTrait for Set {
     fn execute(&self, state: &mut ProcessorState, _: &HashMap<String, LVar>, _: &LogicVM) {
         self.to.set_from(state, &self.from);
     }
 }
 
-struct Op {
+pub(super) struct Op {
     op: LogicOp,
     result: LVar,
     x: LVar,
     y: LVar,
 }
 
-impl SimpleInstruction for Op {
+impl SimpleInstructionTrait for Op {
     fn execute(&self, state: &mut ProcessorState, _: &HashMap<String, LVar>, _: &LogicVM) {
         // TODO: this seems inefficient for unary and condition ops
         let x = self.x.get(state).num();
@@ -826,7 +871,7 @@ impl SimpleInstruction for Op {
     }
 }
 
-struct Select {
+pub(super) struct Select {
     result: LVar,
     op: ConditionOp,
     x: LVar,
@@ -835,7 +880,7 @@ struct Select {
     if_false: LVar,
 }
 
-impl SimpleInstruction for Select {
+impl SimpleInstructionTrait for Select {
     fn execute(&self, state: &mut ProcessorState, _: &HashMap<String, LVar>, _: &LogicVM) {
         let result = if Jump::test(self.op, &self.x, &self.y, state) {
             &self.if_true
@@ -846,13 +891,13 @@ impl SimpleInstruction for Select {
     }
 }
 
-struct Lookup {
+pub(super) struct Lookup {
     content_type: ContentType,
     result: LVar,
     id: LVar,
 }
 
-impl SimpleInstruction for Lookup {
+impl SimpleInstructionTrait for Lookup {
     fn execute(&self, state: &mut ProcessorState, _: &HashMap<String, LVar>, _: &LogicVM) {
         let id = self.id.get(state).numi();
 
@@ -886,7 +931,7 @@ impl SimpleInstruction for Lookup {
     }
 }
 
-struct PackColor {
+pub(super) struct PackColor {
     result: LVar,
     r: LVar,
     g: LVar,
@@ -894,7 +939,7 @@ struct PackColor {
     a: LVar,
 }
 
-impl SimpleInstruction for PackColor {
+impl SimpleInstructionTrait for PackColor {
     fn execute(&self, state: &mut ProcessorState, _: &HashMap<String, LVar>, _: &LogicVM) {
         self.result.set(
             state,
@@ -909,7 +954,7 @@ impl SimpleInstruction for PackColor {
     }
 }
 
-struct UnpackColor {
+pub(super) struct UnpackColor {
     r: LVar,
     g: LVar,
     b: LVar,
@@ -917,7 +962,7 @@ struct UnpackColor {
     value: LVar,
 }
 
-impl SimpleInstruction for UnpackColor {
+impl SimpleInstructionTrait for UnpackColor {
     fn execute(&self, state: &mut ProcessorState, _: &HashMap<String, LVar>, _: &LogicVM) {
         let (r, g, b, a) = f64_from_double_bits(self.value.get(state).num());
         self.r.set(state, r.into());
@@ -931,15 +976,15 @@ impl SimpleInstruction for UnpackColor {
 
 pub(super) struct Noop;
 
-impl SimpleInstruction for Noop {
+impl SimpleInstructionTrait for Noop {
     fn execute(&self, _: &mut ProcessorState, _: &HashMap<String, LVar>, _: &LogicVM) {}
 }
 
-struct Wait {
+pub(super) struct Wait {
     value: LVar,
 }
 
-impl Instruction for Wait {
+impl InstructionTrait for Wait {
     fn execute(
         &self,
         state: &mut ProcessorState,
@@ -956,9 +1001,9 @@ impl Instruction for Wait {
     }
 }
 
-struct Stop;
+pub(super) struct Stop;
 
-impl Instruction for Stop {
+impl InstructionTrait for Stop {
     fn execute(
         &self,
         state: &mut ProcessorState,
@@ -971,15 +1016,15 @@ impl Instruction for Stop {
     }
 }
 
-struct End;
+pub(super) struct End;
 
-impl SimpleInstruction for End {
+impl SimpleInstructionTrait for End {
     fn execute(&self, state: &mut ProcessorState, _: &HashMap<String, LVar>, _: &LogicVM) {
         state.counter = state.num_instructions();
     }
 }
 
-struct Jump {
+pub(super) struct Jump {
     target: usize,
     op: ConditionOp,
     x: LVar,
@@ -1020,7 +1065,7 @@ impl Jump {
     }
 }
 
-impl SimpleInstruction for Jump {
+impl SimpleInstructionTrait for Jump {
     fn execute(&self, state: &mut ProcessorState, _: &HashMap<String, LVar>, _: &LogicVM) {
         if Self::test(self.op, &self.x, &self.y, state) {
             // we do the bounds check while parsing
@@ -1031,14 +1076,14 @@ impl SimpleInstruction for Jump {
 
 // privileged
 
-struct GetBlock {
+pub(super) struct GetBlock {
     layer: TileLayer,
     result: LVar,
     x: LVar,
     y: LVar,
 }
 
-impl SimpleInstruction for GetBlock {
+impl SimpleInstructionTrait for GetBlock {
     fn execute(&self, state: &mut ProcessorState, _: &HashMap<String, LVar>, vm: &LogicVM) {
         let result = match vm.building(Point2 {
             x: self.x.get(state).numf().round() as i32,
@@ -1056,11 +1101,11 @@ impl SimpleInstruction for GetBlock {
     }
 }
 
-struct SetRate {
+pub(super) struct SetRate {
     value: LVar,
 }
 
-impl SimpleInstruction for SetRate {
+impl SimpleInstructionTrait for SetRate {
     fn execute(&self, state: &mut ProcessorState, _: &HashMap<String, LVar>, _: &LogicVM) {
         state.ipt = (self.value.get(state).num() as usize).clamp(1, MAX_IPT);
     }

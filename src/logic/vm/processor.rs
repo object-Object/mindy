@@ -8,13 +8,13 @@ use std::{
 
 use binrw::BinRead;
 use itertools::Itertools;
-use replace_with::replace_with_and_return;
+use replace_with::replace_with_or_default_and_return;
 use thiserror::Error;
 
 use super::{
     LValue, LogicVM, VMLoadError, VMLoadResult,
     buildings::Building,
-    instructions::{Instruction, InstructionBuilder, InstructionResult, Noop},
+    instructions::{Instruction, InstructionBuilder, InstructionResult, InstructionTrait, Noop},
     variables::LVar,
 };
 use crate::{
@@ -26,7 +26,7 @@ pub(super) const MAX_TEXT_BUFFER: usize = 400;
 const MAX_INSTRUCTION_SCALE: usize = 5;
 
 pub struct Processor {
-    instructions: Vec<Box<dyn Instruction>>,
+    instructions: Vec<Instruction>,
     pub state: ProcessorState,
     pub variables: HashMap<String, LVar>,
 }
@@ -121,21 +121,21 @@ impl Processor {
         for instruction in self.instructions.iter_mut() {
             // at this point, all instructions should be InstructionBuilders
             // for each instruction, we take ownership of the builder and convert it to the final instruction
-            replace_with_and_return(
+            replace_with_or_default_and_return(
                 instruction,
-                // if a panic occurs, replace the builder with a Noop
-                || Box::new(Noop),
                 |instruction| -> (VMLoadResult<()>, _) {
-                    match instruction.late_init(
-                        &mut self.variables,
-                        globals,
-                        self.state.privileged,
-                        self.state.num_instructions,
-                    ) {
-                        // if the builder successfully parsed the instruction, put the new box into the vec
-                        Ok(new) => (Ok(()), new),
-                        // otherwise, put a Noop into the vec and return the error
-                        Err(e) => (Err(e), Box::new(Noop)),
+                    let result = match instruction {
+                        Instruction::InstructionBuilder(builder) => builder.late_init(
+                            &mut self.variables,
+                            globals,
+                            self.state.privileged,
+                            self.state.num_instructions,
+                        ),
+                        _ => Err(VMLoadError::AlreadyInitialized),
+                    };
+                    match result {
+                        Ok(instruction) => (Ok(()), instruction),
+                        Err(err) => (Err(err), Noop.into()),
                     }
                 },
             )?;
@@ -357,13 +357,16 @@ impl ProcessorBuilder<'_> {
             Rc::new(labels)
         };
 
-        let mut instructions: Vec<Box<dyn Instruction>> = Vec::with_capacity(num_instructions);
+        let mut instructions: Vec<Instruction> = Vec::with_capacity(num_instructions);
         for statement in code.into_iter() {
             if let ast::Statement::Instruction(instruction, _) = statement {
-                instructions.push(Box::new(InstructionBuilder {
-                    instruction,
-                    labels: labels.clone(),
-                }));
+                instructions.push(
+                    InstructionBuilder {
+                        instruction,
+                        labels: labels.clone(),
+                    }
+                    .into(),
+                );
             }
         }
 
