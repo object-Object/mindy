@@ -386,6 +386,9 @@ fn main() -> Result<(), Box<dyn Error>> {
     for tile in schematic.tiles().iter().progress() {
         builder.add_schematic_tile(tile)?;
     }
+
+    println!("Finalizing VM...");
+
     let globals = LVar::create_globals();
     let vm = builder.build_with_globals(Cow::Borrowed(&globals))?;
 
@@ -450,11 +453,12 @@ fn main() -> Result<(), Box<dyn Error>> {
     let mut frozen = false;
     let mut ticks = 0;
     let mut start = Instant::now();
-    let mut next_state_update = Duration::ZERO;
+    let mut next_state_update = start;
     let state_update_interval = Duration::from_secs_f64(1. / 8.);
 
     loop {
-        let time = start.elapsed();
+        let now = Instant::now();
+        let time = now - start;
         if !frozen {
             vm.do_tick(time);
             ticks += 1;
@@ -474,7 +478,7 @@ fn main() -> Result<(), Box<dyn Error>> {
             }
         }
 
-        if time >= next_state_update
+        if now >= next_state_update
             && let BuildingData::Switch(power) = &mut *power_switch.data.borrow_mut()
             && let BuildingData::Switch(pause) = &mut *pause_switch.data.borrow_mut()
             && let BuildingData::Switch(single_step) = &mut *single_step_switch.data.borrow_mut()
@@ -482,7 +486,7 @@ fn main() -> Result<(), Box<dyn Error>> {
             && let BuildingData::Processor(config) = &mut *config.data.borrow_mut()
             && let BuildingData::Message(error_output) = &*error_output.data.borrow()
         {
-            next_state_update = time + state_update_interval;
+            next_state_update = now + state_update_interval;
 
             // handle commands
             for cmd in rx_cmd.try_iter() {
@@ -511,6 +515,7 @@ fn main() -> Result<(), Box<dyn Error>> {
                         *pause = false;
                         *single_step = false;
                         start = Instant::now();
+                        next_state_update = start;
                     }
                     VMCommand::SetBreakpoint(Some(value)) => {
                         config.set_variable("BREAKPOINT_ADDRESS", value.into())?;

@@ -52,4 +52,6 @@ mlogv32 = [
 
 [profile.dev-debug]
 inherits = "dev"
-opt-level = 1
+
+[profile.dev-debug.package."*"]
+opt-level = 2
