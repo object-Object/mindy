@@ -129,7 +129,7 @@ impl LVar {
         globals
     }
 
-    pub fn late_init_locals(
+    pub(super) fn late_init_locals(
         variables: &mut HashMap<String, LVar>,
         position: Point2,
         links: &[ProcessorLink],
@@ -179,10 +179,12 @@ impl LVar {
         }
     }
 
-    pub fn set(&self, state: &mut ProcessorState, value: LValue) {
+    /// Returns true if the variable was successfully set.
+    pub fn set(&self, state: &mut ProcessorState, value: LValue) -> bool {
         match self {
             Self::Variable(ptr) => {
                 *ptr.borrow_mut() = value;
+                true
             }
             Self::Counter => {
                 if let LValue::Number(n) = value {
@@ -192,9 +194,12 @@ impl LVar {
                     } else {
                         0
                     };
+                    true
+                } else {
+                    false
                 }
             }
-            _ => {}
+            _ => false,
         }
     }
 

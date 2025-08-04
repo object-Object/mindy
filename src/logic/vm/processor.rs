@@ -9,6 +9,7 @@ use std::{
 use binrw::BinRead;
 use itertools::Itertools;
 use replace_with::replace_with_and_return;
+use thiserror::Error;
 
 use super::{
     LValue, LogicVM, VMLoadError, VMLoadResult,
@@ -176,6 +177,27 @@ impl Processor {
     pub fn variable(&self, name: &str) -> Option<LValue> {
         self.variables.get(name).map(|v| v.get(&self.state))
     }
+
+    pub fn set_variable(&mut self, name: &str, value: LValue) -> Result<(), SetVariableError> {
+        match self.variables.get(name) {
+            Some(var) => {
+                if var.set(&mut self.state, value) {
+                    Ok(())
+                } else {
+                    Err(SetVariableError::Constant)
+                }
+            }
+            None => Err(SetVariableError::NotFound),
+        }
+    }
+}
+
+#[derive(Debug, Error)]
+pub enum SetVariableError {
+    #[error("Variable not found.")]
+    NotFound,
+    #[error("Variable is a constant.")]
+    Constant,
 }
 
 #[derive(Debug, Clone)]
@@ -273,13 +295,13 @@ pub fn decode_utf16(value: &[u16]) -> String {
 
 /// A representation of a link from this processor to a building.
 #[derive(Debug, Clone)]
-pub struct ProcessorLink {
+pub(super) struct ProcessorLink {
     pub name: String,
     pub position: Point2,
 }
 
 #[derive(Debug)]
-pub struct ProcessorBuilder<'a> {
+pub(super) struct ProcessorBuilder<'a> {
     pub ipt: usize,
     pub privileged: bool,
     pub running_processors: Rc<Cell<usize>>,

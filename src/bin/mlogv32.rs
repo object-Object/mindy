@@ -8,14 +8,12 @@ use binrw::{BinRead, BinWrite};
 use clap::Parser;
 use indicatif::ProgressIterator;
 use itertools::Itertools;
-use mindustry_rs::logic::vm::{
-    Building, LogicVM, MEMORY_BANK, MEMORY_CELL, MESSAGE, MICRO_PROCESSOR, Processor, SWITCH,
-    WORLD_PROCESSOR, decode_utf16,
-};
-use mindustry_rs::types::{Object, ProcessorConfig};
 use mindustry_rs::{
-    logic::vm::{BuildingData, LogicVMBuilder},
-    types::{Point2, Schematic},
+    logic::vm::{
+        Building, BuildingData, LValue, LogicVM, LogicVMBuilder, MEMORY_BANK, MEMORY_CELL, MESSAGE,
+        MICRO_PROCESSOR, Processor, SWITCH, WORLD_PROCESSOR, decode_utf16,
+    },
+    types::{Object, Point2, ProcessorConfig, Schematic},
 };
 use prompted::input;
 use serde::Deserialize;
@@ -63,6 +61,8 @@ struct Metadata {
     rom_processors: usize,
     ram_processors: usize,
     icache_processors: usize,
+
+    mtime_frequency: usize,
 }
 
 #[derive(Debug, Clone, Copy, Deserialize)]
@@ -97,9 +97,13 @@ fn get_building<'a>(vm: &'a LogicVM, position: MetaPoint2, name: &str) -> &'a Bu
     building
 }
 
-fn print_var(processor: &Processor, name: &str) {
+fn print_var(processor: &Processor, name: &str, radix: Option<&&str>) {
     match processor.variable(name) {
-        Some(value) => println!("{name} = {value:?}"),
+        Some(value) => match radix {
+            Some(&"x") => println!("{name} = {:#010x}", value.num() as u32),
+            Some(&"b") => println!("{name} = {:#034b}", value.num() as u32),
+            _ => println!("{name} = {value:?}"),
+        },
         None => println!("{name} = <undefined>"),
     }
 }
@@ -229,7 +233,7 @@ fn main() -> Result<(), Box<dyn Error>> {
         if let BuildingData::Switch(paused) = &mut *pause_switch.data.borrow_mut()
             && *paused
             && let BuildingData::Switch(single_step) = &mut *single_step_switch.data.borrow_mut()
-            && let BuildingData::Processor(ctrl) = &*controller.data.borrow()
+            && let BuildingData::Processor(ctrl) = &mut *controller.data.borrow_mut()
             && let BuildingData::Processor(config) = &mut *config.data.borrow_mut()
             && let BuildingData::Memory(mem) = &*registers.data.borrow()
         {
@@ -256,17 +260,26 @@ fn main() -> Result<(), Box<dyn Error>> {
                         *single_step = false;
                         break;
                     }
-                    "b" | "break" if cmd.len() >= 2 => {
-                        match u64::from_str_radix(cmd[1].trim_start_matches("0x"), 16) {
+                    "rs" | "restart" => {
+                        ctrl.set_variable("pc", 0.into())?;
+                        break;
+                    }
+                    "b" | "break" if cmd.len() >= 2 => match cmd[1] {
+                        "clear" => {
+                            config.set_variable("BREAKPOINT_ADDRESS", LValue::Null)?;
+                            println!("Breakpoint cleared.");
+                        }
+                        pc => match u64::from_str_radix(pc.trim_start_matches("0x"), 16) {
                             Ok(pc) => {
-                                config.variables["BREAKPOINT_ADDRESS"]
-                                    .set(&mut config.state, pc.into());
+                                config.set_variable("BREAKPOINT_ADDRESS", pc.into())?;
                                 println!("Breakpoint set: {pc:#010x}")
                             }
                             Err(_) => println!("Invalid address."),
-                        }
+                        },
+                    },
+                    "p" | "print" | "v" | "var" if cmd.len() >= 2 => {
+                        print_var(ctrl, cmd[1], cmd.get(2))
                     }
-                    "p" | "print" | "v" | "var" if cmd.len() >= 2 => print_var(ctrl, cmd[1]),
                     "i" | "inspect" if cmd.len() >= 3 => {
                         let Ok(x) = cmd[1].parse() else {
                             println!("Invalid x.");
@@ -282,10 +295,10 @@ fn main() -> Result<(), Box<dyn Error>> {
                                     BuildingData::Processor(p) => match cmd.get(3) {
                                         Some(&"*") => {
                                             for name in p.variables.keys().sorted() {
-                                                print_var(p, name);
+                                                print_var(p, name, cmd.get(4));
                                             }
                                         }
-                                        Some(addr) => print_var(p, addr),
+                                        Some(addr) => print_var(p, addr, cmd.get(4)),
                                         None => println!("{}", b.block.name),
                                     },
                                     BuildingData::Memory(mem) => {

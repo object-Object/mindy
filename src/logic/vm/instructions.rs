@@ -905,7 +905,7 @@ impl SimpleInstruction for PackColor {
                 self.a.get(state).numf().clamp(0., 1.),
             )
             .into(),
-        )
+        );
     }
 }
 
