@@ -30,9 +30,9 @@ struct Cli {
     #[arg(long)]
     bin: Option<PathBuf>,
 
-    /// Enable debugging features.
+    /// Enable single-stepping mode when the processor starts
     #[arg(long)]
-    debug: bool,
+    step: bool,
 }
 
 #[derive(Deserialize)]
@@ -205,7 +205,7 @@ fn main() -> Result<(), Box<dyn Error>> {
         *enabled = true;
     }
     if let BuildingData::Switch(enabled) = &mut *single_step_switch.data.borrow_mut() {
-        *enabled = cli.debug;
+        *enabled = cli.step;
     }
 
     let mut ticks = 0;
@@ -218,8 +218,7 @@ fn main() -> Result<(), Box<dyn Error>> {
         ticks += 1;
         now = Instant::now();
 
-        if cli.debug
-            && let BuildingData::Switch(paused) = &mut *pause_switch.data.borrow_mut()
+        if let BuildingData::Switch(paused) = &mut *pause_switch.data.borrow_mut()
             && *paused
             && let BuildingData::Switch(single_step) = &mut *single_step_switch.data.borrow_mut()
             && let BuildingData::Processor(ctrl) = &*controller.data.borrow()
