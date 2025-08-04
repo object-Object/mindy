@@ -33,9 +33,12 @@ struct Cli {
     /// Enable single-stepping mode when the processor starts
     #[arg(long)]
     step: bool,
+
+    #[arg(long, short)]
+    verbose: bool,
 }
 
-#[derive(Deserialize)]
+#[derive(Debug, Deserialize)]
 struct Metadata {
     uarts: Vec<MetaPoint2>,
 
@@ -62,7 +65,7 @@ struct Metadata {
     icache_processors: usize,
 }
 
-#[derive(Deserialize, Clone, Copy)]
+#[derive(Debug, Clone, Copy, Deserialize)]
 struct MetaPoint2(i32, i32);
 
 impl MetaPoint2 {
@@ -121,6 +124,10 @@ fn main() -> Result<(), Box<dyn Error>> {
     println!("Loading metadata...");
 
     let meta: Metadata = serde_json::from_str(&schematic.tags["mlogv32_metadata"])?;
+
+    if cli.verbose {
+        println!("{meta:#?}");
+    }
 
     if let Some(bin_path) = cli.bin {
         println!("Flashing ROM...");
@@ -186,6 +193,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     let uart_fifo_modulo = meta.uart_fifo_capacity + 1;
 
     let controller = get_building(&vm, meta.cpu, WORLD_PROCESSOR);
+    let config = get_building(&vm, meta.config, MICRO_PROCESSOR);
     let registers = get_building(&vm, meta.registers, MEMORY_CELL);
     let uart0 = get_building(&vm, meta.uarts[0], MEMORY_BANK);
     let error_output = get_building(&vm, meta.error_output, MESSAGE);
@@ -222,6 +230,7 @@ fn main() -> Result<(), Box<dyn Error>> {
             && *paused
             && let BuildingData::Switch(single_step) = &mut *single_step_switch.data.borrow_mut()
             && let BuildingData::Processor(ctrl) = &*controller.data.borrow()
+            && let BuildingData::Processor(config) = &mut *config.data.borrow_mut()
             && let BuildingData::Memory(mem) = &*registers.data.borrow()
         {
             println!("\ntime: {:.3?}", vm.time());
@@ -239,13 +248,23 @@ fn main() -> Result<(), Box<dyn Error>> {
                 let cmd = input!("> ");
                 let cmd = cmd.split(' ').collect_vec();
                 match cmd[0] {
-                    "s" | "step" => {
+                    "" | "s" | "step" => {
                         *single_step = true;
                         break;
                     }
                     "c" | "continue" => {
                         *single_step = false;
                         break;
+                    }
+                    "b" | "break" if cmd.len() >= 2 => {
+                        match u64::from_str_radix(cmd[1].trim_start_matches("0x"), 16) {
+                            Ok(pc) => {
+                                config.variables["BREAKPOINT_ADDRESS"]
+                                    .set(&mut config.state, pc.into());
+                                println!("Breakpoint set: {pc:#010x}")
+                            }
+                            Err(_) => println!("Invalid address."),
+                        }
                     }
                     "p" | "print" | "v" | "var" if cmd.len() >= 2 => print_var(ctrl, cmd[1]),
                     "i" | "inspect" if cmd.len() >= 3 => {
@@ -262,7 +281,7 @@ fn main() -> Result<(), Box<dyn Error>> {
                                 Ok(data) => match &*data {
                                     BuildingData::Processor(p) => match cmd.get(3) {
                                         Some(&"*") => {
-                                            for name in p.variables.keys() {
+                                            for name in p.variables.keys().sorted() {
                                                 print_var(p, name);
                                             }
                                         }
