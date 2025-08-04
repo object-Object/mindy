@@ -366,6 +366,31 @@ mod tests {
         }
     }
 
+    fn assert_variables_epsilon<'a, T>(processor: &Processor, epsilon: f64, vars: T)
+    where
+        T: IntoIterator<Item = (&'a str, f64)>,
+    {
+        for (name, want) in vars {
+            match want.into() {
+                Some(want) => {
+                    assert!(
+                        processor.variables.contains_key(name),
+                        "variable not found: {name}"
+                    );
+                    let got = processor.variables[name].get(&processor.state).num();
+                    assert!(
+                        (got - want).abs() <= epsilon,
+                        "want {name} == {want} +- {epsilon}, got {got}"
+                    );
+                }
+                None => assert!(
+                    !processor.variables.contains_key(name),
+                    "unexpected variable found: {name}"
+                ),
+            };
+        }
+    }
+
     #[test]
     fn test_empty() {
         let mut vm = LogicVM::from_schematic_tiles(&[]).unwrap();
@@ -2530,5 +2555,72 @@ mod tests {
                 "expected Variable but got {var:?}"
             );
         }
+    }
+
+    #[test]
+    fn test_time() {
+        let mut vm = single_processor_vm(
+            MICRO_PROCESSOR,
+            "
+            set tick1 @tick
+            set time1 @time
+            set second1 @second
+            set minute1 @minute
+
+            set tick2 @tick
+            set time2 @time
+            set second2 @second
+            set minute2 @minute
+
+            set tick3 @tick
+            set time3 @time
+            set second3 @second
+            set minute3 @minute
+
+            set tick4 @tick
+            set time4 @time
+            set second4 @second
+            set minute4 @minute
+            ",
+        );
+
+        vm.do_tick(Duration::ZERO);
+        vm.do_tick(Duration::ZERO);
+
+        vm.do_tick(Duration::from_secs(1));
+        vm.do_tick(Duration::ZERO);
+
+        vm.do_tick(Duration::from_millis(1));
+        vm.do_tick(Duration::ZERO);
+
+        vm.do_tick(Duration::from_secs(60));
+        vm.do_tick(Duration::ZERO);
+
+        let processor = take_processor(&mut vm, (0, 0));
+        assert_variables_epsilon(
+            &processor,
+            1e-8,
+            map_iter! {
+                "tick1": 0.,
+                "time1": 0.,
+                "second1": 0.,
+                "minute1": 0.,
+
+                "tick2": 1. * 60.,
+                "time2": 1000.,
+                "second2": 1.,
+                "minute2": 1. / 60.,
+
+                "tick3": 1.001 * 60.,
+                "time3": 1001.,
+                "second3": 1.001,
+                "minute3": 1.001 / 60.,
+
+                "tick4": 61.001 * 60.,
+                "time4": 61001.,
+                "second4": 61.001,
+                "minute4": 1.001 / 60. + 1.,
+            },
+        );
     }
 }
