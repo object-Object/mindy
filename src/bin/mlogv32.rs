@@ -9,14 +9,15 @@ use clap::Parser;
 use indicatif::ProgressIterator;
 use itertools::Itertools;
 use mindustry_rs::logic::vm::{
-    Building, LogicVM, MEMORY_BANK, MEMORY_CELL, MESSAGE, MICRO_PROCESSOR, SWITCH, WORLD_PROCESSOR,
-    decode_utf16,
+    Building, LogicVM, MEMORY_BANK, MEMORY_CELL, MESSAGE, MICRO_PROCESSOR, Processor, SWITCH,
+    WORLD_PROCESSOR, decode_utf16,
 };
 use mindustry_rs::types::{Object, ProcessorConfig};
 use mindustry_rs::{
     logic::vm::{BuildingData, LogicVMBuilder},
     types::{Point2, Schematic},
 };
+use prompted::input;
 use serde::Deserialize;
 
 #[derive(Parser)]
@@ -29,9 +30,9 @@ struct Cli {
     #[arg(long)]
     bin: Option<PathBuf>,
 
-    /// Enable single-stepping mode.
+    /// Enable debugging features.
     #[arg(long)]
-    step: bool,
+    debug: bool,
 }
 
 #[derive(Deserialize)]
@@ -91,6 +92,13 @@ fn get_building<'a>(vm: &'a LogicVM, position: MetaPoint2, name: &str) -> &'a Bu
     };
     assert_eq!(building.block.name, name);
     building
+}
+
+fn print_var(processor: &Processor, name: &str) {
+    match processor.variable(name) {
+        Some(value) => println!("{name} = {value:?}"),
+        None => println!("{name} = <undefined>"),
+    }
 }
 
 // tx/rx are from our perspective, not the processor's
@@ -197,7 +205,7 @@ fn main() -> Result<(), Box<dyn Error>> {
         *enabled = true;
     }
     if let BuildingData::Switch(enabled) = &mut *single_step_switch.data.borrow_mut() {
-        *enabled = cli.step;
+        *enabled = cli.debug;
     }
 
     let mut ticks = 0;
@@ -210,14 +218,15 @@ fn main() -> Result<(), Box<dyn Error>> {
         ticks += 1;
         now = Instant::now();
 
-        if cli.step
-            && let BuildingData::Processor(p) = &*controller.data.borrow()
+        if cli.debug
+            && let BuildingData::Switch(paused) = &mut *pause_switch.data.borrow_mut()
+            && *paused
+            && let BuildingData::Switch(single_step) = &mut *single_step_switch.data.borrow_mut()
+            && let BuildingData::Processor(ctrl) = &*controller.data.borrow()
             && let BuildingData::Memory(mem) = &*registers.data.borrow()
-            && let BuildingData::Switch(enabled) = &mut *pause_switch.data.borrow_mut()
-            && *enabled
         {
             println!("\ntime: {:.3?}", vm.time());
-            println!("pc: {:#010x}", p.variable("pc").unwrap().num() as u32);
+            println!("pc: {:#010x}", ctrl.variable("pc").unwrap().num() as u32);
             for i in 0..16 {
                 println!(
                     "x{i:<2} = {:#010x}  x{:<2} = {:#010x}",
@@ -226,8 +235,64 @@ fn main() -> Result<(), Box<dyn Error>> {
                     mem[i + 16] as u32
                 );
             }
-            let _ = std::io::stdin().read(&mut [0u8, 0u8]).unwrap();
-            *enabled = false;
+
+            loop {
+                let cmd = input!("> ");
+                let cmd = cmd.split(' ').collect_vec();
+                match cmd[0] {
+                    "s" | "step" => {
+                        *single_step = true;
+                        break;
+                    }
+                    "c" | "continue" => {
+                        *single_step = false;
+                        break;
+                    }
+                    "p" | "print" | "v" | "var" if cmd.len() >= 2 => print_var(ctrl, cmd[1]),
+                    "i" | "inspect" if cmd.len() >= 3 => {
+                        let Ok(x) = cmd[1].parse() else {
+                            println!("Invalid x.");
+                            continue;
+                        };
+                        let Ok(y) = cmd[2].parse() else {
+                            println!("Invalid y.");
+                            continue;
+                        };
+                        match vm.building((x, y).into()) {
+                            Some(b) => match b.data.try_borrow() {
+                                Ok(data) => match &*data {
+                                    BuildingData::Processor(p) => match cmd.get(3) {
+                                        Some(&"*") => {
+                                            for name in p.variables.keys() {
+                                                print_var(p, name);
+                                            }
+                                        }
+                                        Some(addr) => print_var(p, addr),
+                                        None => println!("{}", b.block.name),
+                                    },
+                                    BuildingData::Memory(mem) => {
+                                        let i =
+                                            cmd.get(3).copied().unwrap_or("").parse().unwrap_or(0);
+                                        println!("{}[{i}] = {:?}", b.block.name, mem.get(i));
+                                    }
+                                    BuildingData::Message(msg) => {
+                                        println!("{} = {}", b.block.name, decode_utf16(msg))
+                                    }
+                                    BuildingData::Switch(on) => {
+                                        println!("{} = {on}", b.block.name)
+                                    }
+                                    _ => println!("{}", b.block.name),
+                                },
+                                Err(_) => println!("Already borrowed."),
+                            },
+                            None => println!("No building found at ({x}, {y})."),
+                        }
+                    }
+                    _ => {}
+                }
+            }
+
+            *paused = false;
         }
 
         if vm.running_processors() == 0 {

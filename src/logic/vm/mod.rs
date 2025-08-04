@@ -4,7 +4,7 @@ mod processor;
 mod variables;
 
 pub use buildings::*;
-pub use processor::{decode_utf16, encode_utf16};
+pub use processor::{Processor, ProcessorState, decode_utf16, encode_utf16};
 pub use variables::{Content, ContentIDLookupError, LString, LValue, LVar};
 
 use std::{
