@@ -55,3 +55,8 @@ inherits = "dev"
 
 [profile.dev-debug.package."*"]
 opt-level = 2
+
+[profile.release]
+codegen-units = 1
+lto = "fat"
+
