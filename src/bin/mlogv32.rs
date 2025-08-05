@@ -10,9 +10,10 @@ use std::{error::Error, fmt::Display, fs::File, path::PathBuf, time::Instant};
 use binrw::{BinRead, BinWrite};
 use clap::Parser;
 use cursive::theme::Theme;
-use cursive::view::{Nameable, Resizable, ScrollStrategy};
+use cursive::view::{Margins, Nameable, Resizable, ScrollStrategy, SizeConstraint};
 use cursive::views::{
-    Checkbox, EditView, LinearLayout, ListView, Panel, ScrollView, TextContent, TextView,
+    Checkbox, EditView, LinearLayout, ListView, PaddedView, Panel, ResizedView, ScrollView,
+    SliderView, TextContent, TextView,
 };
 use indicatif::ProgressIterator;
 use itertools::Itertools;
@@ -164,58 +165,92 @@ fn tui(stdout: TextContent, debug: TextContent, tx: Sender<VMCommand>, rx: Recei
     siv.set_fps(20);
     siv.set_theme(Theme::terminal_default());
 
+    siv.refresh();
+    let screen_size = siv.screen_size();
+    let stdout_scroll_height = (screen_size.y - 4) / 2;
+
     siv.add_fullscreen_layer(
-        LinearLayout::vertical()
+        LinearLayout::horizontal()
             .child(
-                Panel::new(
-                    ScrollView::new(TextView::new_with_content(stdout))
-                        .scroll_strategy(ScrollStrategy::StickToBottom),
-                )
-                .title("UART0")
-                .full_height(),
-            )
-            .child(
-                LinearLayout::horizontal()
+                LinearLayout::vertical()
                     .child(
                         Panel::new(
-                            LinearLayout::vertical()
-                                .child(
-                                    ScrollView::new(TextView::new_with_content(debug.clone()))
-                                        .scroll_strategy(ScrollStrategy::StickToBottom)
-                                        .min_height(16),
-                                )
-                                .child(
-                                    EditView::new()
-                                        .on_submit({
-                                            let tx = tx.clone();
-                                            move |siv, cmd| {
-                                                if let Some(msg) = process_cmd(&debug, cmd) {
-                                                    tui_println!(debug, "> {cmd}");
-                                                    tx.send(msg).unwrap();
-                                                }
-                                                siv.call_on_name("debug", |view: &mut EditView| {
-                                                    view.set_content("");
-                                                });
-                                            }
-                                        })
-                                        .with_name("debug"),
-                                )
-                                .full_width(),
+                            ScrollView::new(TextView::new_with_content(stdout))
+                                .scroll_strategy(ScrollStrategy::StickToBottom)
+                                .fixed_height(stdout_scroll_height)
+                                .with_name("stdout_scroll"),
                         )
-                        .title("Debug"),
+                        .title("UART0"),
                     )
-                    .child(Panel::new(
-                        ListView::new()
-                            .child("Power", Checkbox::new().disabled().with_name("power"))
-                            .child("Pause", Checkbox::new().disabled().with_name("pause"))
-                            .child("Step", Checkbox::new().disabled().with_name("single_step"))
-                            .child("State", TextView::new("???").with_name("state"))
-                            .child("PC", TextView::new("0x00000000").with_name("pc"))
-                            .child("time", TextView::new("0").with_name("mtime"))
-                            .child("cycle", TextView::new("0").with_name("mcycle"))
-                            .child("instret", TextView::new("0").with_name("minstret"))
-                            .min_width("State trap_breakpoint".len()),
-                    )),
+                    .child(
+                        LinearLayout::horizontal()
+                            .child(
+                                Panel::new(
+                                    LinearLayout::vertical()
+                                        .child(
+                                            ScrollView::new(TextView::new_with_content(
+                                                debug.clone(),
+                                            ))
+                                            .scroll_strategy(ScrollStrategy::StickToBottom)
+                                            .full_height(),
+                                        )
+                                        .child(
+                                            EditView::new()
+                                                .on_submit({
+                                                    let tx = tx.clone();
+                                                    move |siv, cmd| {
+                                                        if let Some(msg) = process_cmd(&debug, cmd)
+                                                        {
+                                                            tui_println!(debug, "> {cmd}");
+                                                            tx.send(msg).unwrap();
+                                                        }
+                                                        siv.call_on_name(
+                                                            "debug",
+                                                            |view: &mut EditView| {
+                                                                view.set_content("");
+                                                            },
+                                                        );
+                                                    }
+                                                })
+                                                .with_name("debug"),
+                                        )
+                                        .full_width(),
+                                )
+                                .title("Debug"),
+                            )
+                            .child(Panel::new(
+                                ListView::new()
+                                    .child("Power", Checkbox::new().disabled().with_name("power"))
+                                    .child("Pause", Checkbox::new().disabled().with_name("pause"))
+                                    .child(
+                                        "Step",
+                                        Checkbox::new().disabled().with_name("single_step"),
+                                    )
+                                    .child("State", TextView::new("???").with_name("state"))
+                                    .child("PC", TextView::new("0x00000000").with_name("pc"))
+                                    .child("time", TextView::new("0").with_name("mtime"))
+                                    .child("cycle", TextView::new("0").with_name("mcycle"))
+                                    .child("instret", TextView::new("0").with_name("minstret"))
+                                    .min_width("State trap_breakpoint".len()),
+                            )),
+                    ),
+            )
+            .child(
+                // slider to set the size of the UART0 panel
+                PaddedView::new(
+                    Margins::tb(1, 1),
+                    SliderView::vertical(100)
+                        .value(stdout_scroll_height)
+                        .on_change(|siv, value| {
+                            siv.call_on_name(
+                                "stdout_scroll",
+                                |v: &mut ResizedView<ScrollView<TextView>>| {
+                                    v.set_height(SizeConstraint::Fixed(value));
+                                },
+                            );
+                        }),
+                )
+                .fixed_width(1),
             )
             .full_screen(),
     );
