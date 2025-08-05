@@ -1,6 +1,5 @@
 use std::{
     cell::Cell,
-    cmp::min,
     collections::{HashMap, HashSet},
     io::Cursor,
     rc::Rc,
@@ -23,7 +22,7 @@ use crate::{
 };
 
 pub(super) const MAX_TEXT_BUFFER: usize = 400;
-const MAX_INSTRUCTION_SCALE: usize = 5;
+const MAX_INSTRUCTION_SCALE: f64 = 5.0;
 
 pub struct Processor {
     instructions: Vec<Instruction>,
@@ -144,19 +143,19 @@ impl Processor {
         Ok(())
     }
 
-    pub fn do_tick(&mut self, vm: &LogicVM, time: f64) {
+    pub fn do_tick(&mut self, vm: &LogicVM, time: f64, delta: f64) {
         if !self.state.enabled || self.state.wait_end_time > time {
             return;
         }
 
-        self.state.accumulator = min(
-            self.state.accumulator + self.state.ipt,
+        self.state.accumulator = f64::min(
+            self.state.accumulator + self.state.ipt * delta,
             MAX_INSTRUCTION_SCALE * self.state.ipt,
         );
 
-        while self.state.accumulator >= 1 {
+        while self.state.accumulator >= 1. {
             let res = self.step(vm);
-            self.state.accumulator -= 1;
+            self.state.accumulator -= 1.;
             if let InstructionResult::Yield = res {
                 break;
             }
@@ -213,8 +212,8 @@ pub struct ProcessorState {
     linked_positions: HashSet<Point2>,
 
     pub counter: usize,
-    accumulator: usize,
-    pub ipt: usize,
+    accumulator: f64,
+    pub ipt: f64,
 
     running_processors: Rc<Cell<usize>>,
     pub(super) time: Rc<Cell<f64>>,
@@ -302,7 +301,7 @@ pub(super) struct ProcessorLink {
 
 #[derive(Debug)]
 pub(super) struct ProcessorBuilder<'a> {
-    pub ipt: usize,
+    pub ipt: f64,
     pub privileged: bool,
     pub running_processors: Rc<Cell<usize>>,
     pub time: Rc<Cell<f64>>,
@@ -399,7 +398,7 @@ impl ProcessorBuilder<'_> {
                 links,
                 linked_positions: HashSet::new(),
                 counter: 0,
-                accumulator: 0,
+                accumulator: 0.,
                 ipt,
                 running_processors,
                 time,

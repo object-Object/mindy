@@ -49,6 +49,18 @@ struct Cli {
 
     #[arg(long, short)]
     verbose: bool,
+
+    /// Simulated time delta (0.5 = 120 fps, 1 = 60 fps, 2 = 30 fps)
+    #[arg(long, default_value_t = 1.0, value_parser = time_delta_parser)]
+    delta: f64,
+}
+
+fn time_delta_parser(s: &str) -> Result<f64, String> {
+    match s.parse() {
+        Ok(value) if value > 0. && value <= 6. => Ok(value),
+        Ok(_) => Err(format!("{s} is not in range (0, 6]")),
+        Err(_) => Err(format!("{s} is not a valid number")),
+    }
 }
 
 #[derive(Debug, Deserialize)]
@@ -459,7 +471,7 @@ fn main() -> Result<(), Box<dyn Error>> {
         let now = Instant::now();
         let time = now - start;
         if !frozen {
-            vm.do_tick(time);
+            vm.do_tick_with_delta(time, cli.delta);
             ticks += 1;
         }
 

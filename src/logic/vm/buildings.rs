@@ -113,7 +113,7 @@ impl Building {
         let data = match name {
             MICRO_PROCESSOR => BuildingData::Processor(
                 ProcessorBuilder {
-                    ipt: 2,
+                    ipt: 2.,
                     privileged: false,
                     running_processors: Rc::clone(&builder.vm.running_processors),
                     time: Rc::clone(&builder.vm.time),
@@ -124,7 +124,7 @@ impl Building {
             ),
             LOGIC_PROCESSOR => BuildingData::Processor(
                 ProcessorBuilder {
-                    ipt: 8,
+                    ipt: 8.,
                     privileged: false,
                     running_processors: Rc::clone(&builder.vm.running_processors),
                     time: Rc::clone(&builder.vm.time),
@@ -135,7 +135,7 @@ impl Building {
             ),
             HYPER_PROCESSOR => BuildingData::Processor(
                 ProcessorBuilder {
-                    ipt: 25,
+                    ipt: 25.,
                     privileged: false,
                     running_processors: Rc::clone(&builder.vm.running_processors),
                     time: Rc::clone(&builder.vm.time),
@@ -146,7 +146,7 @@ impl Building {
             ),
             WORLD_PROCESSOR => BuildingData::Processor(
                 ProcessorBuilder {
-                    ipt: 8,
+                    ipt: 8.,
                     privileged: true,
                     running_processors: Rc::clone(&builder.vm.running_processors),
                     time: Rc::clone(&builder.vm.time),

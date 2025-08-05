@@ -82,10 +82,19 @@ impl LogicVM {
         }
     }
 
+    /// Execute one tick of the simulation with a delta of `1.0`.
+    ///
+    /// `time` is the time elapsed since the *start* of the simulation.
+    pub fn do_tick(&self, time: Duration) {
+        self.do_tick_with_delta(time, 1.0);
+    }
+
     /// Execute one tick of the simulation.
     ///
-    /// Note: `time` is the time elapsed since the *start* of the simulation.
-    pub fn do_tick(&self, time: Duration) {
+    /// `time` is the time elapsed since the *start* of the simulation.
+    ///
+    /// `delta` is the simulated time delta, eg. `1.0` corresponds to 60 fps.
+    pub fn do_tick_with_delta(&self, time: Duration, delta: f64) {
         // never move time backwards
         let time = duration_millis_f64(time);
         self.time.set(time);
@@ -95,7 +104,7 @@ impl LogicVM {
                 .data
                 .borrow_mut()
                 .unwrap_processor_mut()
-                .do_tick(self, time);
+                .do_tick(self, time, delta);
         }
     }
 
@@ -1656,7 +1665,7 @@ mod tests {
         for ipt in [8, 1, 10, 1, 1000, 500, 1000, 5] {
             with_processor(&mut vm, (0, 0), |p| {
                 assert_eq!(
-                    p.state.ipt, ipt,
+                    p.state.ipt, ipt as f64,
                     "incorrect ipt at counter {}",
                     p.state.counter
                 );
@@ -1673,7 +1682,7 @@ mod tests {
         let mut vm = single_processor_vm(MICRO_PROCESSOR, "setrate 10; stop");
         run(&mut vm, 1, true);
         let processor = take_processor(&mut vm, (0, 0));
-        assert_eq!(processor.state.ipt, 2);
+        assert_eq!(processor.state.ipt, 2.0);
     }
 
     const CONDITION_TESTS: &[(&str, &str, &str, bool)] = &[

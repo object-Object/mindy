@@ -22,7 +22,7 @@ use crate::{
     },
 };
 
-const MAX_IPT: usize = 1000;
+const MAX_IPT: i32 = 1000;
 const EQUALITY_EPSILON: f64 = 0.000001;
 const PRINT_EPSILON: f64 = 0.00001;
 
@@ -1107,6 +1107,6 @@ pub(super) struct SetRate {
 
 impl SimpleInstructionTrait for SetRate {
     fn execute(&self, state: &mut ProcessorState, _: &HashMap<String, LVar>, _: &LogicVM) {
-        state.ipt = (self.value.get(state).num() as usize).clamp(1, MAX_IPT);
+        state.ipt = self.value.get(state).numi().clamp(1, MAX_IPT) as f64;
     }
 }
