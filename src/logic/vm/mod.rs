@@ -61,11 +61,17 @@ impl LogicVM {
     /// Run the simulation until all processors halt, or until a number of ticks are finished.
     /// Returns true if all processors halted, or false if the tick limit was reached.
     pub fn run(&self, max_ticks: Option<usize>) -> bool {
+        self.run_with_delta(max_ticks, 1.0)
+    }
+
+    /// Run the simulation until all processors halt, or until a number of ticks are finished.
+    /// Returns true if all processors halted, or false if the tick limit was reached.
+    pub fn run_with_delta(&self, max_ticks: Option<usize>, delta: f64) -> bool {
         let start = Instant::now();
         let mut tick = 0;
 
         loop {
-            self.do_tick(start.elapsed());
+            self.do_tick_with_delta(start.elapsed(), delta);
 
             if self.running_processors.get() == 0 {
                 // all processors finished, return true

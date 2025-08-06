@@ -2,4 +2,5 @@
 rustflags = ["-C", "target-cpu=native"]
 
 [alias]
+mlog = "run --release --features mlog --bin mlog --"
 mlogv32 = "run --release --features mlogv32 --bin mlogv32 --"
