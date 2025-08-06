@@ -795,9 +795,12 @@ pub(super) struct Op {
 
 impl SimpleInstructionTrait for Op {
     fn execute(&self, state: &mut ProcessorState, _: &LogicVM) {
+        let x_val = self.x.get(state);
+        let x = x_val.num();
+
         // TODO: this seems inefficient for unary and condition ops
-        let x = self.x.get(state).num();
-        let y = self.y.get(state).num();
+        let y_val = self.y.get(state);
+        let y = y_val.num();
 
         fn wrap_angle(a: f32) -> f32 {
             if a < 0. { a + 360. } else { a }
@@ -813,9 +816,15 @@ impl SimpleInstructionTrait for Op {
             LogicOp::Emod => (((x % y) + y) % y).into(),
             LogicOp::Pow => x.powf(y).into(),
 
-            LogicOp::Land => (x != 0. && y != 0.).into(),
-            LogicOp::Condition(op) => Jump::test(op, &self.x, &self.y, state).into(),
+            LogicOp::Equal => Jump::weak_equal(x_val, y_val).into(),
+            LogicOp::NotEqual => (!Jump::weak_equal(x_val, y_val)).into(),
+            LogicOp::LessThan => (x < y).into(),
+            LogicOp::LessThanEq => (x <= y).into(),
+            LogicOp::GreaterThan => (x > y).into(),
+            LogicOp::GreaterThanEq => (x >= y).into(),
+            LogicOp::StrictEqual => (x_val == y_val).into(),
 
+            LogicOp::Land => (x != 0. && y != 0.).into(),
             LogicOp::Shl => ((x as i64).wrapping_shl(y as i64 as u32)).into(),
             LogicOp::Shr => ((x as i64).wrapping_shr(y as i64 as u32)).into(),
             LogicOp::Ushr => (((x as i64 as u64).wrapping_shr(y as i64 as u32)) as i64).into(),
@@ -1024,26 +1033,22 @@ impl Jump {
         let y = y.get(state);
 
         match op {
-            ConditionOp::Equal => {
-                if x.isobj() && y.isobj() {
-                    x == y
-                } else {
-                    (x.num() - y.num()).abs() < EQUALITY_EPSILON
-                }
-            }
-            ConditionOp::NotEqual => {
-                if x.isobj() && y.isobj() {
-                    x != y
-                } else {
-                    (x.num() - y.num()).abs() >= EQUALITY_EPSILON
-                }
-            }
+            ConditionOp::Equal => Self::weak_equal(x, y),
+            ConditionOp::NotEqual => !Self::weak_equal(x, y),
             ConditionOp::LessThan => x.num() < y.num(),
             ConditionOp::LessThanEq => x.num() <= y.num(),
             ConditionOp::GreaterThan => x.num() > y.num(),
             ConditionOp::GreaterThanEq => x.num() >= y.num(),
             ConditionOp::StrictEqual => x == y,
             ConditionOp::Always => unreachable!(),
+        }
+    }
+
+    fn weak_equal(x: LValue, y: LValue) -> bool {
+        if x.isobj() && y.isobj() {
+            x == y
+        } else {
+            (x.num() - y.num()).abs() < EQUALITY_EPSILON
         }
     }
 }

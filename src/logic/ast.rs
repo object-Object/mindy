@@ -173,9 +173,15 @@ pub enum LogicOp {
     Emod,
     Pow,
 
-    Land,
-    Condition(ConditionOp),
+    Equal,
+    NotEqual,
+    LessThan,
+    LessThanEq,
+    GreaterThan,
+    GreaterThanEq,
+    StrictEqual,
 
+    Land,
     Shl,
     Shr,
     Ushr,

@@ -382,9 +382,15 @@ LogicOp2: LogicOp = {
     "emod" => LogicOp::Emod,
     "pow"  => LogicOp::Pow,
 
-    "land"       => LogicOp::Land,
-    ConditionOp2 => LogicOp::Condition(<>),
+    "equal"         => LogicOp::Equal,
+    "notEqual"      => LogicOp::NotEqual,
+    "lessThan"      => LogicOp::LessThan,
+    "lessThanEq"    => LogicOp::LessThanEq,
+    "greaterThan"   => LogicOp::GreaterThan,
+    "greaterThanEq" => LogicOp::GreaterThanEq,
+    "strictEqual"   => LogicOp::StrictEqual,
 
+    "land" => LogicOp::Land,
     "shl"  => LogicOp::Shl,
     "shr"  => LogicOp::Shr,
     "ushr" => LogicOp::Ushr,
