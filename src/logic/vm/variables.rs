@@ -1,6 +1,5 @@
 use std::{
-    cell::RefCell,
-    collections::HashMap,
+    borrow::Cow,
     fmt::Display,
     hash::{Hash, Hasher},
     num::TryFromIntError,
@@ -8,10 +7,11 @@ use std::{
     rc::Rc,
 };
 
+use indexmap::IndexMap;
 use num_traits::AsPrimitive;
 use strum::VariantArray;
 use thiserror::Error;
-use velcro::{hash_map_from, map_iter_from};
+use velcro::map_iter_from;
 use widestring::{U16Str, U16String};
 
 use crate::{
@@ -35,11 +35,12 @@ pub(super) const RAD_DEG: f32 = 180. / PI;
 pub(super) const F64_DEG_RAD: f64 = 0.017453292519943295;
 pub(super) const F64_RAD_DEG: f64 = 57.29577951308232;
 
-pub(super) type Variables = HashMap<U16String, LVar>;
+pub(super) type Constants = IndexMap<U16String, LVar, rapidhash::fast::RandomState>;
+pub(super) type Variables = IndexMap<U16String, LValue, rapidhash::fast::RandomState>;
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum LVar {
-    Variable(Rc<RefCell<LValue>>),
+    Variable(usize),
     Constant(LValue),
     Counter,
     Ipt,
@@ -50,13 +51,10 @@ pub enum LVar {
 }
 
 impl LVar {
-    pub fn new_variable() -> Self {
-        Self::Variable(Rc::new(RefCell::new(LValue::Null)))
-    }
-
     // https://github.com/Anuken/Mindustry/blob/e95c543fb224b8d8cb21f834e0d02cbdb9f34d48/core/src/mindustry/logic/GlobalVars.java#L41
-    pub fn create_globals() -> Variables {
-        let mut globals = hash_map_from! {
+    pub fn create_global_constants() -> Constants {
+        let mut globals: Constants = map_iter_from! {
+            "@counter": Self::Counter,
             "@ipt": Self::Ipt,
 
             "false": constant(0),
@@ -83,7 +81,8 @@ impl LVar {
             "@itemCount": constant(content::items::FROM_LOGIC_ID.len()),
             "@liquidCount": constant(content::liquids::FROM_LOGIC_ID.len()),
             "@unitCount": constant(content::units::FROM_LOGIC_ID.len()),
-        };
+        }
+        .collect();
 
         globals.extend(
             Team::BASE_TEAMS
@@ -135,15 +134,12 @@ impl LVar {
         globals
     }
 
-    pub(super) fn late_init_locals(
-        variables: &mut Variables,
+    pub(super) fn create_local_constants(
+        locals: &mut Constants,
         position: Point2,
         links: &[ProcessorLink],
     ) {
-        variables.extend(map_iter_from! {
-            // we want other processors to be able to write @counter as if it's a local
-            "@counter": Self::Counter,
-
+        locals.extend(map_iter_from! {
             "@this": constant(LValue::Building(position)),
             "@thisx": constant(position.x),
             "@thisy": constant(position.y),
@@ -152,16 +148,17 @@ impl LVar {
 
         // if multiple links have the same name, the last one wins
         for link in links {
-            variables.insert(
+            locals.insert(
                 U16String::from_str(&link.name),
                 constant(LValue::Building(link.position)),
             );
         }
     }
 
-    pub fn get(&self, state: &ProcessorState) -> LValue {
+    pub fn get<'a>(&'a self, state: &'a ProcessorState) -> LValue {
         match self {
-            Self::Variable(_) | Self::Constant(_) => self.try_get().unwrap(),
+            Self::Variable(i) => state.variables[*i].clone(),
+            Self::Constant(value) => value.clone(),
             Self::Counter => state.counter.into(),
             Self::Ipt => state.ipt.into(),
             Self::Time => state.time.get().into(),
@@ -171,19 +168,11 @@ impl LVar {
         }
     }
 
-    /// Returns `None` if this is a variable that requires access to a specific processor's state.
-    pub fn try_get(&self) -> Option<LValue> {
-        match self {
-            Self::Variable(ptr) => Some(LValue::clone(&ptr.borrow())),
-            Self::Constant(value) => Some(value.to_owned()),
-            _ => None,
-        }
-    }
-
     /// Returns `None` if this is a variable for which `self.set` would be a no-op.
-    pub fn try_get_writable(&self, state: &ProcessorState) -> Option<LValue> {
+    pub fn try_get_writable<'a>(&'a self, state: &'a ProcessorState) -> Option<Cow<'a, LValue>> {
         match self {
-            Self::Variable(_) | Self::Counter => Some(self.get(state)),
+            Self::Variable(i) => Some(Cow::Borrowed(&state.variables[*i])),
+            Self::Counter => Some(Cow::Owned(state.counter.into())),
             _ => None,
         }
     }
@@ -191,23 +180,11 @@ impl LVar {
     /// Returns true if the variable was successfully set.
     pub fn set(&self, state: &mut ProcessorState, value: LValue) -> bool {
         match self {
-            Self::Variable(ptr) => {
-                *ptr.borrow_mut() = value;
+            Self::Variable(i) => {
+                state.variables[*i] = value;
                 true
             }
-            Self::Counter => {
-                if let LValue::Number(n) = value {
-                    let counter = n as usize;
-                    state.counter = if (0..state.num_instructions()).contains(&counter) {
-                        counter
-                    } else {
-                        0
-                    };
-                    true
-                } else {
-                    false
-                }
-            }
+            Self::Counter => state.try_set_counter(value),
             _ => false,
         }
     }
@@ -270,6 +247,12 @@ impl LValue {
 
     pub fn isobj(&self) -> bool {
         !matches!(self, Self::Number(_))
+    }
+}
+
+impl Default for LValue {
+    fn default() -> Self {
+        Self::Null
     }
 }
 

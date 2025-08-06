@@ -6,10 +6,10 @@ use noise::{NoiseFn, Simplex};
 use widestring::{U16Str, u16str};
 
 use super::{
-    LogicVM, VMLoadError, VMLoadResult,
+    Constants, LogicVM, VMLoadError, VMLoadResult,
     buildings::BuildingData,
     processor::{MAX_TEXT_BUFFER, ProcessorState},
-    variables::{Content, LValue, LVar, RAD_DEG, Variables},
+    variables::{Content, LValue, LVar, RAD_DEG},
 };
 use crate::{
     logic::{
@@ -34,26 +34,16 @@ lazy_static! {
 
 #[enum_dispatch]
 pub(super) trait InstructionTrait {
-    fn execute(
-        &self,
-        state: &mut ProcessorState,
-        variables: &Variables,
-        vm: &LogicVM,
-    ) -> InstructionResult;
+    fn execute(&self, state: &mut ProcessorState, vm: &LogicVM) -> InstructionResult;
 }
 
 trait SimpleInstructionTrait {
-    fn execute(&self, state: &mut ProcessorState, variables: &Variables, vm: &LogicVM);
+    fn execute(&self, state: &mut ProcessorState, vm: &LogicVM);
 }
 
 impl<T: SimpleInstructionTrait> InstructionTrait for T {
-    fn execute(
-        &self,
-        state: &mut ProcessorState,
-        variables: &Variables,
-        vm: &LogicVM,
-    ) -> InstructionResult {
-        self.execute(state, variables, vm);
+    fn execute(&self, state: &mut ProcessorState, vm: &LogicVM) -> InstructionResult {
+        self.execute(state, vm);
         InstructionResult::Ok
     }
 }
@@ -111,23 +101,32 @@ pub(super) struct InstructionBuilder {
 impl InstructionBuilder {
     pub(super) fn late_init(
         self,
-        variables: &mut Variables,
-        globals: &Variables,
-        privileged: bool,
-        num_instructions: usize,
+        globals: &Constants,
+        state: &mut ProcessorState,
     ) -> VMLoadResult<Instruction> {
         // helpers
+
+        let num_instructions = state.num_instructions();
+        let privileged = state.privileged();
+        let locals = &state.locals;
+        let variables = &mut state.variables;
 
         let mut lvar = |value| match value {
             ast::Value::Variable(name) => {
                 let name = name.into();
-                if let Some(var) = globals.get(&name).or_else(|| variables.get(&name)) {
-                    var.clone()
-                } else {
-                    let var = LVar::new_variable();
-                    variables.insert(name, LVar::clone(&var));
-                    var
-                }
+                // first check locals
+                locals
+                    .get(&name)
+                    // then check globals
+                    .or_else(|| globals.get(&name))
+                    .cloned()
+                    // then see if there's already a variable with this name
+                    .or_else(|| variables.get_index_of(&name).map(LVar::Variable))
+                    // if none of those exist, create a new variable defaulting to null
+                    .unwrap_or_else(|| {
+                        let (i, _) = variables.insert_full(name, LValue::Null);
+                        LVar::Variable(i)
+                    })
             }
             ast::Value::String(value) => LVar::Constant(value.into()),
             ast::Value::Number(value) => LVar::Constant(value.into()),
@@ -341,7 +340,7 @@ impl InstructionBuilder {
 }
 
 impl InstructionTrait for InstructionBuilder {
-    fn execute(&self, _: &mut ProcessorState, _: &Variables, _: &LogicVM) -> InstructionResult {
+    fn execute(&self, _: &mut ProcessorState, _: &LogicVM) -> InstructionResult {
         unreachable!("InstructionBuilder should always be replaced during late init")
     }
 }
@@ -370,20 +369,22 @@ impl Read {
 }
 
 impl SimpleInstructionTrait for Read {
-    fn execute(&self, state: &mut ProcessorState, variables: &Variables, vm: &LogicVM) {
+    fn execute(&self, state: &mut ProcessorState, vm: &LogicVM) {
         let address = self.address.get(state);
 
         let result = match self.target.get(state) {
             LValue::Building(position) => match vm.building(position) {
                 Some(building) => building.borrow_data(
                     state,
-                    variables,
-                    |state, variables| match address.clone() {
+                    |state| match address.clone() {
                         // read variable with name, returning null for constants and undefined
-                        LValue::String(name) => variables
-                            .get(&*name)
-                            .and_then(|v| v.try_get_writable(state))
-                            .or(Some(LValue::Null)),
+                        LValue::String(name) => {
+                            if *name == u16str!("@counter") {
+                                Some(state.counter.into())
+                            } else {
+                                state.variables.get(&*name).cloned().or(Some(LValue::Null))
+                            }
+                        }
 
                         // no-op if the address is not a string
                         _ => None,
@@ -426,7 +427,7 @@ pub(super) struct Write {
 }
 
 impl SimpleInstructionTrait for Write {
-    fn execute(&self, state: &mut ProcessorState, variables: &Variables, vm: &LogicVM) {
+    fn execute(&self, state: &mut ProcessorState, vm: &LogicVM) {
         if let LValue::Building(position) = self.target.get(state)
             && let Some(building) = vm.building(position)
         {
@@ -435,16 +436,15 @@ impl SimpleInstructionTrait for Write {
 
             building.borrow_data_mut(
                 state,
-                variables,
-                |state, variables| {
-                    if let LValue::String(name) = address.clone()
-                        && let Some(target) = variables.get(&*name)
-                    {
-                        target.set(state, value.clone());
-                        if matches!(target, LVar::Counter) {
-                            state.set_stopped(false);
-                        }
+                |state| match address.clone() {
+                    LValue::String(name) if *name == u16str!("@counter") => {
+                        state.try_set_counter(value.clone());
+                        state.set_stopped(false);
                     }
+                    LValue::String(name) if state.variables.contains_key(&*name) => {
+                        state.variables[&*name] = value.clone();
+                    }
+                    _ => {}
                 },
                 |data| {
                     if let BuildingData::Memory(memory) = data
@@ -488,7 +488,7 @@ impl Print {
 }
 
 impl SimpleInstructionTrait for Print {
-    fn execute(&self, state: &mut ProcessorState, _: &Variables, vm: &LogicVM) {
+    fn execute(&self, state: &mut ProcessorState, vm: &LogicVM) {
         if state.printbuffer.len() >= MAX_TEXT_BUFFER {
             return;
         }
@@ -503,7 +503,7 @@ pub(super) struct PrintChar {
 }
 
 impl SimpleInstructionTrait for PrintChar {
-    fn execute(&self, state: &mut ProcessorState, _: &Variables, _: &LogicVM) {
+    fn execute(&self, state: &mut ProcessorState, _: &LogicVM) {
         if state.printbuffer.len() >= MAX_TEXT_BUFFER {
             return;
         }
@@ -521,7 +521,7 @@ pub(super) struct Format {
 }
 
 impl SimpleInstructionTrait for Format {
-    fn execute(&self, state: &mut ProcessorState, _: &Variables, vm: &LogicVM) {
+    fn execute(&self, state: &mut ProcessorState, vm: &LogicVM) {
         if state.printbuffer.len() >= MAX_TEXT_BUFFER {
             return;
         }
@@ -562,7 +562,7 @@ pub(super) struct PrintFlush {
 }
 
 impl SimpleInstructionTrait for PrintFlush {
-    fn execute(&self, state: &mut ProcessorState, _: &Variables, vm: &LogicVM) {
+    fn execute(&self, state: &mut ProcessorState, vm: &LogicVM) {
         if let LValue::Building(position) = self.target.get(state)
             && let Some(target) = vm.building(position)
             && let Ok(mut data) = target.data.try_borrow_mut()
@@ -583,7 +583,7 @@ pub(super) struct GetLink {
 }
 
 impl SimpleInstructionTrait for GetLink {
-    fn execute(&self, state: &mut ProcessorState, _: &Variables, _: &LogicVM) {
+    fn execute(&self, state: &mut ProcessorState, _: &LogicVM) {
         let result = match self.index.get(state).num_usize() {
             Ok(index) => state.link(index).into(),
             Err(_) => LValue::Null,
@@ -599,7 +599,7 @@ pub(super) struct Control {
 }
 
 impl SimpleInstructionTrait for Control {
-    fn execute(&self, state: &mut ProcessorState, variables: &Variables, vm: &LogicVM) {
+    fn execute(&self, state: &mut ProcessorState, vm: &LogicVM) {
         if self.control == LAccess::Enabled
             && let LValue::Building(position) = self.target.get(state)
             && (state.privileged() || state.linked_positions().contains(&position))
@@ -610,8 +610,7 @@ impl SimpleInstructionTrait for Control {
                 let enabled = enabled.numf() != 0.;
                 building.borrow_data_mut(
                     state,
-                    variables,
-                    |state, _| state.set_enabled(enabled),
+                    |state| state.set_enabled(enabled),
                     |data| {
                         if let BuildingData::Switch(value) = data {
                             *value = enabled;
@@ -630,7 +629,7 @@ pub(super) struct Sensor {
 }
 
 impl SimpleInstructionTrait for Sensor {
-    fn execute(&self, state: &mut ProcessorState, variables: &Variables, vm: &LogicVM) {
+    fn execute(&self, state: &mut ProcessorState, vm: &LogicVM) {
         use LAccess::*;
 
         let target = self.target.get(state);
@@ -709,8 +708,7 @@ impl SimpleInstructionTrait for Sensor {
 
                         _ => building.borrow_data(
                             state,
-                            variables,
-                            |state, _| match sensor {
+                            |state| match sensor {
                                 LAccess::Enabled => state.enabled().into(),
                                 _ => LValue::Null,
                             },
@@ -783,7 +781,7 @@ pub(super) struct Set {
 }
 
 impl SimpleInstructionTrait for Set {
-    fn execute(&self, state: &mut ProcessorState, _: &Variables, _: &LogicVM) {
+    fn execute(&self, state: &mut ProcessorState, _: &LogicVM) {
         self.to.set_from(state, &self.from);
     }
 }
@@ -796,7 +794,7 @@ pub(super) struct Op {
 }
 
 impl SimpleInstructionTrait for Op {
-    fn execute(&self, state: &mut ProcessorState, _: &Variables, _: &LogicVM) {
+    fn execute(&self, state: &mut ProcessorState, _: &LogicVM) {
         // TODO: this seems inefficient for unary and condition ops
         let x = self.x.get(state).num();
         let y = self.y.get(state).num();
@@ -876,7 +874,7 @@ pub(super) struct Select {
 }
 
 impl SimpleInstructionTrait for Select {
-    fn execute(&self, state: &mut ProcessorState, _: &Variables, _: &LogicVM) {
+    fn execute(&self, state: &mut ProcessorState, _: &LogicVM) {
         let result = if Jump::test(self.op, &self.x, &self.y, state) {
             &self.if_true
         } else {
@@ -893,7 +891,7 @@ pub(super) struct Lookup {
 }
 
 impl SimpleInstructionTrait for Lookup {
-    fn execute(&self, state: &mut ProcessorState, _: &Variables, _: &LogicVM) {
+    fn execute(&self, state: &mut ProcessorState, _: &LogicVM) {
         let id = self.id.get(state).numi();
 
         let result = match self.content_type {
@@ -935,7 +933,7 @@ pub(super) struct PackColor {
 }
 
 impl SimpleInstructionTrait for PackColor {
-    fn execute(&self, state: &mut ProcessorState, _: &Variables, _: &LogicVM) {
+    fn execute(&self, state: &mut ProcessorState, _: &LogicVM) {
         self.result.set(
             state,
             f32_to_double_bits(
@@ -958,7 +956,7 @@ pub(super) struct UnpackColor {
 }
 
 impl SimpleInstructionTrait for UnpackColor {
-    fn execute(&self, state: &mut ProcessorState, _: &Variables, _: &LogicVM) {
+    fn execute(&self, state: &mut ProcessorState, _: &LogicVM) {
         let (r, g, b, a) = f64_from_double_bits(self.value.get(state).num());
         self.r.set(state, r.into());
         self.g.set(state, g.into());
@@ -972,7 +970,7 @@ impl SimpleInstructionTrait for UnpackColor {
 pub(super) struct Noop;
 
 impl SimpleInstructionTrait for Noop {
-    fn execute(&self, _: &mut ProcessorState, _: &Variables, _: &LogicVM) {}
+    fn execute(&self, _: &mut ProcessorState, _: &LogicVM) {}
 }
 
 pub(super) struct Wait {
@@ -980,7 +978,7 @@ pub(super) struct Wait {
 }
 
 impl InstructionTrait for Wait {
-    fn execute(&self, state: &mut ProcessorState, _: &Variables, _: &LogicVM) -> InstructionResult {
+    fn execute(&self, state: &mut ProcessorState, _: &LogicVM) -> InstructionResult {
         let wait_ms = self.value.get(state).num() * 1000.;
         if wait_ms <= 0. {
             InstructionResult::Ok
@@ -994,7 +992,7 @@ impl InstructionTrait for Wait {
 pub(super) struct Stop;
 
 impl InstructionTrait for Stop {
-    fn execute(&self, state: &mut ProcessorState, _: &Variables, _: &LogicVM) -> InstructionResult {
+    fn execute(&self, state: &mut ProcessorState, _: &LogicVM) -> InstructionResult {
         state.counter -= 1;
         state.set_stopped(true);
         InstructionResult::Yield
@@ -1004,7 +1002,7 @@ impl InstructionTrait for Stop {
 pub(super) struct End;
 
 impl SimpleInstructionTrait for End {
-    fn execute(&self, state: &mut ProcessorState, _: &Variables, _: &LogicVM) {
+    fn execute(&self, state: &mut ProcessorState, _: &LogicVM) {
         state.counter = state.num_instructions();
     }
 }
@@ -1051,7 +1049,7 @@ impl Jump {
 }
 
 impl SimpleInstructionTrait for Jump {
-    fn execute(&self, state: &mut ProcessorState, _: &Variables, _: &LogicVM) {
+    fn execute(&self, state: &mut ProcessorState, _: &LogicVM) {
         if Self::test(self.op, &self.x, &self.y, state) {
             // we do the bounds check while parsing
             state.counter = self.target;
@@ -1069,7 +1067,7 @@ pub(super) struct GetBlock {
 }
 
 impl SimpleInstructionTrait for GetBlock {
-    fn execute(&self, state: &mut ProcessorState, _: &Variables, vm: &LogicVM) {
+    fn execute(&self, state: &mut ProcessorState, vm: &LogicVM) {
         let result = match vm.building(Point2 {
             x: self.x.get(state).numf().round() as i32,
             y: self.y.get(state).numf().round() as i32,
@@ -1091,7 +1089,7 @@ pub(super) struct SetRate {
 }
 
 impl SimpleInstructionTrait for SetRate {
-    fn execute(&self, state: &mut ProcessorState, _: &Variables, _: &LogicVM) {
+    fn execute(&self, state: &mut ProcessorState, _: &LogicVM) {
         state.ipt = self.value.get(state).numi().clamp(1, MAX_IPT) as f64;
     }
 }

@@ -4,7 +4,7 @@ use strum_macros::IntoStaticStr;
 use widestring::U16String;
 
 use super::{
-    LogicVMBuilder, VMLoadError, VMLoadResult, Variables,
+    LogicVMBuilder, VMLoadError, VMLoadResult,
     processor::{Processor, ProcessorBuilder, ProcessorState},
     variables::LValue,
 };
@@ -179,50 +179,43 @@ impl Building {
         Self::from_config(name, (*position).into(), config, builder)
     }
 
-    pub fn borrow_data<T, U, R>(
-        &self,
-        state: &ProcessorState,
-        variables: &Variables,
-        f_processor: T,
-        f_other: U,
-    ) -> R
+    pub fn borrow_data<T, U, R>(&self, state: &ProcessorState, f_processor: T, f_other: U) -> R
     where
-        T: FnOnce(&ProcessorState, &Variables) -> R,
+        T: FnOnce(&ProcessorState) -> R,
         U: FnOnce(&BuildingData) -> R,
     {
         match self.data.try_borrow() {
             Ok(data) => match &*data {
-                BuildingData::Processor(p) => f_processor(&p.state, &p.variables),
+                BuildingData::Processor(p) => f_processor(&p.state),
                 other => f_other(other),
             },
-            Err(_) => f_processor(state, variables),
+            Err(_) => f_processor(state),
         }
     }
 
     pub fn borrow_data_mut<T, U, R>(
         &self,
         state: &mut ProcessorState,
-        variables: &Variables,
         f_processor: T,
         f_other: U,
     ) -> R
     where
-        T: FnOnce(&mut ProcessorState, &Variables) -> R,
+        T: FnOnce(&mut ProcessorState) -> R,
         U: FnOnce(&mut BuildingData) -> R,
     {
         match self.data.try_borrow_mut() {
             Ok(mut data) => match &mut *data {
-                BuildingData::Processor(p) => f_processor(&mut p.state, &p.variables),
+                BuildingData::Processor(p) => f_processor(&mut p.state),
                 other => f_other(other),
             },
-            Err(_) => f_processor(state, variables),
+            Err(_) => f_processor(state),
         }
     }
 }
 
 #[derive(IntoStaticStr)]
 pub enum BuildingData {
-    Processor(Processor),
+    Processor(Box<Processor>),
     Memory(Box<[f64]>),
     Message(U16String),
     Switch(bool),
@@ -238,7 +231,7 @@ impl BuildingData {
     /// Panics if this building is not a processor.
     pub fn into_processor(self) -> Processor {
         match self {
-            Self::Processor(processor) => processor,
+            Self::Processor(processor) => *processor,
             _ => panic!(
                 "called `BuildingData::into_processor()` on a `BuildingData::{}` value",
                 <&str>::from(self)

@@ -173,10 +173,10 @@ impl LogicVMBuilder {
     }
 
     pub fn build(self) -> VMLoadResult<LogicVM> {
-        self.build_with_globals(Cow::Owned(LVar::create_globals()))
+        self.build_with_globals(Cow::Owned(LVar::create_global_constants()))
     }
 
-    pub fn build_with_globals(mut self, globals: Cow<'_, Variables>) -> VMLoadResult<LogicVM> {
+    pub fn build_with_globals(mut self, globals: Cow<'_, Constants>) -> VMLoadResult<LogicVM> {
         // sort processors in update order
         // 7 8 9
         // 4 5 6
@@ -300,7 +300,7 @@ mod tests {
         builder.build().unwrap()
     }
 
-    fn single_processor_vm_with_globals(name: &str, code: &str, globals: &Variables) -> LogicVM {
+    fn single_processor_vm_with_globals(name: &str, code: &str, globals: &Constants) -> LogicVM {
         let mut builder = LogicVMBuilder::new();
         builder.add_building(
             Building::from_processor_config(
@@ -358,19 +358,43 @@ mod tests {
             match want.into() {
                 Some(want) => {
                     assert!(
-                        processor.variables.contains_key(name),
+                        processor.state.variables.contains_key(name),
+                        "variable not found: {}",
+                        name.display()
+                    );
+                    assert_eq!(processor.state.variables[name], want, "{}", name.display());
+                }
+                None => assert!(
+                    !processor.state.variables.contains_key(name),
+                    "unexpected variable found: {}",
+                    name.display()
+                ),
+            };
+        }
+    }
+
+    fn assert_locals<'a, T, V>(processor: &Processor, vars: T)
+    where
+        T: IntoIterator<Item = (&'a U16Str, V)>,
+        V: Into<Option<LValue>>,
+    {
+        for (name, want) in vars {
+            match want.into() {
+                Some(want) => {
+                    assert!(
+                        processor.state.locals.contains_key(name),
                         "variable not found: {}",
                         name.display()
                     );
                     assert_eq!(
-                        processor.variables[name].get(&processor.state),
+                        processor.state.locals[name].get(&processor.state),
                         want,
                         "{}",
                         name.display()
                     );
                 }
                 None => assert!(
-                    !processor.variables.contains_key(name),
+                    !processor.state.locals.contains_key(name),
                     "unexpected variable found: {}",
                     name.display()
                 ),
@@ -386,11 +410,11 @@ mod tests {
             match want.into() {
                 Some(want) => {
                     assert!(
-                        processor.variables.contains_key(name),
+                        processor.state.variables.contains_key(name),
                         "variable not found: {}",
                         name.display()
                     );
-                    let got = processor.variables[name].get(&processor.state).num();
+                    let got = processor.state.variables[name].num();
                     assert!(
                         (got - want).abs() <= epsilon,
                         "want {} == {want} +- {epsilon}, got {got}",
@@ -398,7 +422,7 @@ mod tests {
                     );
                 }
                 None => assert!(
-                    !processor.variables.contains_key(name),
+                    !processor.state.variables.contains_key(name),
                     "unexpected variable found: {}",
                     name.display()
                 ),
@@ -579,7 +603,7 @@ mod tests {
         let mut vm = builder.build().unwrap();
 
         let processor = take_processor(&mut vm, (5, 0));
-        assert_variables(
+        assert_locals(
             &processor,
             map_iter! {
                 // conflicts should prefer the last building linked
@@ -600,7 +624,7 @@ mod tests {
         let mut vm = LogicVM::from_schematic(&schematic).unwrap();
 
         let processor = take_processor(&mut vm, (0, 0));
-        assert_variables(
+        assert_locals(
             &processor,
             map_iter! {
                 u16str!("cell1"): LValue::Building(Point2 { x: 0, y: 10 }),
@@ -680,7 +704,7 @@ mod tests {
         let mut vm = builder.build().unwrap();
 
         let processor = take_processor(&mut vm, (1, 1));
-        assert_variables(
+        assert_locals(
             &processor,
             map_iter! {
                 u16str!("cell1"): Some(LValue::Building(Point2 { x: 1, y: 11 })),
@@ -1425,9 +1449,11 @@ mod tests {
                         write 10 processor1 "var"
                         write 3 processor1 "@counter"
                         write null processor1 0
+                        write "discarded1" processor1 "undefined"
                         
                         set var 0
                         write 20 @this "var"
+                        write "discarded2" @this "undefined"
 
                         write 30 cell1 0
                         write 40 cell1 "a"
@@ -1462,9 +1488,10 @@ mod tests {
         assert_variables(
             &processor,
             map_iter! {
-                u16str!("canary"): LValue::Number(0xdeadbeefu32 as f64),
-                u16str!("var"): LValue::Number(10.),
-                u16str!("jumped"): LValue::Number(1.),
+                u16str!("canary"): Some(LValue::Number(0xdeadbeefu32 as f64)),
+                u16str!("var"): Some(LValue::Number(10.)),
+                u16str!("jumped"): Some(LValue::Number(1.)),
+                u16str!("undefined"): None,
             },
         );
 
@@ -1472,7 +1499,8 @@ mod tests {
         assert_variables(
             &processor,
             map_iter! {
-                u16str!("var"): LValue::Number(20.),
+                u16str!("var"): Some(LValue::Number(20.)),
+                u16str!("undefined"): None,
             },
         );
 
@@ -1595,25 +1623,19 @@ mod tests {
         );
 
         with_processor(&mut vm, (0, 0), |p| {
-            assert_eq!(p.variables[u16str!("foo")].get(&p.state), LValue::Null);
+            assert_eq!(p.state.variables[u16str!("foo")], LValue::Null);
         });
 
         vm.do_tick(Duration::ZERO);
 
         with_processor(&mut vm, (0, 0), |p| {
-            assert_eq!(
-                p.variables[u16str!("foo")].get(&p.state),
-                LValue::Number(1.)
-            );
+            assert_eq!(p.state.variables[u16str!("foo")], LValue::Number(1.));
         });
 
         vm.do_tick(Duration::ZERO);
 
         with_processor(&mut vm, (0, 0), |p| {
-            assert_eq!(
-                p.variables[u16str!("foo")].get(&p.state),
-                LValue::Number(2.)
-            );
+            assert_eq!(p.state.variables[u16str!("foo")], LValue::Number(2.));
             assert_eq!(p.state.counter, 6);
         });
 
@@ -1628,18 +1650,18 @@ mod tests {
         vm.do_tick(Duration::ZERO);
 
         with_processor(&mut vm, (0, 0), |p| {
-            assert_eq!(p.variables.get(u16str!("@ipt")), None);
-            assert_eq!(p.variables.get(u16str!("true")), None);
+            assert_eq!(p.state.variables.get(u16str!("@ipt")), None);
+            assert_eq!(p.state.variables.get(u16str!("true")), None);
             assert_eq!(
-                p.variables[u16str!("pi")].get(&p.state),
+                p.state.variables[u16str!("pi")],
                 LValue::Number(variables::PI.into())
             );
             assert_eq!(
-                p.variables[u16str!("pi_fancy")].get(&p.state),
+                p.state.variables[u16str!("pi_fancy")],
                 LValue::Number(variables::PI.into())
             );
             assert_eq!(
-                p.variables[u16str!("e")].get(&p.state),
+                p.state.variables[u16str!("e")],
                 LValue::Number(variables::E.into())
             );
         });
@@ -1648,16 +1670,10 @@ mod tests {
         vm.do_tick(Duration::ZERO);
 
         with_processor(&mut vm, (0, 0), |p| {
-            assert_eq!(
-                p.variables[u16str!("a")].get(&p.state),
-                LValue::Number(1e308)
-            );
-            assert_eq!(p.variables[u16str!("b")].get(&p.state), LValue::Null);
-            assert_eq!(
-                p.variables[u16str!("c")].get(&p.state),
-                LValue::Number(-1e308)
-            );
-            assert_eq!(p.variables[u16str!("d")].get(&p.state), LValue::Null);
+            assert_eq!(p.state.variables[u16str!("a")], LValue::Number(1e308));
+            assert_eq!(p.state.variables[u16str!("b")], LValue::Null);
+            assert_eq!(p.state.variables[u16str!("c")], LValue::Number(-1e308));
+            assert_eq!(p.state.variables[u16str!("d")], LValue::Null);
         });
     }
 
@@ -1842,7 +1858,7 @@ mod tests {
 
         let processor = take_processor(&mut vm, (0, 0));
         assert_eq!(
-            processor.variables[u16str!("canary")].get(&processor.state),
+            processor.state.variables[u16str!("canary")],
             LValue::Number(0xdeadbeefu64 as f64)
         );
     }
@@ -2008,52 +2024,44 @@ mod tests {
 
         run(&mut vm, 1, true);
 
-        let Processor {
-            variables, state, ..
-        } = take_processor(&mut vm, (0, 0));
+        let variables = take_processor(&mut vm, (0, 0)).state.variables;
 
         assert_eq!(
-            variables[u16str!("packed1")].get(&state),
+            variables[u16str!("packed1")],
             LValue::Number(f64::from_bits(0x00_7f_bf_ffu64))
         );
 
-        assert_eq!(variables[u16str!("r1")].get(&state), LValue::Number(0.));
-        assert_eq!(
-            variables[u16str!("g1")].get(&state),
-            LValue::Number(127. / 255.)
-        );
-        assert_eq!(
-            variables[u16str!("b1")].get(&state),
-            LValue::Number(191. / 255.)
-        );
-        assert_eq!(variables[u16str!("a1")].get(&state), LValue::Number(1.));
+        assert_eq!(variables[u16str!("r1")], LValue::Number(0.));
+        assert_eq!(variables[u16str!("g1")], LValue::Number(127. / 255.));
+        assert_eq!(variables[u16str!("b1")], LValue::Number(191. / 255.));
+        assert_eq!(variables[u16str!("a1")], LValue::Number(1.));
 
         assert_eq!(
-            variables[u16str!("r2")].get(&state),
+            variables[u16str!("r2")],
             LValue::Number((0x41 as f64) / 255.)
         );
         assert_eq!(
-            variables[u16str!("g2")].get(&state),
+            variables[u16str!("g2")],
             LValue::Number((0x69 as f64) / 255.)
         );
         assert_eq!(
-            variables[u16str!("b2")].get(&state),
+            variables[u16str!("b2")],
             LValue::Number((0xe1 as f64) / 255.)
         );
         assert_eq!(
-            variables[u16str!("a2")].get(&state),
+            variables[u16str!("a2")],
             LValue::Number((0xff as f64) / 255.)
         );
 
         assert_eq!(
-            variables[u16str!("packed2")].get(&state),
+            variables[u16str!("packed2")],
             LValue::Number(COLORS["royal"])
         );
     }
 
     #[test]
     fn test_select() {
-        let globals = LVar::create_globals();
+        let globals = LVar::create_global_constants();
 
         for &(cond, x, y, want_true) in CONDITION_TESTS {
             let mut vm = single_processor_vm_with_globals(
@@ -2082,12 +2090,12 @@ mod tests {
             }
             .into();
             assert_eq!(
-                processor.variables[u16str!("got1")].get(&processor.state),
+                processor.state.variables[u16str!("got1")],
                 want_value,
                 "{cond} {x} {y} (variables)"
             );
             assert_eq!(
-                processor.variables[u16str!("got2")].get(&processor.state),
+                processor.state.variables[u16str!("got2")],
                 want_value,
                 "{cond} {x} {y} (constants)"
             );
@@ -2097,7 +2105,7 @@ mod tests {
     #[test]
     #[allow(clippy::approx_constant)]
     fn test_op_unary() {
-        let globals = LVar::create_globals();
+        let globals = LVar::create_global_constants();
 
         for (op, x, want, epsilon) in [
             // not
@@ -2218,21 +2226,21 @@ mod tests {
             run(&mut vm, 1, true);
 
             let processor = take_processor(&mut vm, (0, 0));
-            let got = processor.variables[u16str!("got")].get(&processor.state);
+            let got = &processor.state.variables[u16str!("got")];
             if let Some(epsilon) = epsilon {
                 assert!(
                     (got.num() - want.num()).abs() <= epsilon,
                     "{op} {x} (got {got:?}, want {want:?} ± {epsilon:?})"
                 );
             } else {
-                assert_eq!(got, want, "{op} {x}");
+                assert_eq!(*got, want, "{op} {x}");
             }
         }
     }
 
     #[test]
     fn test_op_binary() {
-        let globals = LVar::create_globals();
+        let globals = LVar::create_global_constants();
 
         for (op, x, y, want) in [
             // add
@@ -2416,7 +2424,7 @@ mod tests {
 
             let processor = take_processor(&mut vm, (0, 0));
             assert_eq!(
-                processor.variables[u16str!("got")].get(&processor.state),
+                processor.state.variables[u16str!("got")],
                 want,
                 "{op} {x} {y}"
             );
@@ -2464,93 +2472,79 @@ mod tests {
 
         run(&mut vm, 1, true);
 
-        let Processor {
-            variables, state, ..
-        } = take_processor(&mut vm, (0, 0));
+        let variables = take_processor(&mut vm, (0, 0)).state.variables;
 
-        assert_eq!(
-            variables[u16str!("blocks")].get(&state),
-            LValue::Number(260.)
-        );
-        assert_eq!(variables[u16str!("items")].get(&state), LValue::Number(20.));
-        assert_eq!(
-            variables[u16str!("liquids")].get(&state),
-            LValue::Number(11.)
-        );
-        assert_eq!(variables[u16str!("units")].get(&state), LValue::Number(56.));
+        assert_eq!(variables[u16str!("blocks")], LValue::Number(260.));
+        assert_eq!(variables[u16str!("items")], LValue::Number(20.));
+        assert_eq!(variables[u16str!("liquids")], LValue::Number(11.));
+        assert_eq!(variables[u16str!("units")], LValue::Number(56.));
 
         // blocks
 
-        assert_eq!(variables[u16str!("block1")].get(&state), LValue::Null);
-        let block2 = variables[u16str!("block2")].get(&state);
+        assert_eq!(variables[u16str!("block1")], LValue::Null);
+        let block2 = &variables[u16str!("block2")];
         assert!(
             matches!(block2, LValue::Content(Content::Block(b)) if b.name.as_str() == "graphite-press"),
             "{block2:?}"
         );
-        let block3 = variables[u16str!("block3")].get(&state);
+        let block3 = &variables[u16str!("block3")];
         assert!(
             matches!(block3, LValue::Content(Content::Block(b)) if b.name.as_str() == "tile-logic-display"),
             "{block3:?}"
         );
-        assert_eq!(variables[u16str!("block4")].get(&state), LValue::Null);
+        assert_eq!(variables[u16str!("block4")], LValue::Null);
 
         // items
 
-        assert_eq!(variables[u16str!("item1")].get(&state), LValue::Null);
-        let item2 = variables[u16str!("item2")].get(&state);
+        assert_eq!(variables[u16str!("item1")], LValue::Null);
+        let item2 = &variables[u16str!("item2")];
         assert!(
             matches!(item2, LValue::Content(Content::Item(b)) if b.name.as_str() == "copper"),
             "{item2:?}"
         );
-        let item3 = variables[u16str!("item3")].get(&state);
+        let item3 = &variables[u16str!("item3")];
         assert!(
             matches!(item3, LValue::Content(Content::Item(b)) if b.name.as_str() == "carbide"),
             "{item3:?}"
         );
-        assert_eq!(variables[u16str!("item4")].get(&state), LValue::Null);
+        assert_eq!(variables[u16str!("item4")], LValue::Null);
 
         // liquids
 
-        assert_eq!(variables[u16str!("liquid1")].get(&state), LValue::Null);
-        let liquid2 = variables[u16str!("liquid2")].get(&state);
+        assert_eq!(variables[u16str!("liquid1")], LValue::Null);
+        let liquid2 = &variables[u16str!("liquid2")];
         assert!(
             matches!(liquid2, LValue::Content(Content::Liquid(b)) if b.name.as_str() == "water"),
             "{liquid2:?}"
         );
-        let liquid3 = variables[u16str!("liquid3")].get(&state);
+        let liquid3 = &variables[u16str!("liquid3")];
         assert!(
             matches!(liquid3, LValue::Content(Content::Liquid(b)) if b.name.as_str() == "arkycite"),
             "{liquid3:?}"
         );
-        assert_eq!(variables[u16str!("liquid4")].get(&state), LValue::Null);
+        assert_eq!(variables[u16str!("liquid4")], LValue::Null);
 
         // units
 
-        assert_eq!(variables[u16str!("unit1")].get(&state), LValue::Null);
-        let unit2 = variables[u16str!("unit2")].get(&state);
+        assert_eq!(variables[u16str!("unit1")], LValue::Null);
+        let unit2 = &variables[u16str!("unit2")];
         assert!(
             matches!(unit2, LValue::Content(Content::Unit(b)) if b.name.as_str() == "dagger"),
             "{unit2:?}"
         );
-        let unit3 = variables[u16str!("unit3")].get(&state);
+        let unit3 = &variables[u16str!("unit3")];
         assert!(
             matches!(unit3, LValue::Content(Content::Unit(b)) if b.name.as_str() == "emanate"),
             "{unit3:?}"
         );
-        assert_eq!(variables[u16str!("unit4")].get(&state), LValue::Null);
+        assert_eq!(variables[u16str!("unit4")], LValue::Null);
 
         // teams
 
-        assert_eq!(variables[u16str!("team1")].get(&state), LValue::Null);
-        assert_eq!(
-            variables[u16str!("team2")].get(&state),
-            LValue::Team(Team::DERELICT)
-        );
-        assert_eq!(
-            variables[u16str!("team3")].get(&state),
-            LValue::Team(Team(255))
-        );
-        assert_eq!(variables[u16str!("team4")].get(&state), LValue::Null);
+        assert_eq!(variables[u16str!("team1")], LValue::Null);
+        assert_eq!(variables[u16str!("team2")], LValue::Team(Team::DERELICT));
+        assert_eq!(variables[u16str!("team3")], LValue::Team(Team(255)));
+        assert_eq!(variables[u16str!("team4")], LValue::Null);
     }
 
     #[test]
@@ -2593,14 +2587,9 @@ mod tests {
             u16str!("var6"),
         ] {
             assert!(
-                processor.variables.contains_key(name),
+                processor.state.variables.contains_key(name),
                 "variable not found: {}",
                 name.display()
-            );
-            let var = &processor.variables[name];
-            assert!(
-                matches!(var, LVar::Variable(_)),
-                "expected Variable but got {var:?}"
             );
         }
     }

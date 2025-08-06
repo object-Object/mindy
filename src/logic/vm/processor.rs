@@ -12,7 +12,7 @@ use thiserror::Error;
 use widestring::{U16Str, U16String};
 
 use super::{
-    LValue, LogicVM, VMLoadError, VMLoadResult,
+    Constants, LValue, LogicVM, VMLoadError, VMLoadResult,
     buildings::Building,
     instructions::{Instruction, InstructionBuilder, InstructionResult, InstructionTrait, Noop},
     variables::{LVar, Variables},
@@ -28,7 +28,6 @@ const MAX_INSTRUCTION_SCALE: f64 = 5.0;
 pub struct Processor {
     instructions: Vec<Instruction>,
     pub state: ProcessorState,
-    pub variables: Variables,
 }
 
 impl Processor {
@@ -36,7 +35,7 @@ impl Processor {
         &mut self,
         vm: &LogicVM,
         building: &Building,
-        globals: &Variables,
+        globals: &Constants,
     ) -> VMLoadResult<()> {
         // init links
         // this is the only reason for the late init logic to exist
@@ -114,7 +113,7 @@ impl Processor {
             .extend(self.state.links.iter().map(|l| l.position));
 
         // now that we know which links are valid, set up the per-processor constants
-        LVar::late_init_locals(&mut self.variables, building.position, &self.state.links);
+        LVar::create_local_constants(&mut self.state.locals, building.position, &self.state.links);
 
         // finally, finish parsing the instructions
         // this must only be done after the link variables have been added
@@ -125,12 +124,9 @@ impl Processor {
                 instruction,
                 |instruction| -> (VMLoadResult<()>, _) {
                     let result = match instruction {
-                        Instruction::InstructionBuilder(builder) => builder.late_init(
-                            &mut self.variables,
-                            globals,
-                            self.state.privileged,
-                            self.state.num_instructions,
-                        ),
+                        Instruction::InstructionBuilder(builder) => {
+                            builder.late_init(globals, &mut self.state)
+                        }
                         _ => Err(VMLoadError::AlreadyInitialized),
                     };
                     match result {
@@ -171,24 +167,7 @@ impl Processor {
         }
 
         self.state.counter = counter + 1;
-        self.instructions[counter].execute(&mut self.state, &self.variables, vm)
-    }
-
-    pub fn variable(&self, name: &U16Str) -> Option<LValue> {
-        self.variables.get(name).map(|v| v.get(&self.state))
-    }
-
-    pub fn set_variable(&mut self, name: &U16Str, value: LValue) -> Result<(), SetVariableError> {
-        match self.variables.get(name) {
-            Some(var) => {
-                if var.set(&mut self.state, value) {
-                    Ok(())
-                } else {
-                    Err(SetVariableError::Constant)
-                }
-            }
-            None => Err(SetVariableError::NotFound),
-        }
+        self.instructions[counter].execute(&mut self.state, vm)
     }
 }
 
@@ -196,8 +175,6 @@ impl Processor {
 pub enum SetVariableError {
     #[error("Variable not found.")]
     NotFound,
-    #[error("Variable is a constant.")]
-    Constant,
 }
 
 #[derive(Debug, Clone)]
@@ -222,6 +199,9 @@ pub struct ProcessorState {
     // this behaviour is user-visible with printchar and when reading from a message
     // https://users.rust-lang.org/t/why-is-a-char-valid-in-jvm-but-invalid-in-rust/73524
     pub printbuffer: U16String,
+
+    pub(super) locals: Constants,
+    pub variables: Variables,
 }
 
 impl ProcessorState {
@@ -275,6 +255,46 @@ impl ProcessorState {
     pub fn num_instructions(&self) -> usize {
         self.num_instructions
     }
+
+    pub fn try_set_counter(&mut self, value: LValue) -> bool {
+        if let LValue::Number(n) = value {
+            let counter = n as usize;
+            self.counter = if (0..self.num_instructions).contains(&counter) {
+                counter
+            } else {
+                0
+            };
+            true
+        } else {
+            false
+        }
+    }
+
+    pub fn locals(&self) -> &Constants {
+        &self.locals
+    }
+
+    /// Checks if a variable or local constant exists.
+    pub fn has_variable(&self, name: &U16Str) -> bool {
+        self.variables.contains_key(name) || self.locals.contains_key(name)
+    }
+
+    /// Looks up a variable or local constant by name.
+    pub fn variable(&self, name: &U16Str) -> Option<LValue> {
+        self.variables
+            .get(name)
+            .cloned()
+            .or_else(|| self.locals.get(name).map(|v| v.get(self)))
+    }
+
+    pub fn set_variable(&mut self, name: &U16Str, value: LValue) -> Result<(), SetVariableError> {
+        if self.variables.contains_key(name) {
+            self.variables[name] = value;
+            Ok(())
+        } else {
+            Err(SetVariableError::NotFound)
+        }
+    }
 }
 
 /// A representation of a link from this processor to a building.
@@ -309,7 +329,7 @@ impl ProcessorBuilder<'_> {
         Ok(ProcessorConfig::read(&mut Cursor::new(data))?)
     }
 
-    pub fn build(self) -> VMLoadResult<Processor> {
+    pub fn build(self) -> VMLoadResult<Box<Processor>> {
         let ProcessorBuilder {
             ipt,
             privileged,
@@ -371,9 +391,8 @@ impl ProcessorBuilder<'_> {
             })
             .collect();
 
-        Ok(Processor {
+        Ok(Box::new(Processor {
             instructions,
-            variables: HashMap::new(),
             state: ProcessorState {
                 enabled,
                 stopped: false,
@@ -388,7 +407,9 @@ impl ProcessorBuilder<'_> {
                 running_processors,
                 time,
                 printbuffer: U16String::new(),
+                locals: Constants::default(),
+                variables: Variables::default(),
             },
-        })
+        }))
     }
 }

@@ -438,7 +438,7 @@ fn main() -> Result<(), Box<dyn Error>> {
 
     println!("Finalizing VM...");
 
-    let globals = LVar::create_globals();
+    let globals = LVar::create_global_constants();
     let vm = builder.build_with_globals(Cow::Borrowed(&globals))?;
 
     let uart_fifo_modulo = meta.uart_fifo_capacity + 1;
@@ -476,6 +476,7 @@ fn main() -> Result<(), Box<dyn Error>> {
 
     let print_var = |processor: &Processor, name: U16String, radix: Option<String>| {
         match processor
+            .state
             .variable(&name)
             .or_else(|| globals.get(&name).map(|v| v.get(&processor.state)))
         {
@@ -562,7 +563,7 @@ fn main() -> Result<(), Box<dyn Error>> {
                         *single_step = false;
                     }
                     VMCommand::Restart => {
-                        controller.set_variable(u16str!("pc"), 0.into())?;
+                        controller.state.set_variable(u16str!("pc"), 0.into())?;
                         *power = true;
                         *pause = false;
                         *single_step = false;
@@ -570,11 +571,15 @@ fn main() -> Result<(), Box<dyn Error>> {
                         next_state_update = start;
                     }
                     VMCommand::SetBreakpoint(Some(value)) => {
-                        config.set_variable(u16str!("BREAKPOINT_ADDRESS"), value.into())?;
+                        config
+                            .state
+                            .set_variable(u16str!("BREAKPOINT_ADDRESS"), value.into())?;
                         tui_println!(debug, "Breakpoint set: {value:#010x}");
                     }
                     VMCommand::SetBreakpoint(None) => {
-                        config.set_variable(u16str!("BREAKPOINT_ADDRESS"), LValue::Null)?;
+                        config
+                            .state
+                            .set_variable(u16str!("BREAKPOINT_ADDRESS"), LValue::Null)?;
                         tui_println!(debug, "Breakpoint cleared.");
                     }
                     VMCommand::PrintVar(name, radix) => print_var(controller, name, radix),
@@ -586,14 +591,26 @@ fn main() -> Result<(), Box<dyn Error>> {
                 power: *power,
                 pause: *pause,
                 single_step: *single_step,
-                state: match controller.variable(u16str!("state")).unwrap() {
+                state: match controller.state.variable(u16str!("state")).unwrap() {
                     LValue::String(state) => Some(state.to_ustring()),
                     _ => None,
                 },
-                pc: controller.variable(u16str!("pc")).unwrap().numu(),
-                mcycle: controller.variable(u16str!("csr_mcycle")).unwrap().numu(),
-                mtime: controller.variable(u16str!("csr_mtime")).unwrap().numu(),
-                minstret: controller.variable(u16str!("csr_minstret")).unwrap().numu(),
+                pc: controller.state.variable(u16str!("pc")).unwrap().numu(),
+                mcycle: controller
+                    .state
+                    .variable(u16str!("csr_mcycle"))
+                    .unwrap()
+                    .numu(),
+                mtime: controller
+                    .state
+                    .variable(u16str!("csr_mtime"))
+                    .unwrap()
+                    .numu(),
+                minstret: controller
+                    .state
+                    .variable(u16str!("csr_minstret"))
+                    .unwrap()
+                    .numu(),
             })?;
 
             if *power != prev_power {
