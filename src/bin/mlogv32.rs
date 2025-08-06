@@ -21,11 +21,12 @@ use mindustry_rs::logic::vm::LVar;
 use mindustry_rs::{
     logic::vm::{
         Building, BuildingData, LValue, LogicVM, LogicVMBuilder, MEMORY_BANK, MESSAGE,
-        MICRO_PROCESSOR, Processor, SWITCH, WORLD_PROCESSOR, decode_utf16,
+        MICRO_PROCESSOR, Processor, SWITCH, WORLD_PROCESSOR,
     },
     types::{Object, Point2, ProcessorConfig, Schematic},
 };
 use serde::Deserialize;
+use widestring::{U16String, u16str};
 
 // tx/rx are from our perspective, not the processor's
 const UART_TX_READ: usize = 254;
@@ -121,7 +122,7 @@ fn get_building<'a>(vm: &'a LogicVM, position: MetaPoint2, name: &str) -> &'a Bu
     let Some(building) = vm.building(position.into()) else {
         panic!("{name} not found at {position}");
     };
-    assert_eq!(building.block.name, name);
+    assert_eq!(building.block.name.as_str(), name);
     building
 }
 
@@ -145,14 +146,14 @@ enum VMCommand {
     Continue,
     Restart,
     SetBreakpoint(Option<u32>),
-    PrintVar(String, Option<String>),
+    PrintVar(U16String, Option<String>),
 }
 
 struct VMState {
     power: bool,
     pause: bool,
     single_step: bool,
-    state: Option<String>,
+    state: Option<U16String>,
     pc: u32,
     mtime: u32,
     mcycle: u32,
@@ -273,7 +274,7 @@ fn tui(stdout: TextContent, debug: TextContent, tx: Sender<VMCommand>, rx: Recei
             siv.call_on_name("pause", |v: &mut Checkbox| v.set_checked(pause));
             siv.call_on_name("single_step", |v: &mut Checkbox| v.set_checked(single_step));
             siv.call_on_name("state", |v: &mut TextView| match state {
-                Some(state) => v.set_content(state),
+                Some(state) => v.set_content(state.to_string_lossy()),
                 None => v.set_content("???"),
             });
             siv.call_on_name("pc", |v: &mut TextView| {
@@ -309,9 +310,10 @@ fn process_cmd(out: &TextContent, cmd: &str) -> Option<VMCommand> {
                 }
             },
         },
-        "p" | "print" | "v" | "var" if cmd.len() >= 2 => {
-            VMCommand::PrintVar(cmd[1].to_string(), cmd.get(2).map(|s| s.to_string()))
-        }
+        "p" | "print" | "v" | "var" if cmd.len() >= 2 => VMCommand::PrintVar(
+            U16String::from_str(cmd[1]),
+            cmd.get(2).map(|s| s.to_string()),
+        ),
         /*
         "i" | "inspect" if cmd.len() >= 3 => {
             let Ok(x) = cmd[1].parse() else {
@@ -472,17 +474,21 @@ fn main() -> Result<(), Box<dyn Error>> {
         });
     }
 
-    let print_var = |processor: &Processor, name: String, radix: Option<String>| {
+    let print_var = |processor: &Processor, name: U16String, radix: Option<String>| {
         match processor
             .variable(&name)
             .or_else(|| globals.get(&name).map(|v| v.get(&processor.state)))
         {
             Some(value) => match radix.as_deref() {
-                Some("x") => tui_println!(debug, "{name} = {:#010x}", value.num() as u32),
-                Some("b") => tui_println!(debug, "{name} = {:#034b}", value.num() as u32),
-                _ => tui_println!(debug, "{name} = {value:?}"),
+                Some("x") => {
+                    tui_println!(debug, "{} = {:#010x}", name.display(), value.num() as u32)
+                }
+                Some("b") => {
+                    tui_println!(debug, "{} = {:#034b}", name.display(), value.num() as u32)
+                }
+                _ => tui_println!(debug, "{} = {value:?}", name.display()),
             },
-            None => tui_println!(debug, "{name} = <undefined>"),
+            None => tui_println!(debug, "{} = <undefined>", name.display()),
         };
     };
 
@@ -556,7 +562,7 @@ fn main() -> Result<(), Box<dyn Error>> {
                         *single_step = false;
                     }
                     VMCommand::Restart => {
-                        controller.set_variable("pc", 0.into())?;
+                        controller.set_variable(u16str!("pc"), 0.into())?;
                         *power = true;
                         *pause = false;
                         *single_step = false;
@@ -564,11 +570,11 @@ fn main() -> Result<(), Box<dyn Error>> {
                         next_state_update = start;
                     }
                     VMCommand::SetBreakpoint(Some(value)) => {
-                        config.set_variable("BREAKPOINT_ADDRESS", value.into())?;
+                        config.set_variable(u16str!("BREAKPOINT_ADDRESS"), value.into())?;
                         tui_println!(debug, "Breakpoint set: {value:#010x}");
                     }
                     VMCommand::SetBreakpoint(None) => {
-                        config.set_variable("BREAKPOINT_ADDRESS", LValue::Null)?;
+                        config.set_variable(u16str!("BREAKPOINT_ADDRESS"), LValue::Null)?;
                         tui_println!(debug, "Breakpoint cleared.");
                     }
                     VMCommand::PrintVar(name, radix) => print_var(controller, name, radix),
@@ -580,14 +586,14 @@ fn main() -> Result<(), Box<dyn Error>> {
                 power: *power,
                 pause: *pause,
                 single_step: *single_step,
-                state: match controller.variable("state").unwrap() {
-                    LValue::String(state) => Some(state.to_string()),
+                state: match controller.variable(u16str!("state")).unwrap() {
+                    LValue::String(state) => Some(state.to_ustring()),
                     _ => None,
                 },
-                pc: controller.variable("pc").unwrap().numu(),
-                mcycle: controller.variable("csr_mcycle").unwrap().numu(),
-                mtime: controller.variable("csr_mtime").unwrap().numu(),
-                minstret: controller.variable("csr_minstret").unwrap().numu(),
+                pc: controller.variable(u16str!("pc")).unwrap().numu(),
+                mcycle: controller.variable(u16str!("csr_mcycle")).unwrap().numu(),
+                mtime: controller.variable(u16str!("csr_mtime")).unwrap().numu(),
+                minstret: controller.variable(u16str!("csr_minstret")).unwrap().numu(),
             })?;
 
             if *power != prev_power {
@@ -597,7 +603,7 @@ fn main() -> Result<(), Box<dyn Error>> {
                 } else {
                     tui_println!(debug, "Processor halted.");
                     if !error_output.is_empty() {
-                        tui_println!(debug, "Error output: {}", decode_utf16(error_output));
+                        tui_println!(debug, "Error output: {}", error_output.display());
                     }
                     tui_println!(debug, "Runtime: {time:?}");
                     tui_println!(debug, "Ticks completed: {ticks}");

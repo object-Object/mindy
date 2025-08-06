@@ -3,12 +3,13 @@ use std::{borrow::Cow, collections::HashMap, rc::Rc};
 use enum_dispatch::enum_dispatch;
 use lazy_static::lazy_static;
 use noise::{NoiseFn, Simplex};
+use widestring::{U16Str, u16str};
 
 use super::{
     LogicVM, VMLoadError, VMLoadResult,
     buildings::BuildingData,
-    processor::{MAX_TEXT_BUFFER, ProcessorState, encode_utf16},
-    variables::{Content, LValue, LVar, RAD_DEG},
+    processor::{MAX_TEXT_BUFFER, ProcessorState},
+    variables::{Content, LValue, LVar, RAD_DEG, Variables},
 };
 use crate::{
     logic::{
@@ -20,6 +21,7 @@ use crate::{
         colors::{self, f32_to_double_bits, f64_from_double_bits},
         content,
     },
+    utils::u16format,
 };
 
 const MAX_IPT: i32 = 1000;
@@ -35,20 +37,20 @@ pub(super) trait InstructionTrait {
     fn execute(
         &self,
         state: &mut ProcessorState,
-        variables: &HashMap<String, LVar>,
+        variables: &Variables,
         vm: &LogicVM,
     ) -> InstructionResult;
 }
 
 trait SimpleInstructionTrait {
-    fn execute(&self, state: &mut ProcessorState, variables: &HashMap<String, LVar>, vm: &LogicVM);
+    fn execute(&self, state: &mut ProcessorState, variables: &Variables, vm: &LogicVM);
 }
 
 impl<T: SimpleInstructionTrait> InstructionTrait for T {
     fn execute(
         &self,
         state: &mut ProcessorState,
-        variables: &HashMap<String, LVar>,
+        variables: &Variables,
         vm: &LogicVM,
     ) -> InstructionResult {
         self.execute(state, variables, vm);
@@ -109,8 +111,8 @@ pub(super) struct InstructionBuilder {
 impl InstructionBuilder {
     pub(super) fn late_init(
         self,
-        variables: &mut HashMap<String, LVar>,
-        globals: &HashMap<String, LVar>,
+        variables: &mut Variables,
+        globals: &Variables,
         privileged: bool,
         num_instructions: usize,
     ) -> VMLoadResult<Instruction> {
@@ -118,6 +120,7 @@ impl InstructionBuilder {
 
         let mut lvar = |value| match value {
             ast::Value::Variable(name) => {
+                let name = name.into();
                 if let Some(var) = globals.get(&name).or_else(|| variables.get(&name)) {
                     var.clone()
                 } else {
@@ -126,7 +129,7 @@ impl InstructionBuilder {
                     var
                 }
             }
-            ast::Value::String(value) => LVar::Constant(LString::Rc(value.into()).into()),
+            ast::Value::String(value) => LVar::Constant(value.into()),
             ast::Value::Number(value) => LVar::Constant(value.into()),
             ast::Value::None => LVar::Constant(LValue::Null),
         };
@@ -338,12 +341,7 @@ impl InstructionBuilder {
 }
 
 impl InstructionTrait for InstructionBuilder {
-    fn execute(
-        &self,
-        _: &mut ProcessorState,
-        _: &HashMap<String, LVar>,
-        _: &LogicVM,
-    ) -> InstructionResult {
+    fn execute(&self, _: &mut ProcessorState, _: &Variables, _: &LogicVM) -> InstructionResult {
         unreachable!("InstructionBuilder should always be replaced during late init")
     }
 }
@@ -356,8 +354,23 @@ pub(super) struct Read {
     address: LVar,
 }
 
+impl Read {
+    fn read_slice<T>(slice: &[T], address: &LValue) -> LValue
+    where
+        T: Copy,
+        LValue: From<Option<T>>,
+    {
+        address
+            .num_usize()
+            .ok()
+            .and_then(|i| slice.get(i))
+            .copied()
+            .into()
+    }
+}
+
 impl SimpleInstructionTrait for Read {
-    fn execute(&self, state: &mut ProcessorState, variables: &HashMap<String, LVar>, vm: &LogicVM) {
+    fn execute(&self, state: &mut ProcessorState, variables: &Variables, vm: &LogicVM) {
         let address = self.address.get(state);
 
         let result = match self.target.get(state) {
@@ -379,25 +392,13 @@ impl SimpleInstructionTrait for Read {
                         // read value at index
                         BuildingData::Memory(memory) => {
                             // coerce the address to a number, and return null if the address is not in range
-                            Some(
-                                address
-                                    .num_usize()
-                                    .ok()
-                                    .and_then(|i| memory.get(i))
-                                    .copied()
-                                    .into(),
-                            )
+                            Some(Self::read_slice(memory, &address))
                         }
 
                         // read char at index
-                        BuildingData::Message(buf) => Some(
-                            address
-                                .num_usize()
-                                .ok()
-                                .and_then(|i| buf.get(i))
-                                .copied()
-                                .into(),
-                        ),
+                        BuildingData::Message(message) => {
+                            Some(Self::read_slice(message.as_slice(), &address))
+                        }
 
                         // no-op if the target doesn't support reading
                         _ => None,
@@ -407,14 +408,7 @@ impl SimpleInstructionTrait for Read {
             },
 
             // read char at index
-            // TODO: inefficient
-            LValue::String(string) => Some(
-                address
-                    .num_usize()
-                    .ok()
-                    .and_then(|i| string.encode_utf16().nth(i))
-                    .into(),
-            ),
+            LValue::String(string) => Some(Self::read_slice(string.as_slice(), &address)),
 
             _ => None,
         };
@@ -432,7 +426,7 @@ pub(super) struct Write {
 }
 
 impl SimpleInstructionTrait for Write {
-    fn execute(&self, state: &mut ProcessorState, variables: &HashMap<String, LVar>, vm: &LogicVM) {
+    fn execute(&self, state: &mut ProcessorState, variables: &Variables, vm: &LogicVM) {
         if let LValue::Building(position) = self.target.get(state)
             && let Some(building) = vm.building(position)
         {
@@ -470,37 +464,37 @@ pub(super) struct Print {
 }
 
 impl Print {
-    fn to_string<'a>(value: &'a LValue, vm: &LogicVM) -> Cow<'a, str> {
+    fn to_string<'a>(value: &'a LValue, vm: &LogicVM) -> Cow<'a, U16Str> {
         match value {
-            LValue::Null => Cow::from("null"),
+            LValue::Null => Cow::from(u16str!("null")),
             LValue::Number(n) => {
                 let rounded = n.round() as u64;
                 Cow::from(if (n - (rounded as f64)).abs() < PRINT_EPSILON {
-                    rounded.to_string()
+                    u16format!("{rounded}")
                 } else {
-                    n.to_string()
+                    u16format!("{n}")
                 })
             }
             LValue::String(string) => Cow::Borrowed(string),
             LValue::Content(content) => Cow::Borrowed(content.name()),
-            LValue::Team(team) => Cow::from(team.name()),
+            LValue::Team(team) => Cow::from(team.name_u16()),
             LValue::Building(position) => vm
                 .building(*position)
-                .map(|b| Cow::Borrowed(b.block.name.as_str()))
-                .unwrap_or(Cow::from("null")),
-            LValue::Sensor(sensor) => Cow::from(sensor.as_ref()),
+                .map(|b| Cow::Borrowed(b.block.name.as_u16str()))
+                .unwrap_or(Cow::from(u16str!("null"))),
+            LValue::Sensor(sensor) => Cow::from(sensor.name_u16()),
         }
     }
 }
 
 impl SimpleInstructionTrait for Print {
-    fn execute(&self, state: &mut ProcessorState, _: &HashMap<String, LVar>, vm: &LogicVM) {
+    fn execute(&self, state: &mut ProcessorState, _: &Variables, vm: &LogicVM) {
         if state.printbuffer.len() >= MAX_TEXT_BUFFER {
             return;
         }
 
         let value = self.value.get(state);
-        state.append_printbuffer(&Print::to_string(&value, vm));
+        state.printbuffer += Print::to_string(&value, vm).as_ref();
     }
 }
 
@@ -509,7 +503,7 @@ pub(super) struct PrintChar {
 }
 
 impl SimpleInstructionTrait for PrintChar {
-    fn execute(&self, state: &mut ProcessorState, _: &HashMap<String, LVar>, _: &LogicVM) {
+    fn execute(&self, state: &mut ProcessorState, _: &Variables, _: &LogicVM) {
         if state.printbuffer.len() >= MAX_TEXT_BUFFER {
             return;
         }
@@ -517,7 +511,7 @@ impl SimpleInstructionTrait for PrintChar {
         // TODO: content emojis
         if let LValue::Number(c) = self.value.get(state) {
             // Java converts from float to char via int, not directly
-            state.printbuffer.push(c.floor() as u32 as u16);
+            state.printbuffer.push_slice([c.floor() as u32 as u16]);
         }
     }
 }
@@ -527,7 +521,7 @@ pub(super) struct Format {
 }
 
 impl SimpleInstructionTrait for Format {
-    fn execute(&self, state: &mut ProcessorState, _: &HashMap<String, LVar>, vm: &LogicVM) {
+    fn execute(&self, state: &mut ProcessorState, _: &Variables, vm: &LogicVM) {
         if state.printbuffer.len() >= MAX_TEXT_BUFFER {
             return;
         }
@@ -535,7 +529,7 @@ impl SimpleInstructionTrait for Format {
         let mut placeholder_index = MAX_TEXT_BUFFER;
         let mut placeholder_number = 10;
 
-        for (i, vals) in state.printbuffer.windows(3).enumerate() {
+        for (i, vals) in state.printbuffer.as_vec().windows(3).enumerate() {
             let &[left, c, right] = vals else {
                 unreachable!()
             };
@@ -553,9 +547,10 @@ impl SimpleInstructionTrait for Format {
         }
 
         let value = self.value.get(state);
-        state.printbuffer.splice(
+        state.printbuffer.as_mut_vec().splice(
             placeholder_index..placeholder_index + 3,
-            encode_utf16(&Print::to_string(&value, vm)),
+            // TODO: this feels scuffed
+            Print::to_string(&value, vm).into_owned().into_vec(),
         );
     }
 }
@@ -567,7 +562,7 @@ pub(super) struct PrintFlush {
 }
 
 impl SimpleInstructionTrait for PrintFlush {
-    fn execute(&self, state: &mut ProcessorState, _: &HashMap<String, LVar>, vm: &LogicVM) {
+    fn execute(&self, state: &mut ProcessorState, _: &Variables, vm: &LogicVM) {
         if let LValue::Building(position) = self.target.get(state)
             && let Some(target) = vm.building(position)
             && let Ok(mut data) = target.data.try_borrow_mut()
@@ -588,7 +583,7 @@ pub(super) struct GetLink {
 }
 
 impl SimpleInstructionTrait for GetLink {
-    fn execute(&self, state: &mut ProcessorState, _: &HashMap<String, LVar>, _: &LogicVM) {
+    fn execute(&self, state: &mut ProcessorState, _: &Variables, _: &LogicVM) {
         let result = match self.index.get(state).num_usize() {
             Ok(index) => state.link(index).into(),
             Err(_) => LValue::Null,
@@ -604,7 +599,7 @@ pub(super) struct Control {
 }
 
 impl SimpleInstructionTrait for Control {
-    fn execute(&self, state: &mut ProcessorState, variables: &HashMap<String, LVar>, vm: &LogicVM) {
+    fn execute(&self, state: &mut ProcessorState, variables: &Variables, vm: &LogicVM) {
         if self.control == LAccess::Enabled
             && let LValue::Building(position) = self.target.get(state)
             && (state.privileged() || state.linked_positions().contains(&position))
@@ -635,7 +630,7 @@ pub(super) struct Sensor {
 }
 
 impl SimpleInstructionTrait for Sensor {
-    fn execute(&self, state: &mut ProcessorState, variables: &HashMap<String, LVar>, vm: &LogicVM) {
+    fn execute(&self, state: &mut ProcessorState, variables: &Variables, vm: &LogicVM) {
         use LAccess::*;
 
         let target = self.target.get(state);
@@ -655,34 +650,34 @@ impl SimpleInstructionTrait for Sensor {
                         ItemCapacity => block.item_capacity.into(),
                         LiquidCapacity => block.liquid_capacity.into(),
                         Id => block.logic_id.into(),
-                        Name => LString::Static(&block.name).into(),
+                        Name => LString::Static(block.name.as_u16str()).into(),
                         _ => LValue::Null,
                     },
 
                     // TODO: color
                     Content::Item(item) => match sensor {
                         Id => item.logic_id.into(),
-                        Name => LString::Static(&item.name).into(),
+                        Name => LString::Static(item.name.as_u16str()).into(),
                         _ => LValue::Null,
                     },
 
                     // TODO: color
                     Content::Liquid(liquid) => match sensor {
                         Id => liquid.logic_id.into(),
-                        Name => LString::Static(&liquid.name).into(),
+                        Name => LString::Static(liquid.name.as_u16str()).into(),
                         _ => LValue::Null,
                     },
 
                     // TODO: health, maxHealth, size, itemCapacity, speed, payloadCapacity
                     Content::Unit(unit) => match sensor {
                         Id => unit.logic_id.into(),
-                        Name => LString::Static(&unit.name).into(),
+                        Name => LString::Static(unit.name.as_u16str()).into(),
                         _ => LValue::Null,
                     },
                 },
 
                 LValue::Team(team) => match sensor {
-                    Name => LString::Static(team.name()).into(),
+                    Name => LString::Static(team.name_u16()).into(),
                     Id => team.0.into(),
                     Color => team.color().into(),
                     _ => LValue::Null,
@@ -788,7 +783,7 @@ pub(super) struct Set {
 }
 
 impl SimpleInstructionTrait for Set {
-    fn execute(&self, state: &mut ProcessorState, _: &HashMap<String, LVar>, _: &LogicVM) {
+    fn execute(&self, state: &mut ProcessorState, _: &Variables, _: &LogicVM) {
         self.to.set_from(state, &self.from);
     }
 }
@@ -801,7 +796,7 @@ pub(super) struct Op {
 }
 
 impl SimpleInstructionTrait for Op {
-    fn execute(&self, state: &mut ProcessorState, _: &HashMap<String, LVar>, _: &LogicVM) {
+    fn execute(&self, state: &mut ProcessorState, _: &Variables, _: &LogicVM) {
         // TODO: this seems inefficient for unary and condition ops
         let x = self.x.get(state).num();
         let y = self.y.get(state).num();
@@ -881,7 +876,7 @@ pub(super) struct Select {
 }
 
 impl SimpleInstructionTrait for Select {
-    fn execute(&self, state: &mut ProcessorState, _: &HashMap<String, LVar>, _: &LogicVM) {
+    fn execute(&self, state: &mut ProcessorState, _: &Variables, _: &LogicVM) {
         let result = if Jump::test(self.op, &self.x, &self.y, state) {
             &self.if_true
         } else {
@@ -898,7 +893,7 @@ pub(super) struct Lookup {
 }
 
 impl SimpleInstructionTrait for Lookup {
-    fn execute(&self, state: &mut ProcessorState, _: &HashMap<String, LVar>, _: &LogicVM) {
+    fn execute(&self, state: &mut ProcessorState, _: &Variables, _: &LogicVM) {
         let id = self.id.get(state).numi();
 
         let result = match self.content_type {
@@ -940,7 +935,7 @@ pub(super) struct PackColor {
 }
 
 impl SimpleInstructionTrait for PackColor {
-    fn execute(&self, state: &mut ProcessorState, _: &HashMap<String, LVar>, _: &LogicVM) {
+    fn execute(&self, state: &mut ProcessorState, _: &Variables, _: &LogicVM) {
         self.result.set(
             state,
             f32_to_double_bits(
@@ -963,7 +958,7 @@ pub(super) struct UnpackColor {
 }
 
 impl SimpleInstructionTrait for UnpackColor {
-    fn execute(&self, state: &mut ProcessorState, _: &HashMap<String, LVar>, _: &LogicVM) {
+    fn execute(&self, state: &mut ProcessorState, _: &Variables, _: &LogicVM) {
         let (r, g, b, a) = f64_from_double_bits(self.value.get(state).num());
         self.r.set(state, r.into());
         self.g.set(state, g.into());
@@ -977,7 +972,7 @@ impl SimpleInstructionTrait for UnpackColor {
 pub(super) struct Noop;
 
 impl SimpleInstructionTrait for Noop {
-    fn execute(&self, _: &mut ProcessorState, _: &HashMap<String, LVar>, _: &LogicVM) {}
+    fn execute(&self, _: &mut ProcessorState, _: &Variables, _: &LogicVM) {}
 }
 
 pub(super) struct Wait {
@@ -985,12 +980,7 @@ pub(super) struct Wait {
 }
 
 impl InstructionTrait for Wait {
-    fn execute(
-        &self,
-        state: &mut ProcessorState,
-        _: &HashMap<String, LVar>,
-        _: &LogicVM,
-    ) -> InstructionResult {
+    fn execute(&self, state: &mut ProcessorState, _: &Variables, _: &LogicVM) -> InstructionResult {
         let wait_ms = self.value.get(state).num() * 1000.;
         if wait_ms <= 0. {
             InstructionResult::Ok
@@ -1004,12 +994,7 @@ impl InstructionTrait for Wait {
 pub(super) struct Stop;
 
 impl InstructionTrait for Stop {
-    fn execute(
-        &self,
-        state: &mut ProcessorState,
-        _: &HashMap<String, LVar>,
-        _: &LogicVM,
-    ) -> InstructionResult {
+    fn execute(&self, state: &mut ProcessorState, _: &Variables, _: &LogicVM) -> InstructionResult {
         state.counter -= 1;
         state.set_stopped(true);
         InstructionResult::Yield
@@ -1019,7 +1004,7 @@ impl InstructionTrait for Stop {
 pub(super) struct End;
 
 impl SimpleInstructionTrait for End {
-    fn execute(&self, state: &mut ProcessorState, _: &HashMap<String, LVar>, _: &LogicVM) {
+    fn execute(&self, state: &mut ProcessorState, _: &Variables, _: &LogicVM) {
         state.counter = state.num_instructions();
     }
 }
@@ -1066,7 +1051,7 @@ impl Jump {
 }
 
 impl SimpleInstructionTrait for Jump {
-    fn execute(&self, state: &mut ProcessorState, _: &HashMap<String, LVar>, _: &LogicVM) {
+    fn execute(&self, state: &mut ProcessorState, _: &Variables, _: &LogicVM) {
         if Self::test(self.op, &self.x, &self.y, state) {
             // we do the bounds check while parsing
             state.counter = self.target;
@@ -1084,7 +1069,7 @@ pub(super) struct GetBlock {
 }
 
 impl SimpleInstructionTrait for GetBlock {
-    fn execute(&self, state: &mut ProcessorState, _: &HashMap<String, LVar>, vm: &LogicVM) {
+    fn execute(&self, state: &mut ProcessorState, _: &Variables, vm: &LogicVM) {
         let result = match vm.building(Point2 {
             x: self.x.get(state).numf().round() as i32,
             y: self.y.get(state).numf().round() as i32,
@@ -1106,7 +1091,7 @@ pub(super) struct SetRate {
 }
 
 impl SimpleInstructionTrait for SetRate {
-    fn execute(&self, state: &mut ProcessorState, _: &HashMap<String, LVar>, _: &LogicVM) {
+    fn execute(&self, state: &mut ProcessorState, _: &Variables, _: &LogicVM) {
         state.ipt = self.value.get(state).numi().clamp(1, MAX_IPT) as f64;
     }
 }

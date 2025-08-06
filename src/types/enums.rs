@@ -4,8 +4,12 @@ use std::hash::Hash;
 
 use binrw::prelude::*;
 use lazy_static::lazy_static;
+use strum::VariantArray;
 use strum_macros::{AsRefStr, IntoStaticStr, VariantArray};
 use velcro::vec;
+use widestring::{U16Str, U16String};
+
+use crate::utils::leak_u16string;
 
 use super::colors;
 
@@ -120,7 +124,17 @@ pub enum LAccess {
     Color,
 }
 
+impl LAccess {
+    pub fn name_u16(&self) -> &'static U16Str {
+        LACCESS_NAMES_U16[*self as usize]
+    }
+}
+
 lazy_static! {
+    static ref LACCESS_NAMES_U16: Vec<&'static U16Str> = LAccess::VARIANTS
+        .iter()
+        .map(|v| -> &'static U16Str { leak_u16string(U16String::from_str(v)) })
+        .collect();
     static ref TEAM_NAMES: Vec<&'static str> = vec![
         "derelict",
         "sharded",
@@ -131,6 +145,10 @@ lazy_static! {
         "neoplastic",
         ..(Team::BASE_TEAMS.len()..256).map(|i| -> &'static str { format!("team#{i}").leak() }),
     ];
+    static ref TEAM_NAMES_U16: Vec<&'static U16Str> = TEAM_NAMES
+        .iter()
+        .map(|v| -> &'static U16Str { leak_u16string(U16String::from_str(v)) })
+        .collect();
 }
 
 const TEAM_COLORS: &[f64] = &[
@@ -170,6 +188,10 @@ impl Team {
 
     pub fn name(&self) -> &'static str {
         TEAM_NAMES[self.0 as usize]
+    }
+
+    pub fn name_u16(&self) -> &'static U16Str {
+        TEAM_NAMES_U16[self.0 as usize]
     }
 
     pub fn color(&self) -> f64 {

@@ -1,9 +1,12 @@
+use std::{fmt::Display, ops::Deref};
+
 use serde::Deserialize;
+use widestring::{U16Str, U16String};
 
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Block {
-    pub name: String,
+    pub name: MultiString,
     pub id: i32,
     pub logic_id: i32,
     pub size: i32,
@@ -13,7 +16,7 @@ pub struct Block {
     pub liquid_capacity: f32,
     /*
     pub visibility: Visibility,
-    pub subclass: String,
+    pub subclass: MultiString,
     pub configurable: bool,
     pub category: Category,
     pub has_items: bool,
@@ -31,7 +34,7 @@ pub struct Block {
     pub max_nodes: i32,
     pub output_facing: bool,
     pub rotate: bool,
-    pub unit_plans: String,
+    pub unit_plans: MultiString,
     */
 }
 
@@ -46,7 +49,7 @@ impl Eq for Block {}
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Item {
-    pub name: String,
+    pub name: MultiString,
     pub id: i32,
     pub logic_id: i32,
 }
@@ -62,7 +65,7 @@ impl Eq for Item {}
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Liquid {
-    pub name: String,
+    pub name: MultiString,
     pub id: i32,
     pub logic_id: i32,
 }
@@ -78,7 +81,7 @@ impl Eq for Liquid {}
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Unit {
-    pub name: String,
+    pub name: MultiString,
     pub id: i32,
     pub logic_id: i32,
 }
@@ -90,6 +93,66 @@ impl PartialEq for Unit {
 }
 
 impl Eq for Unit {}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(from = "String")]
+pub struct MultiString {
+    string: String,
+    u16string: U16String,
+}
+
+impl MultiString {
+    pub fn as_string(&self) -> &String {
+        &self.string
+    }
+
+    pub fn as_str(&self) -> &str {
+        &self.string
+    }
+
+    pub fn as_u16string(&self) -> &U16String {
+        &self.u16string
+    }
+
+    pub fn as_u16str(&self) -> &U16Str {
+        &self.u16string
+    }
+}
+
+impl From<String> for MultiString {
+    fn from(string: String) -> Self {
+        Self {
+            u16string: U16String::from_str(&string),
+            string,
+        }
+    }
+}
+
+impl From<MultiString> for String {
+    fn from(value: MultiString) -> Self {
+        value.string
+    }
+}
+
+impl From<MultiString> for U16String {
+    fn from(value: MultiString) -> Self {
+        value.u16string
+    }
+}
+
+impl Display for MultiString {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        self.string.fmt(f)
+    }
+}
+
+impl Deref for MultiString {
+    type Target = String;
+
+    fn deref(&self) -> &Self::Target {
+        &self.string
+    }
+}
 
 macro_rules! include_content {
     ($typ:ident, $file:expr) => {

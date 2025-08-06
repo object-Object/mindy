@@ -9,12 +9,13 @@ use binrw::BinRead;
 use itertools::Itertools;
 use replace_with::replace_with_or_default_and_return;
 use thiserror::Error;
+use widestring::{U16Str, U16String};
 
 use super::{
     LValue, LogicVM, VMLoadError, VMLoadResult,
     buildings::Building,
     instructions::{Instruction, InstructionBuilder, InstructionResult, InstructionTrait, Noop},
-    variables::LVar,
+    variables::{LVar, Variables},
 };
 use crate::{
     logic::{LogicParser, ast},
@@ -27,7 +28,7 @@ const MAX_INSTRUCTION_SCALE: f64 = 5.0;
 pub struct Processor {
     instructions: Vec<Instruction>,
     pub state: ProcessorState,
-    pub variables: HashMap<String, LVar>,
+    pub variables: Variables,
 }
 
 impl Processor {
@@ -35,7 +36,7 @@ impl Processor {
         &mut self,
         vm: &LogicVM,
         building: &Building,
-        globals: &HashMap<String, LVar>,
+        globals: &Variables,
     ) -> VMLoadResult<()> {
         // init links
         // this is the only reason for the late init logic to exist
@@ -173,11 +174,11 @@ impl Processor {
         self.instructions[counter].execute(&mut self.state, &self.variables, vm)
     }
 
-    pub fn variable(&self, name: &str) -> Option<LValue> {
+    pub fn variable(&self, name: &U16Str) -> Option<LValue> {
         self.variables.get(name).map(|v| v.get(&self.state))
     }
 
-    pub fn set_variable(&mut self, name: &str, value: LValue) -> Result<(), SetVariableError> {
+    pub fn set_variable(&mut self, name: &U16Str, value: LValue) -> Result<(), SetVariableError> {
         match self.variables.get(name) {
             Some(var) => {
                 if var.set(&mut self.state, value) {
@@ -217,10 +218,10 @@ pub struct ProcessorState {
 
     running_processors: Rc<Cell<usize>>,
     pub(super) time: Rc<Cell<f64>>,
-    // we use Vec<u16> instead of String because Java strings allow invalid UTF-16
+    // we use U16String instead of Utf16String or String because Java strings allow invalid UTF-16
     // this behaviour is user-visible with printchar and when reading from a message
     // https://users.rust-lang.org/t/why-is-a-char-valid-in-jvm-but-invalid-in-rust/73524
-    pub printbuffer: Vec<u16>,
+    pub printbuffer: U16String,
 }
 
 impl ProcessorState {
@@ -259,14 +260,6 @@ impl ProcessorState {
         self.time.get() * 60. / 1000.
     }
 
-    pub fn append_printbuffer(&mut self, value: &str) {
-        self.printbuffer.extend(encode_utf16(value))
-    }
-
-    pub fn decode_printbuffer(&self) -> String {
-        decode_utf16(&self.printbuffer)
-    }
-
     pub fn link(&self, index: usize) -> Option<Point2> {
         self.links.get(index).map(|l| l.position)
     }
@@ -282,14 +275,6 @@ impl ProcessorState {
     pub fn num_instructions(&self) -> usize {
         self.num_instructions
     }
-}
-
-pub fn encode_utf16(value: &str) -> impl Iterator<Item = u16> {
-    value.encode_utf16()
-}
-
-pub fn decode_utf16(value: &[u16]) -> String {
-    String::from_utf16_lossy(value)
 }
 
 /// A representation of a link from this processor to a building.
@@ -402,7 +387,7 @@ impl ProcessorBuilder<'_> {
                 ipt,
                 running_processors,
                 time,
-                printbuffer: Vec::with_capacity(MAX_TEXT_BUFFER),
+                printbuffer: U16String::new(),
             },
         })
     }

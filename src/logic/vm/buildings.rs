@@ -1,11 +1,12 @@
-use std::{cell::RefCell, collections::HashMap, rc::Rc};
+use std::{cell::RefCell, rc::Rc};
 
 use strum_macros::IntoStaticStr;
+use widestring::U16String;
 
 use super::{
-    LogicVMBuilder, VMLoadError, VMLoadResult,
-    processor::{Processor, ProcessorBuilder, ProcessorState, encode_utf16},
-    variables::{LValue, LVar},
+    LogicVMBuilder, VMLoadError, VMLoadResult, Variables,
+    processor::{Processor, ProcessorBuilder, ProcessorState},
+    variables::LValue,
 };
 use crate::types::{
     Object, Point2, ProcessorConfig, SchematicTile,
@@ -71,7 +72,7 @@ impl Building {
 
             MESSAGE | WORLD_MESSAGE => BuildingData::Message(match config {
                 Object::String(Some(value)) if value.len() <= MESSAGE_MAX_LEN => {
-                    let mut result = String::new();
+                    let mut result = U16String::new();
                     let mut count = 0;
                     for c in value.trim().chars() {
                         if c == '\n' {
@@ -80,11 +81,11 @@ impl Building {
                             }
                             count += 1;
                         }
-                        result.push(c);
+                        result.push_char(c);
                     }
-                    encode_utf16(&result).collect()
+                    result
                 }
-                _ => Vec::new(),
+                _ => U16String::new(),
             }),
 
             SWITCH | WORLD_SWITCH => BuildingData::Switch(match config {
@@ -181,12 +182,12 @@ impl Building {
     pub fn borrow_data<T, U, R>(
         &self,
         state: &ProcessorState,
-        variables: &HashMap<String, LVar>,
+        variables: &Variables,
         f_processor: T,
         f_other: U,
     ) -> R
     where
-        T: FnOnce(&ProcessorState, &HashMap<String, LVar>) -> R,
+        T: FnOnce(&ProcessorState, &Variables) -> R,
         U: FnOnce(&BuildingData) -> R,
     {
         match self.data.try_borrow() {
@@ -201,12 +202,12 @@ impl Building {
     pub fn borrow_data_mut<T, U, R>(
         &self,
         state: &mut ProcessorState,
-        variables: &HashMap<String, LVar>,
+        variables: &Variables,
         f_processor: T,
         f_other: U,
     ) -> R
     where
-        T: FnOnce(&mut ProcessorState, &HashMap<String, LVar>) -> R,
+        T: FnOnce(&mut ProcessorState, &Variables) -> R,
         U: FnOnce(&mut BuildingData) -> R,
     {
         match self.data.try_borrow_mut() {
@@ -223,7 +224,7 @@ impl Building {
 pub enum BuildingData {
     Processor(Processor),
     Memory(Box<[f64]>),
-    Message(Vec<u16>),
+    Message(U16String),
     Switch(bool),
     Unknown {
         config: Object,

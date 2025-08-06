@@ -12,24 +12,30 @@ use num_traits::AsPrimitive;
 use strum::VariantArray;
 use thiserror::Error;
 use velcro::{hash_map_from, map_iter_from};
+use widestring::{U16Str, U16String};
 
-use crate::types::{
-    ContentID, ContentType, LAccess, Point2, Team, colors,
-    content::{self, Block, Item, Liquid, Unit},
+use crate::{
+    types::{
+        ContentID, ContentType, LAccess, Point2, Team, colors,
+        content::{self, Block, Item, Liquid, Unit},
+    },
+    utils::u16format,
 };
 
 use super::processor::{ProcessorLink, ProcessorState};
 
 #[allow(clippy::approx_constant)]
-pub const PI: f32 = 3.1415927;
+pub(super) const PI: f32 = 3.1415927;
 #[allow(clippy::approx_constant)]
-pub const E: f32 = 2.7182818;
+pub(super) const E: f32 = 2.7182818;
 
-pub const DEG_RAD: f32 = PI / 180.;
-pub const RAD_DEG: f32 = 180. / PI;
+pub(super) const DEG_RAD: f32 = PI / 180.;
+pub(super) const RAD_DEG: f32 = 180. / PI;
 
-pub const F64_DEG_RAD: f64 = 0.017453292519943295;
-pub const F64_RAD_DEG: f64 = 57.29577951308232;
+pub(super) const F64_DEG_RAD: f64 = 0.017453292519943295;
+pub(super) const F64_RAD_DEG: f64 = 57.29577951308232;
+
+pub(super) type Variables = HashMap<U16String, LVar>;
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum LVar {
@@ -49,7 +55,7 @@ impl LVar {
     }
 
     // https://github.com/Anuken/Mindustry/blob/e95c543fb224b8d8cb21f834e0d02cbdb9f34d48/core/src/mindustry/logic/GlobalVars.java#L41
-    pub fn create_globals() -> HashMap<String, LVar> {
+    pub fn create_globals() -> Variables {
         let mut globals = hash_map_from! {
             "@ipt": Self::Ipt,
 
@@ -109,8 +115,8 @@ impl LVar {
                 .iter()
                 .filter(|(k, _)| matches!(k.chars().next(), Some(c) if c.is_lowercase()))
                 .map(|(k, v)| {
-                    let mut name = "@color".to_string();
-                    name.push(k.chars().next().unwrap().to_ascii_uppercase());
+                    let mut name = U16String::from("@color");
+                    name.push_char(k.chars().next().unwrap().to_ascii_uppercase());
                     name.extend(k.chars().skip(1));
                     (name, constant(*v))
                 }),
@@ -130,7 +136,7 @@ impl LVar {
     }
 
     pub(super) fn late_init_locals(
-        variables: &mut HashMap<String, LVar>,
+        variables: &mut Variables,
         position: Point2,
         links: &[ProcessorLink],
     ) {
@@ -146,7 +152,10 @@ impl LVar {
 
         // if multiple links have the same name, the last one wins
         for link in links {
-            variables.insert(link.name.clone(), constant(LValue::Building(link.position)));
+            variables.insert(
+                U16String::from_str(&link.name),
+                constant(LValue::Building(link.position)),
+            );
         }
     }
 
@@ -215,12 +224,12 @@ where
     LVar::Constant(value.into())
 }
 
-fn named_constant<K, V>(name: K, value: V) -> (String, LVar)
+fn named_constant<K, V>(name: K, value: V) -> (U16String, LVar)
 where
     K: Display,
     V: Into<LValue>,
 {
-    (format!("@{name}"), constant(value))
+    (u16format!("@{name}"), constant(value))
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -287,15 +296,21 @@ impl From<LString> for LValue {
     }
 }
 
-impl From<Rc<str>> for LValue {
-    fn from(value: Rc<str>) -> Self {
+impl From<Rc<U16Str>> for LValue {
+    fn from(value: Rc<U16Str>) -> Self {
         LString::Rc(value).into()
     }
 }
 
-impl From<&'static str> for LValue {
-    fn from(value: &'static str) -> Self {
+impl From<&'static U16Str> for LValue {
+    fn from(value: &'static U16Str) -> Self {
         LString::Static(value).into()
+    }
+}
+
+impl From<String> for LValue {
+    fn from(value: String) -> Self {
+        LString::rc(U16String::from_str(&value).as_ustr()).into()
     }
 }
 
@@ -341,12 +356,22 @@ fn invalid(n: f64) -> bool {
 
 #[derive(Debug, Clone)]
 pub enum LString {
-    Rc(Rc<str>),
-    Static(&'static str),
+    Rc(Rc<U16Str>),
+    Static(&'static U16Str),
+}
+
+impl LString {
+    pub fn rc(value: &U16Str) -> Self {
+        // see implementation of From<&str> for Rc<str>
+        let rc = Rc::<[u16]>::from(value.as_slice());
+        // SAFETY: U16Str is just a wrapper around [u16]
+        let rc = unsafe { Rc::from_raw(Rc::into_raw(rc) as *const U16Str) };
+        Self::Rc(rc)
+    }
 }
 
 impl Deref for LString {
-    type Target = str;
+    type Target = U16Str;
 
     fn deref(&self) -> &Self::Target {
         match self {
@@ -391,12 +416,12 @@ pub enum Content {
 }
 
 impl Content {
-    pub fn name(&self) -> &'static str {
+    pub fn name(&self) -> &'static U16Str {
         match self {
-            Self::Block(Block { name, .. }) => name,
-            Self::Item(Item { name, .. }) => name,
-            Self::Liquid(Liquid { name, .. }) => name,
-            Self::Unit(Unit { name, .. }) => name,
+            Self::Block(Block { name, .. }) => name.as_u16str(),
+            Self::Item(Item { name, .. }) => name.as_u16str(),
+            Self::Liquid(Liquid { name, .. }) => name.as_u16str(),
+            Self::Unit(Unit { name, .. }) => name.as_u16str(),
         }
     }
 
