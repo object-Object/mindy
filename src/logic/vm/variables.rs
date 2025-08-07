@@ -1,5 +1,4 @@
 use std::{
-    borrow::Cow,
     fmt::Display,
     hash::{Hash, Hasher},
     num::TryFromIntError,
@@ -157,6 +156,7 @@ impl LVar {
         }
     }
 
+    #[inline(always)]
     pub fn get<'a>(&'a self, state: &'a ProcessorState) -> LValue {
         match self {
             Self::Variable(i) => state.variables[*i].clone(),
@@ -170,16 +170,8 @@ impl LVar {
         }
     }
 
-    /// Returns `None` if this is a variable for which `self.set` would be a no-op.
-    pub fn try_get_writable<'a>(&'a self, state: &'a ProcessorState) -> Option<Cow<'a, LValue>> {
-        match self {
-            Self::Variable(i) => Some(Cow::Borrowed(&state.variables[*i])),
-            Self::Counter => Some(Cow::Owned(state.counter.into())),
-            _ => None,
-        }
-    }
-
     /// Returns true if the variable was successfully set.
+    #[inline(always)]
     pub fn set(&self, state: &mut ProcessorState, value: LValue) -> bool {
         match self {
             Self::Variable(i) => {
@@ -191,6 +183,7 @@ impl LVar {
         }
     }
 
+    #[inline(always)]
     pub fn set_from(&self, state: &mut ProcessorState, other: &LVar) {
         self.set(state, other.get(state));
     }
