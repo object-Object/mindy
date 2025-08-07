@@ -95,7 +95,6 @@ impl Building {
             }),
 
             _ => BuildingData::Unknown {
-                config: config.clone(),
                 senseable_config: match *config {
                     Object::Content(content) => content.try_into().map(LValue::Content).ok(),
                     _ => None,
@@ -226,10 +225,7 @@ pub enum BuildingData {
     Memory(Box<[f64]>),
     Message(U16String),
     Switch(bool),
-    Unknown {
-        config: Object,
-        senseable_config: Option<LValue>,
-    },
+    Unknown { senseable_config: Option<LValue> },
 }
 
 impl BuildingData {

@@ -347,7 +347,6 @@ mod tests {
             .unwrap()
             .data
             .replace(BuildingData::Unknown {
-                config: Object::Null,
                 senseable_config: None,
             })
             .into_processor()

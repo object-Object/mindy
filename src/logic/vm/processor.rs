@@ -28,7 +28,7 @@ const MAX_INSTRUCTION_SCALE: f64 = 5.0;
 
 #[derive(Debug)]
 pub struct Processor {
-    instructions: Vec<Instruction>,
+    instructions: Box<[Instruction]>,
     pub state: ProcessorState,
 }
 
@@ -44,7 +44,9 @@ impl Processor {
         // TODO: this may produce different link names than mindustry in specific cases
         // ie. if a custom link name is specified for a building that would be built after this processor
         let mut taken_names = HashMap::new();
-        self.state.links.retain_mut(|link| {
+
+        let mut links = std::mem::take(&mut self.state.links).into_vec();
+        links.retain_mut(|link| {
             // resolve the actual building at the link position
             // before this, link.building is just air
 
@@ -111,6 +113,7 @@ impl Processor {
             }
             false // should never happen
         });
+        self.state.links = links.into();
 
         self.state
             .linked_positions
@@ -190,7 +193,7 @@ pub struct ProcessorState {
 
     privileged: bool,
     num_instructions: usize,
-    links: Vec<ProcessorLink>,
+    links: Box<[ProcessorLink]>,
     linked_positions: RapidHashSet<Point2>,
 
     pub counter: usize,
@@ -384,7 +387,6 @@ impl ProcessorBuilder<'_> {
         }
 
         let fake_data = Rc::new(RefCell::new(BuildingData::Unknown {
-            config: Object::Null,
             senseable_config: None,
         }));
 
@@ -405,7 +407,7 @@ impl ProcessorBuilder<'_> {
             .collect();
 
         Ok(Box::new(Processor {
-            instructions,
+            instructions: instructions.into(),
             state: ProcessorState {
                 enabled,
                 stopped: false,
