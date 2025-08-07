@@ -122,6 +122,10 @@ impl LogicVM {
         self.running_processors.get()
     }
 
+    pub fn total_processors(&self) -> usize {
+        self.total_processors
+    }
+
     pub fn time(&self) -> Duration {
         Duration::from_secs_f64(self.time.get() / 1000.)
     }

@@ -168,6 +168,7 @@ enum VMCommand {
 }
 
 struct VMState {
+    running: usize,
     power: bool,
     pause: bool,
     single_step: bool,
@@ -178,7 +179,13 @@ struct VMState {
     minstret: u32,
 }
 
-fn tui(stdout: TextContent, debug: TextContent, tx: Sender<VMCommand>, rx: Receiver<VMState>) {
+fn tui(
+    stdout: TextContent,
+    debug: TextContent,
+    tx: Sender<VMCommand>,
+    rx: Receiver<VMState>,
+    total_processors: usize,
+) {
     let mut siv = cursive::crossterm().into_runner();
 
     siv.set_fps(20);
@@ -239,6 +246,8 @@ fn tui(stdout: TextContent, debug: TextContent, tx: Sender<VMCommand>, rx: Recei
                             )
                             .child(Panel::new(
                                 ListView::new()
+                                    .child("Running", TextView::new("0").with_name("running"))
+                                    .child("Total", TextView::new(total_processors.to_string()))
                                     .child("Power", Checkbox::new().disabled().with_name("power"))
                                     .child("Pause", Checkbox::new().disabled().with_name("pause"))
                                     .child(
@@ -278,6 +287,7 @@ fn tui(stdout: TextContent, debug: TextContent, tx: Sender<VMCommand>, rx: Recei
     while siv.is_running() {
         siv.step();
         for VMState {
+            running,
             power,
             pause,
             single_step,
@@ -288,6 +298,9 @@ fn tui(stdout: TextContent, debug: TextContent, tx: Sender<VMCommand>, rx: Recei
             minstret,
         } in rx.try_iter()
         {
+            siv.call_on_name("running", |v: &mut TextView| {
+                v.set_content(running.to_string())
+            });
             siv.call_on_name("power", |v: &mut Checkbox| v.set_checked(power));
             siv.call_on_name("pause", |v: &mut Checkbox| v.set_checked(pause));
             siv.call_on_name("single_step", |v: &mut Checkbox| v.set_checked(single_step));
@@ -488,8 +501,9 @@ fn main() -> Result<(), Box<dyn Error>> {
     if do_tui {
         let stdout = stdout.clone();
         let debug = debug.clone();
+        let total = vm.total_processors();
         thread::spawn(move || {
-            tui(stdout, debug, tx_cmd, rx_state);
+            tui(stdout, debug, tx_cmd, rx_state, total);
         });
     }
 
@@ -637,6 +651,7 @@ fn main() -> Result<(), Box<dyn Error>> {
 
                 // send state change event
                 tx_state.send(VMState {
+                    running: vm.running_processors(),
                     power: *power,
                     pause: *pause,
                     single_step: *single_step,
