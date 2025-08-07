@@ -163,6 +163,9 @@ enum VMCommand {
     Step,
     Continue,
     Restart,
+    SetPower(bool),
+    SetPause(bool),
+    SetSingleStep(bool),
     SetBreakpoint(Option<u32>),
     PrintVar(U16String, Option<String>),
 }
@@ -248,11 +251,34 @@ fn tui(
                                 ListView::new()
                                     .child("Running", TextView::new("0").with_name("running"))
                                     .child("Total", TextView::new(total_processors.to_string()))
-                                    .child("Power", Checkbox::new().disabled().with_name("power"))
-                                    .child("Pause", Checkbox::new().disabled().with_name("pause"))
+                                    .child(
+                                        "Power",
+                                        Checkbox::new()
+                                            .on_change({
+                                                let tx = tx.clone();
+                                                move |_, v| tx.send(VMCommand::SetPower(v)).unwrap()
+                                            })
+                                            .with_name("power"),
+                                    )
+                                    .child(
+                                        "Pause",
+                                        Checkbox::new()
+                                            .on_change({
+                                                let tx = tx.clone();
+                                                move |_, v| tx.send(VMCommand::SetPause(v)).unwrap()
+                                            })
+                                            .with_name("pause"),
+                                    )
                                     .child(
                                         "Step",
-                                        Checkbox::new().disabled().with_name("single_step"),
+                                        Checkbox::new()
+                                            .on_change({
+                                                let tx = tx.clone();
+                                                move |_, v| {
+                                                    tx.send(VMCommand::SetSingleStep(v)).unwrap()
+                                                }
+                                            })
+                                            .with_name("single_step"),
                                     )
                                     .child("State", TextView::new("???").with_name("state"))
                                     .child("PC", TextView::new("0x00000000").with_name("pc"))
@@ -594,6 +620,15 @@ fn main() -> Result<(), Box<dyn Error>> {
                             *single_step = false;
                             start = Instant::now();
                             next_state_update = start;
+                        }
+                        VMCommand::SetPower(value) => {
+                            *power = value;
+                        }
+                        VMCommand::SetPause(value) => {
+                            *pause = value;
+                        }
+                        VMCommand::SetSingleStep(value) => {
+                            *single_step = value;
                         }
                         VMCommand::SetBreakpoint(Some(value)) => {
                             config
