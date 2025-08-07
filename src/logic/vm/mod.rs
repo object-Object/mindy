@@ -430,6 +430,64 @@ mod tests {
         }
     }
 
+    fn assert_variables_buildings<'a, T, V>(processor: &Processor, vars: T)
+    where
+        T: IntoIterator<Item = (&'a U16Str, V)>,
+        V: Into<Option<Point2>>,
+    {
+        for (name, want) in vars {
+            match want.into() {
+                Some(want) => {
+                    assert!(
+                        processor.state.variables.contains_key(name),
+                        "variable not found: {}",
+                        name.display()
+                    );
+                    match &processor.state.variables[name] {
+                        LValue::Building(building) => {
+                            assert_eq!(building.position, want, "{}", name.display())
+                        }
+                        other => panic!("unexpected variable type: {} = {other:?}", name.display()),
+                    }
+                }
+                None => assert!(
+                    !processor.state.variables.contains_key(name),
+                    "unexpected variable found: {}",
+                    name.display()
+                ),
+            };
+        }
+    }
+
+    fn assert_locals_buildings<'a, T, V>(processor: &Processor, vars: T)
+    where
+        T: IntoIterator<Item = (&'a U16Str, V)>,
+        V: Into<Option<Point2>>,
+    {
+        for (name, want) in vars {
+            match want.into() {
+                Some(want) => {
+                    assert!(
+                        processor.state.locals.contains_key(name),
+                        "variable not found: {}",
+                        name.display()
+                    );
+                    match &processor.state.locals[name].get(&processor.state) {
+                        LValue::Building(building) => {
+                            assert_eq!(building.position, want, "{}", name.display())
+                        }
+                        other => panic!("unexpected variable type: {} = {other:?}", name.display()),
+                    }
+                }
+                None => assert!(
+                    !processor.state.locals.contains_key(name),
+                    "unexpected variable found: {}",
+                    name.display()
+                ),
+            };
+        }
+    }
+
     #[test]
     fn test_empty() {
         let mut vm = LogicVM::from_schematic_tiles(&[]).unwrap();
@@ -522,12 +580,17 @@ mod tests {
             &processor,
             map_iter! {
                 u16str!("link0"): LValue::Null,
-                u16str!("link1"): LValue::Building(Point2 { x: 0, y: 0 }),
-                u16str!("link2"): LValue::Building(Point2 { x: 1, y: 0 }),
                 u16str!("link3"): LValue::Null,
                 u16str!("link4"): LValue::Null,
-                u16str!("link5"): LValue::Building(Point2 { x: 2, y: 0 }),
                 u16str!("link6"): LValue::Null,
+            },
+        );
+        assert_variables_buildings(
+            &processor,
+            map_iter! {
+                u16str!("link1"): Point2 { x: 0, y: 0 },
+                u16str!("link2"): Point2 { x: 1, y: 0 },
+                u16str!("link5"): Point2 { x: 2, y: 0 },
             },
         );
     }
@@ -606,13 +669,18 @@ mod tests {
         assert_locals(
             &processor,
             map_iter! {
-                // conflicts should prefer the last building linked
-                u16str!("processor1"): Some(LValue::Building(Point2 { x: 1, y: 0 })),
-                u16str!("processor2"): Some(LValue::Building(Point2 { x: 3, y: 0 })),
                 u16str!("processor3"): None,
-                u16str!("processor10"): Some(LValue::Building(Point2 { x: 2, y: 0 })),
                 u16str!("cell1"): None,
-                u16str!("cellFoo"): Some(LValue::Building(Point2 { x: 4, y: 0 })),
+            },
+        );
+        assert_locals_buildings(
+            &processor,
+            map_iter! {
+                // conflicts should prefer the last building linked
+                u16str!("processor1"): Point2 { x: 1, y: 0 },
+                u16str!("processor2"): Point2 { x: 3, y: 0 },
+                u16str!("processor10"): Point2 { x: 2, y: 0 },
+                u16str!("cellFoo"): Point2 { x: 4, y: 0 },
             },
         );
     }
@@ -624,13 +692,13 @@ mod tests {
         let mut vm = LogicVM::from_schematic(&schematic).unwrap();
 
         let processor = take_processor(&mut vm, (0, 0));
-        assert_locals(
+        assert_locals_buildings(
             &processor,
             map_iter! {
-                u16str!("cell1"): LValue::Building(Point2 { x: 0, y: 10 }),
-                u16str!("cell2"): LValue::Building(Point2 { x: 7, y: 7 }),
-                u16str!("cell3"): LValue::Building(Point2 { x: 9, y: 5 }),
-                u16str!("bank1"): LValue::Building(Point2 { x: 10, y: 2 }),
+                u16str!("cell1"): Point2 { x: 0, y: 10 },
+                u16str!("cell2"): Point2 { x: 7, y: 7 },
+                u16str!("cell3"): Point2 { x: 9, y: 5 },
+                u16str!("bank1"): Point2 { x: 10, y: 2 },
             },
         );
     }
@@ -707,14 +775,19 @@ mod tests {
         assert_locals(
             &processor,
             map_iter! {
-                u16str!("cell1"): Some(LValue::Building(Point2 { x: 1, y: 11 })),
                 u16str!("cell2"): None,
                 u16str!("bank1"): None,
-                u16str!("cell3"): Some(LValue::Building(Point2 { x: 8, y: 8 })),
                 u16str!("cell4"): None,
                 u16str!("cell5"): None,
-                u16str!("cell6"): Some(LValue::Building(Point2 { x: 10, y: 6 })),
-                u16str!("bank2"): Some(LValue::Building(Point2 { x: 11, y: 3 })),
+            },
+        );
+        assert_locals_buildings(
+            &processor,
+            map_iter! {
+                u16str!("cell1"): Point2 { x: 1, y: 11 },
+                u16str!("cell3"): Point2 { x: 8, y: 8 },
+                u16str!("cell6"): Point2 { x: 10, y: 6 },
+                u16str!("bank2"): Point2 { x: 11, y: 3 },
             },
         );
     }
@@ -894,11 +967,16 @@ mod tests {
             &processor,
             map_iter! {
                 u16str!("link_-1"): LValue::Null,
-                u16str!("link_null"): LValue::Building(Point2 { x: 3, y: 0 }),
-                u16str!("link_0"): LValue::Building(Point2 { x: 3, y: 0 }),
-                u16str!("link_1"): LValue::Building(Point2 { x: 4, y: 0 }),
-                u16str!("link_2"): LValue::Building(Point2 { x: 5, y: 0 }),
                 u16str!("link_3"): LValue::Null,
+            },
+        );
+        assert_variables_buildings(
+            &processor,
+            map_iter! {
+                u16str!("link_null"): Point2 { x: 3, y: 0 },
+                u16str!("link_0"): Point2 { x: 3, y: 0 },
+                u16str!("link_1"): Point2 { x: 4, y: 0 },
+                u16str!("link_2"): Point2 { x: 5, y: 0 },
             },
         );
     }
@@ -974,17 +1052,22 @@ mod tests {
                 u16str!("floor1"): LValue::Content(Content::Block(&content::blocks::STONE)),
                 u16str!("ore1"): LValue::Content(Content::Block(&content::blocks::AIR)),
                 u16str!("block1"): LValue::Content(Content::Block(content::blocks::FROM_NAME["world-processor"])),
-                u16str!("building1"): LValue::Building(Point2 { x: 1, y: 2 }),
 
                 u16str!("floor2"): LValue::Content(Content::Block(&content::blocks::STONE)),
                 u16str!("ore2"): LValue::Content(Content::Block(&content::blocks::AIR)),
                 u16str!("block2"): LValue::Content(Content::Block(content::blocks::FROM_NAME["switch"])),
-                u16str!("building2"): LValue::Building(Point2 { x: 1, y: 3 }),
 
                 u16str!("floor3"): LValue::Null,
                 u16str!("ore3"): LValue::Null,
                 u16str!("block3"): LValue::Null,
                 u16str!("building3"): LValue::Null,
+            },
+        );
+        assert_variables_buildings(
+            &processor,
+            map_iter! {
+                u16str!("building1"): Point2 { x: 1, y: 2 },
+                u16str!("building2"): Point2 { x: 1, y: 3 },
             },
         );
     }
@@ -1387,7 +1470,6 @@ mod tests {
             map_iter! {
                 u16str!("processor_number"): LValue::Number(10.),
                 u16str!("processor_string"): u16str!("abc").into(),
-                u16str!("processor_building"): LValue::Building(Point2 { x: 0, y: 2}),
                 u16str!("processor_counter"): LValue::Number(3.),
                 u16str!("processor_ipt"): LValue::Null,
                 u16str!("processor_this"): LValue::Null,
@@ -1410,6 +1492,12 @@ mod tests {
                 u16str!("message_3"): LValue::Null,
 
                 u16str!("switch"): u16str!("preserved").into(),
+            },
+        );
+        assert_variables_buildings(
+            &processor,
+            map_iter! {
+                u16str!("processor_building"): Point2 { x: 0, y: 2 },
             },
         );
     }

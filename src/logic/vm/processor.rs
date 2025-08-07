@@ -1,5 +1,5 @@
 use std::{
-    cell::Cell,
+    cell::{Cell, RefCell},
     collections::{HashMap, HashSet},
     io::Cursor,
     rc::Rc,
@@ -13,19 +13,20 @@ use thiserror::Error;
 use widestring::{U16Str, U16String};
 
 use super::{
-    Constants, LValue, LogicVM, VMLoadError, VMLoadResult,
+    BuildingData, Constants, LValue, LogicVM, VMLoadError, VMLoadResult,
     buildings::Building,
     instructions::{Instruction, InstructionBuilder, InstructionResult, InstructionTrait, Noop},
     variables::{LVar, Variables},
 };
 use crate::{
     logic::{LogicParser, ast},
-    types::{Object, Point2, ProcessorConfig},
+    types::{Object, Point2, ProcessorConfig, content},
 };
 
 pub(super) const MAX_TEXT_BUFFER: usize = 400;
 const MAX_INSTRUCTION_SCALE: f64 = 5.0;
 
+#[derive(Debug)]
 pub struct Processor {
     instructions: Vec<Instruction>,
     pub state: ProcessorState,
@@ -44,11 +45,13 @@ impl Processor {
         // ie. if a custom link name is specified for a building that would be built after this processor
         let mut taken_names = HashMap::new();
         self.state.links.retain_mut(|link| {
-            // check if the other building exists
+            // resolve the actual building at the link position
+            // before this, link.building is just air
 
-            let Some(other) = vm.building(link.position) else {
+            let Some(other) = vm.building(link.building.position) else {
                 return false;
             };
+            link.building = other.clone();
 
             // check range
 
@@ -111,10 +114,10 @@ impl Processor {
 
         self.state
             .linked_positions
-            .extend(self.state.links.iter().map(|l| l.position));
+            .extend(self.state.links.iter().map(|l| l.building.position));
 
         // now that we know which links are valid, set up the per-processor constants
-        LVar::create_local_constants(&mut self.state.locals, building.position, &self.state.links);
+        LVar::create_local_constants(&mut self.state.locals, building, &self.state.links);
 
         // finally, finish parsing the instructions
         // this must only be done after the link variables have been added
@@ -241,8 +244,8 @@ impl ProcessorState {
         self.time.get() * 60. / 1000.
     }
 
-    pub fn link(&self, index: usize) -> Option<Point2> {
-        self.links.get(index).map(|l| l.position)
+    pub fn link(&self, index: usize) -> Option<&Building> {
+        self.links.get(index).map(|l| &l.building)
     }
 
     pub fn linked_positions(&self) -> &RapidHashSet<Point2> {
@@ -302,7 +305,7 @@ impl ProcessorState {
 #[derive(Debug, Clone)]
 pub(super) struct ProcessorLink {
     pub name: String,
-    pub position: Point2,
+    pub building: Building,
 }
 
 #[derive(Debug)]
@@ -380,14 +383,23 @@ impl ProcessorBuilder<'_> {
             running_processors.update(|n| n + 1);
         }
 
+        let fake_data = Rc::new(RefCell::new(BuildingData::Unknown {
+            config: Object::Null,
+            senseable_config: None,
+        }));
+
         let links = config
             .links
             .iter()
             .map(|link| ProcessorLink {
                 name: link.name.to_string(),
-                position: Point2 {
-                    x: position.x + link.x as i32,
-                    y: position.y + link.y as i32,
+                building: Building {
+                    block: &content::blocks::AIR,
+                    position: Point2 {
+                        x: position.x + link.x as i32,
+                        y: position.y + link.y as i32,
+                    },
+                    data: fake_data.clone(),
                 },
             })
             .collect();

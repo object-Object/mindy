@@ -56,6 +56,7 @@ pub(super) enum InstructionResult {
 
 #[allow(clippy::enum_variant_names)]
 #[enum_dispatch(InstructionTrait)]
+#[derive(Debug)]
 pub(super) enum Instruction {
     InstructionBuilder,
     // input/output
@@ -93,6 +94,7 @@ impl Default for Instruction {
     }
 }
 
+#[derive(Debug)]
 pub(super) struct InstructionBuilder {
     pub(super) instruction: ast::Instruction,
     pub(super) labels: Rc<HashMap<String, usize>>,
@@ -347,6 +349,7 @@ impl InstructionTrait for InstructionBuilder {
 
 // input/output
 
+#[derive(Debug)]
 pub(super) struct Read {
     result: LVar,
     target: LVar,
@@ -369,44 +372,41 @@ impl Read {
 }
 
 impl SimpleInstructionTrait for Read {
-    fn execute(&self, state: &mut ProcessorState, vm: &LogicVM) {
+    fn execute(&self, state: &mut ProcessorState, _: &LogicVM) {
         let address = self.address.get(state);
 
         let result = match self.target.get(state) {
-            LValue::Building(position) => match vm.building(position) {
-                Some(building) => building.borrow_data(
-                    state,
-                    |state| match address.clone() {
-                        // read variable with name, returning null for constants and undefined
-                        LValue::String(name) => {
-                            if *name == u16str!("@counter") {
-                                Some(state.counter.into())
-                            } else {
-                                state.variables.get(&*name).cloned().or(Some(LValue::Null))
-                            }
+            LValue::Building(building) => building.borrow_data(
+                state,
+                |state| match address.clone() {
+                    // read variable with name, returning null for constants and undefined
+                    LValue::String(name) => {
+                        if *name == u16str!("@counter") {
+                            Some(state.counter.into())
+                        } else {
+                            state.variables.get(&*name).cloned().or(Some(LValue::Null))
                         }
+                    }
 
-                        // no-op if the address is not a string
-                        _ => None,
-                    },
-                    |data| match data {
-                        // read value at index
-                        BuildingData::Memory(memory) => {
-                            // coerce the address to a number, and return null if the address is not in range
-                            Some(Self::read_slice(memory, &address))
-                        }
+                    // no-op if the address is not a string
+                    _ => None,
+                },
+                |data| match data {
+                    // read value at index
+                    BuildingData::Memory(memory) => {
+                        // coerce the address to a number, and return null if the address is not in range
+                        Some(Self::read_slice(memory, &address))
+                    }
 
-                        // read char at index
-                        BuildingData::Message(message) => {
-                            Some(Self::read_slice(message.as_slice(), &address))
-                        }
+                    // read char at index
+                    BuildingData::Message(message) => {
+                        Some(Self::read_slice(message.as_slice(), &address))
+                    }
 
-                        // no-op if the target doesn't support reading
-                        _ => None,
-                    },
-                ),
-                None => None,
-            },
+                    // no-op if the target doesn't support reading
+                    _ => None,
+                },
+            ),
 
             // read char at index
             LValue::String(string) => Some(Self::read_slice(string.as_slice(), &address)),
@@ -420,6 +420,7 @@ impl SimpleInstructionTrait for Read {
     }
 }
 
+#[derive(Debug)]
 pub(super) struct Write {
     value: LVar,
     target: LVar,
@@ -427,10 +428,8 @@ pub(super) struct Write {
 }
 
 impl SimpleInstructionTrait for Write {
-    fn execute(&self, state: &mut ProcessorState, vm: &LogicVM) {
-        if let LValue::Building(position) = self.target.get(state)
-            && let Some(building) = vm.building(position)
-        {
+    fn execute(&self, state: &mut ProcessorState, _: &LogicVM) {
+        if let LValue::Building(building) = self.target.get(state) {
             let address = self.address.get(state);
             let value = self.value.get(state);
 
@@ -459,12 +458,13 @@ impl SimpleInstructionTrait for Write {
     }
 }
 
+#[derive(Debug)]
 pub(super) struct Print {
     value: LVar,
 }
 
 impl Print {
-    fn to_string<'a>(value: &'a LValue, vm: &LogicVM) -> Cow<'a, U16Str> {
+    fn to_string<'a>(value: &'a LValue) -> Cow<'a, U16Str> {
         match value {
             LValue::Null => Cow::from(u16str!("null")),
             LValue::Number(n) => {
@@ -478,26 +478,24 @@ impl Print {
             LValue::String(string) => Cow::Borrowed(string),
             LValue::Content(content) => Cow::Borrowed(content.name()),
             LValue::Team(team) => Cow::from(team.name_u16()),
-            LValue::Building(position) => vm
-                .building(*position)
-                .map(|b| Cow::Borrowed(b.block.name.as_u16str()))
-                .unwrap_or(Cow::from(u16str!("null"))),
+            LValue::Building(building) => Cow::Borrowed(building.block.name.as_u16str()),
             LValue::Sensor(sensor) => Cow::from(sensor.name_u16()),
         }
     }
 }
 
 impl SimpleInstructionTrait for Print {
-    fn execute(&self, state: &mut ProcessorState, vm: &LogicVM) {
+    fn execute(&self, state: &mut ProcessorState, _: &LogicVM) {
         if state.printbuffer.len() >= MAX_TEXT_BUFFER {
             return;
         }
 
         let value = self.value.get(state);
-        state.printbuffer += Print::to_string(&value, vm).as_ref();
+        state.printbuffer += Print::to_string(&value).as_ref();
     }
 }
 
+#[derive(Debug)]
 pub(super) struct PrintChar {
     value: LVar,
 }
@@ -516,12 +514,13 @@ impl SimpleInstructionTrait for PrintChar {
     }
 }
 
+#[derive(Debug)]
 pub(super) struct Format {
     value: LVar,
 }
 
 impl SimpleInstructionTrait for Format {
-    fn execute(&self, state: &mut ProcessorState, vm: &LogicVM) {
+    fn execute(&self, state: &mut ProcessorState, _: &LogicVM) {
         if state.printbuffer.len() >= MAX_TEXT_BUFFER {
             return;
         }
@@ -550,21 +549,21 @@ impl SimpleInstructionTrait for Format {
         state.printbuffer.as_mut_vec().splice(
             placeholder_index..placeholder_index + 3,
             // TODO: this feels scuffed
-            Print::to_string(&value, vm).into_owned().into_vec(),
+            Print::to_string(&value).into_owned().into_vec(),
         );
     }
 }
 
 // block control
 
+#[derive(Debug)]
 pub(super) struct PrintFlush {
     target: LVar,
 }
 
 impl SimpleInstructionTrait for PrintFlush {
-    fn execute(&self, state: &mut ProcessorState, vm: &LogicVM) {
-        if let LValue::Building(position) = self.target.get(state)
-            && let Some(target) = vm.building(position)
+    fn execute(&self, state: &mut ProcessorState, _: &LogicVM) {
+        if let LValue::Building(target) = self.target.get(state)
             && let Ok(mut data) = target.data.try_borrow_mut()
             && let BuildingData::Message(message_buffer) = &mut *data
         {
@@ -577,6 +576,7 @@ impl SimpleInstructionTrait for PrintFlush {
     }
 }
 
+#[derive(Debug)]
 pub(super) struct GetLink {
     result: LVar,
     index: LVar,
@@ -585,13 +585,14 @@ pub(super) struct GetLink {
 impl SimpleInstructionTrait for GetLink {
     fn execute(&self, state: &mut ProcessorState, _: &LogicVM) {
         let result = match self.index.get(state).num_usize() {
-            Ok(index) => state.link(index).into(),
+            Ok(index) => state.link(index).cloned().into(),
             Err(_) => LValue::Null,
         };
         self.result.set(state, result);
     }
 }
 
+#[derive(Debug)]
 pub(super) struct Control {
     control: LAccess,
     target: LVar,
@@ -599,11 +600,10 @@ pub(super) struct Control {
 }
 
 impl SimpleInstructionTrait for Control {
-    fn execute(&self, state: &mut ProcessorState, vm: &LogicVM) {
+    fn execute(&self, state: &mut ProcessorState, _: &LogicVM) {
         if self.control == LAccess::Enabled
-            && let LValue::Building(position) = self.target.get(state)
-            && (state.privileged() || state.linked_positions().contains(&position))
-            && let Some(building) = vm.building(position)
+            && let LValue::Building(building) = self.target.get(state)
+            && (state.privileged() || state.linked_positions().contains(&building.position))
         {
             let enabled = self.p1.get(state);
             if !enabled.isobj() {
@@ -622,6 +622,7 @@ impl SimpleInstructionTrait for Control {
     }
 }
 
+#[derive(Debug)]
 pub(super) struct Sensor {
     result: LVar,
     target: LVar,
@@ -629,7 +630,7 @@ pub(super) struct Sensor {
 }
 
 impl SimpleInstructionTrait for Sensor {
-    fn execute(&self, state: &mut ProcessorState, vm: &LogicVM) {
+    fn execute(&self, state: &mut ProcessorState, _: &LogicVM) {
         use LAccess::*;
 
         let target = self.target.get(state);
@@ -682,67 +683,64 @@ impl SimpleInstructionTrait for Sensor {
                     _ => LValue::Null,
                 },
 
-                LValue::Building(position) => match vm.building(position) {
-                    // TODO: solid, health, maxHealth, powerCapacity
-                    Some(building) => match sensor {
-                        X => building.position.x.into(),
-                        Y => building.position.y.into(),
-                        Color => colors::TEAM_SHARDED.into(),
-                        Dead => false.into(),
-                        Team => crate::types::Team::SHARDED.0.into(),
-                        Efficiency => 1.into(),
-                        Timescale => 1.into(),
-                        Range => building.block.range.into(),
-                        Rotation => 0.into(),
-                        TotalItems | TotalLiquids | TotalPower => 0.into(),
-                        ItemCapacity => building.block.item_capacity.into(),
-                        LiquidCapacity => building.block.liquid_capacity.into(),
-                        PowerNetIn | PowerNetOut | PowerNetStored | PowerNetCapacity => 0.into(),
-                        Controlled => false.into(),
-                        PayloadCount => 0.into(),
-                        Size => building.block.size.into(),
-                        CameraX | CameraY | CameraWidth | CameraHeight => 0.into(),
-                        Type => Content::Block(building.block).into(),
-                        FirstItem => LValue::Null,
-                        PayloadType => LValue::Null,
+                // TODO: solid, health, maxHealth, powerCapacity
+                LValue::Building(building) => match sensor {
+                    X => building.position.x.into(),
+                    Y => building.position.y.into(),
+                    Color => colors::TEAM_SHARDED.into(),
+                    Dead => false.into(),
+                    Team => crate::types::Team::SHARDED.0.into(),
+                    Efficiency => 1.into(),
+                    Timescale => 1.into(),
+                    Range => building.block.range.into(),
+                    Rotation => 0.into(),
+                    TotalItems | TotalLiquids | TotalPower => 0.into(),
+                    ItemCapacity => building.block.item_capacity.into(),
+                    LiquidCapacity => building.block.liquid_capacity.into(),
+                    PowerNetIn | PowerNetOut | PowerNetStored | PowerNetCapacity => 0.into(),
+                    Controlled => false.into(),
+                    PayloadCount => 0.into(),
+                    Size => building.block.size.into(),
+                    CameraX | CameraY | CameraWidth | CameraHeight => 0.into(),
+                    Type => Content::Block(building.block).into(),
+                    FirstItem => LValue::Null,
+                    PayloadType => LValue::Null,
 
-                        _ => building.borrow_data(
-                            state,
-                            |state| match sensor {
-                                LAccess::Enabled => state.enabled().into(),
+                    _ => building.borrow_data(
+                        state,
+                        |state| match sensor {
+                            LAccess::Enabled => state.enabled().into(),
+                            _ => LValue::Null,
+                        },
+                        |data| match data {
+                            BuildingData::Memory(memory) => match sensor {
+                                MemoryCapacity => memory.len().into(),
+                                Enabled => true.into(),
                                 _ => LValue::Null,
                             },
-                            |data| match data {
-                                BuildingData::Memory(memory) => match sensor {
-                                    MemoryCapacity => memory.len().into(),
-                                    Enabled => true.into(),
-                                    _ => LValue::Null,
-                                },
 
-                                BuildingData::Message(buf) => match sensor {
-                                    BufferSize => buf.len().into(),
-                                    Enabled => true.into(),
-                                    _ => LValue::Null,
-                                },
-
-                                BuildingData::Switch(enabled) => match sensor {
-                                    Enabled => (*enabled).into(),
-                                    _ => LValue::Null,
-                                },
-
-                                BuildingData::Unknown {
-                                    senseable_config, ..
-                                } => match sensor {
-                                    Config => senseable_config.clone().unwrap_or(LValue::Null),
-                                    Enabled => true.into(),
-                                    _ => LValue::Null,
-                                },
-
-                                BuildingData::Processor(_) => unreachable!(),
+                            BuildingData::Message(buf) => match sensor {
+                                BufferSize => buf.len().into(),
+                                Enabled => true.into(),
+                                _ => LValue::Null,
                             },
-                        ),
-                    },
-                    None => LValue::Null,
+
+                            BuildingData::Switch(enabled) => match sensor {
+                                Enabled => (*enabled).into(),
+                                _ => LValue::Null,
+                            },
+
+                            BuildingData::Unknown {
+                                senseable_config, ..
+                            } => match sensor {
+                                Config => senseable_config.clone().unwrap_or(LValue::Null),
+                                Enabled => true.into(),
+                                _ => LValue::Null,
+                            },
+
+                            BuildingData::Processor(_) => unreachable!(),
+                        },
+                    ),
                 },
 
                 // string length
@@ -775,6 +773,7 @@ impl SimpleInstructionTrait for Sensor {
 
 // operations
 
+#[derive(Debug)]
 pub(super) struct Set {
     to: LVar,
     from: LVar,
@@ -786,6 +785,7 @@ impl SimpleInstructionTrait for Set {
     }
 }
 
+#[derive(Debug)]
 pub(super) struct Op {
     op: LogicOp,
     result: LVar,
@@ -873,6 +873,7 @@ impl SimpleInstructionTrait for Op {
     }
 }
 
+#[derive(Debug)]
 pub(super) struct Select {
     result: LVar,
     op: ConditionOp,
@@ -893,6 +894,7 @@ impl SimpleInstructionTrait for Select {
     }
 }
 
+#[derive(Debug)]
 pub(super) struct Lookup {
     content_type: ContentType,
     result: LVar,
@@ -933,6 +935,7 @@ impl SimpleInstructionTrait for Lookup {
     }
 }
 
+#[derive(Debug)]
 pub(super) struct PackColor {
     result: LVar,
     r: LVar,
@@ -956,6 +959,7 @@ impl SimpleInstructionTrait for PackColor {
     }
 }
 
+#[derive(Debug)]
 pub(super) struct UnpackColor {
     r: LVar,
     g: LVar,
@@ -976,12 +980,14 @@ impl SimpleInstructionTrait for UnpackColor {
 
 // flow control
 
+#[derive(Debug)]
 pub(super) struct Noop;
 
 impl SimpleInstructionTrait for Noop {
     fn execute(&self, _: &mut ProcessorState, _: &LogicVM) {}
 }
 
+#[derive(Debug)]
 pub(super) struct Wait {
     value: LVar,
 }
@@ -998,6 +1004,7 @@ impl InstructionTrait for Wait {
     }
 }
 
+#[derive(Debug)]
 pub(super) struct Stop;
 
 impl InstructionTrait for Stop {
@@ -1008,6 +1015,7 @@ impl InstructionTrait for Stop {
     }
 }
 
+#[derive(Debug)]
 pub(super) struct End;
 
 impl SimpleInstructionTrait for End {
@@ -1016,6 +1024,7 @@ impl SimpleInstructionTrait for End {
     }
 }
 
+#[derive(Debug)]
 pub(super) struct Jump {
     target: usize,
     op: ConditionOp,
@@ -1064,6 +1073,7 @@ impl SimpleInstructionTrait for Jump {
 
 // privileged
 
+#[derive(Debug)]
 pub(super) struct GetBlock {
     layer: TileLayer,
     result: LVar,
@@ -1081,7 +1091,7 @@ impl SimpleInstructionTrait for GetBlock {
                 TileLayer::Floor => Content::Block(&content::blocks::STONE).into(),
                 TileLayer::Ore => Content::Block(&content::blocks::AIR).into(),
                 TileLayer::Block => Content::Block(building.block).into(),
-                TileLayer::Building => building.position.into(),
+                TileLayer::Building => building.clone().into(),
             },
             None => LValue::Null,
         };
@@ -1089,6 +1099,7 @@ impl SimpleInstructionTrait for GetBlock {
     }
 }
 
+#[derive(Debug)]
 pub(super) struct SetRate {
     value: LVar,
 }

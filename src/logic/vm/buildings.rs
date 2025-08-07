@@ -31,6 +31,7 @@ pub const WORLD_SWITCH: &str = "world-switch";
 const MESSAGE_MAX_LEN: usize = 220;
 const MESSAGE_MAX_LINES: usize = 24;
 
+#[derive(Debug, Clone)]
 pub struct Building {
     pub block: &'static Block,
     pub position: Point2,
@@ -213,7 +214,13 @@ impl Building {
     }
 }
 
-#[derive(IntoStaticStr)]
+impl PartialEq for Building {
+    fn eq(&self, other: &Self) -> bool {
+        self.block == other.block && self.position == other.position
+    }
+}
+
+#[derive(Debug, IntoStaticStr)]
 pub enum BuildingData {
     Processor(Box<Processor>),
     Memory(Box<[f64]>),

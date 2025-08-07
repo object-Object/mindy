@@ -15,13 +15,16 @@ use widestring::{U16Str, U16String};
 
 use crate::{
     types::{
-        ContentID, ContentType, LAccess, Point2, Team, colors,
+        ContentID, ContentType, LAccess, Team, colors,
         content::{self, Block, Item, Liquid, Unit},
     },
     utils::{RapidIndexMap, u16format},
 };
 
-use super::processor::{ProcessorLink, ProcessorState};
+use super::{
+    Building,
+    processor::{ProcessorLink, ProcessorState},
+};
 
 #[allow(clippy::approx_constant)]
 pub(super) const PI: f32 = 3.1415927;
@@ -135,13 +138,13 @@ impl LVar {
 
     pub(super) fn create_local_constants(
         locals: &mut Constants,
-        position: Point2,
+        building: &Building,
         links: &[ProcessorLink],
     ) {
         locals.extend(map_iter_from! {
-            "@this": constant(LValue::Building(position)),
-            "@thisx": constant(position.x),
-            "@thisy": constant(position.y),
+            "@this": constant(LValue::Building(building.clone())),
+            "@thisx": constant(building.position.x),
+            "@thisy": constant(building.position.y),
             "@links": constant(links.len()),
         });
 
@@ -149,7 +152,7 @@ impl LVar {
         for link in links {
             locals.insert(
                 U16String::from_str(&link.name),
-                constant(LValue::Building(link.position)),
+                constant(LValue::Building(link.building.clone())),
             );
         }
     }
@@ -215,7 +218,7 @@ pub enum LValue {
     String(LString),
     Content(Content),
     Team(Team),
-    Building(Point2),
+    Building(Building),
     Sensor(LAccess),
 }
 
@@ -308,8 +311,8 @@ impl From<Team> for LValue {
     }
 }
 
-impl From<Point2> for LValue {
-    fn from(value: Point2) -> Self {
+impl From<Building> for LValue {
+    fn from(value: Building) -> Self {
         Self::Building(value)
     }
 }
