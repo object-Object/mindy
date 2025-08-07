@@ -162,7 +162,6 @@ enum VMCommand {
     Pause,
     Step,
     Continue,
-    Restart,
     SetPower(bool),
     SetPause(bool),
     SetSingleStep(bool),
@@ -356,7 +355,6 @@ fn process_cmd(out: &TextContent, cmd: &str) -> Option<VMCommand> {
         "pause" => VMCommand::Pause,
         "s" | "step" => VMCommand::Step,
         "c" | "continue" => VMCommand::Continue,
-        "rs" | "restart" => VMCommand::Restart,
         "b" | "break" if cmd.len() >= 2 => match cmd[1] {
             "clear" => VMCommand::SetBreakpoint(None),
             value => match u32::from_str_radix(value.trim_start_matches("0x"), 16) {
@@ -517,6 +515,8 @@ fn main() -> Result<(), Box<dyn Error>> {
 
     // switch to TUI
 
+    println!("Starting.");
+
     let stdout = TextContent::new("");
     let debug = TextContent::new("");
 
@@ -542,19 +542,18 @@ fn main() -> Result<(), Box<dyn Error>> {
         *single_step = cli.step;
     }
 
-    let mut prev_power = false;
+    let mut prev_power = true;
     let mut frozen = false;
     let mut ticks = 0;
     let mut uart_buf = String::new();
-    let mut start = Instant::now();
-    let mut next_state_update = start;
     let state_update_interval = Duration::from_secs_f64(1. / 8.);
+    let start = Instant::now();
+    let mut run_start = start;
+    let mut next_state_update = start;
 
     loop {
-        let now = Instant::now();
-        let time = now - start;
         if !frozen {
-            vm.do_tick_with_delta(time, cli.delta);
+            vm.do_tick_with_delta(start.elapsed(), cli.delta);
             ticks += 1;
         }
 
@@ -579,6 +578,7 @@ fn main() -> Result<(), Box<dyn Error>> {
             }
         }
 
+        let now = Instant::now();
         if now >= next_state_update
             && let BuildingData::Switch(power) = &mut *power_switch.data.borrow_mut()
             && let BuildingData::Message(error_output) = &*error_output.data.borrow()
@@ -612,14 +612,6 @@ fn main() -> Result<(), Box<dyn Error>> {
                             frozen = false;
                             *pause = false;
                             *single_step = false;
-                        }
-                        VMCommand::Restart => {
-                            controller.state.set_variable(u16str!("pc"), 0.into())?;
-                            *power = true;
-                            *pause = false;
-                            *single_step = false;
-                            start = Instant::now();
-                            next_state_update = start;
                         }
                         VMCommand::SetPower(value) => {
                             *power = value;
@@ -716,8 +708,11 @@ fn main() -> Result<(), Box<dyn Error>> {
             if *power != prev_power {
                 prev_power = *power;
                 if *power {
-                    tui_println!(do_tui, debug, "Starting.");
+                    ticks = 0;
+                    run_start = Instant::now();
+                    next_state_update = run_start;
                 } else {
+                    let time = run_start.elapsed();
                     tui_println!(do_tui, debug, "Processor halted.");
                     if !error_output.is_empty() {
                         tui_println!(do_tui, debug, "Error output: {}", error_output.display());
