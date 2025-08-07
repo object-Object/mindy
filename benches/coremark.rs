@@ -3,22 +3,22 @@ use iai_callgrind::{
 };
 
 #[binary_benchmark]
-#[bench::coremark_10(
-    args = ("mlogv32.msch", "coremark_10.bin"),
+#[bench::coremark_1(
+    args = ("mlogv32.msch", "coremark_1.bin"),
     config = BinaryBenchmarkConfig::default()
         .sandbox(
             Sandbox::new(true)
                 .fixtures([
-                    "benches/coremark_10.bin",
+                    "benches/coremark_1.bin",
                     "schematics/mlogv32.msch",
                 ])
         ),
 )]
-fn bench_coremark_10(schem: &str, bin: &str) -> Command {
+fn bench_coremark_1(schem: &str, bin: &str) -> Command {
     Command::new(env!("CARGO_BIN_EXE_mlogv32"))
         .args([schem, "--bin", bin, "--delta=6", "--no-tui"])
         .build()
 }
 
-binary_benchmark_group!(name = coremark; benchmarks = bench_coremark_10);
+binary_benchmark_group!(name = coremark; benchmarks = bench_coremark_1);
 main!(binary_benchmark_groups = coremark);
