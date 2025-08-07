@@ -6,7 +6,7 @@ use noise::{NoiseFn, Simplex};
 use widestring::{U16Str, u16str};
 
 use super::{
-    Constants, LogicVM, VMLoadError, VMLoadResult,
+    Constants, LogicVM, VMLoadError, VMLoadResult, borrow_data,
     buildings::BuildingData,
     processor::{MAX_TEXT_BUFFER, ProcessorState},
     variables::{Content, LValue, LVar, RAD_DEG},
@@ -376,9 +376,9 @@ impl SimpleInstructionTrait for Read {
         let address = self.address.get(state);
 
         let result = match self.target.get(state) {
-            LValue::Building(building) => building.borrow_data(
-                state,
-                |state| match address.clone() {
+            LValue::Building(building) => borrow_data!(
+                building.data,
+                state => match address {
                     // read variable with name, returning null for constants and undefined
                     LValue::String(name) => {
                         if *name == u16str!("@counter") {
@@ -391,7 +391,7 @@ impl SimpleInstructionTrait for Read {
                     // no-op if the address is not a string
                     _ => None,
                 },
-                |data| match data {
+                data => match data {
                     // read value at index
                     BuildingData::Memory(memory) => {
                         // coerce the address to a number, and return null if the address is not in range
@@ -433,19 +433,19 @@ impl SimpleInstructionTrait for Write {
             let address = self.address.get(state);
             let value = self.value.get(state);
 
-            building.borrow_data_mut(
-                state,
-                |state| match address.clone() {
+            borrow_data!(
+                mut building.data,
+                state => match address {
                     LValue::String(name) if *name == u16str!("@counter") => {
-                        state.try_set_counter(value.clone());
+                        state.try_set_counter(value);
                         state.set_stopped(false);
                     }
                     LValue::String(name) if state.variables.contains_key(&*name) => {
-                        state.variables[&*name] = value.clone();
+                        state.variables[&*name] = value;
                     }
                     _ => {}
                 },
-                |data| {
+                data => {
                     if let BuildingData::Memory(memory) = data
                         && let Ok(address) = address.num_usize()
                         && address < memory.len()
@@ -608,10 +608,10 @@ impl SimpleInstructionTrait for Control {
             let enabled = self.p1.get(state);
             if !enabled.isobj() {
                 let enabled = enabled.numf() != 0.;
-                building.borrow_data_mut(
-                    state,
-                    |state| state.set_enabled(enabled),
-                    |data| {
+                borrow_data!(
+                    mut building.data,
+                    state => state.set_enabled(enabled),
+                    data => {
                         if let BuildingData::Switch(value) = data {
                             *value = enabled;
                         }
@@ -706,13 +706,13 @@ impl SimpleInstructionTrait for Sensor {
                     FirstItem => LValue::Null,
                     PayloadType => LValue::Null,
 
-                    _ => building.borrow_data(
-                        state,
-                        |state| match sensor {
+                    _ => borrow_data!(
+                        building.data,
+                        state => match sensor {
                             LAccess::Enabled => state.enabled().into(),
                             _ => LValue::Null,
                         },
-                        |data| match data {
+                        data => match data {
                             BuildingData::Memory(memory) => match sensor {
                                 MemoryCapacity => memory.len().into(),
                                 Enabled => true.into(),

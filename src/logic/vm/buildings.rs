@@ -5,7 +5,7 @@ use widestring::U16String;
 
 use super::{
     LogicVMBuilder, VMLoadError, VMLoadResult,
-    processor::{Processor, ProcessorBuilder, ProcessorState},
+    processor::{Processor, ProcessorBuilder},
     variables::LValue,
 };
 use crate::types::{
@@ -178,39 +178,6 @@ impl Building {
     ) -> VMLoadResult<Self> {
         Self::from_config(name, (*position).into(), config, builder)
     }
-
-    pub fn borrow_data<T, U, R>(&self, state: &ProcessorState, f_processor: T, f_other: U) -> R
-    where
-        T: FnOnce(&ProcessorState) -> R,
-        U: FnOnce(&BuildingData) -> R,
-    {
-        match self.data.try_borrow() {
-            Ok(data) => match &*data {
-                BuildingData::Processor(p) => f_processor(&p.state),
-                other => f_other(other),
-            },
-            Err(_) => f_processor(state),
-        }
-    }
-
-    pub fn borrow_data_mut<T, U, R>(
-        &self,
-        state: &mut ProcessorState,
-        f_processor: T,
-        f_other: U,
-    ) -> R
-    where
-        T: FnOnce(&mut ProcessorState) -> R,
-        U: FnOnce(&mut BuildingData) -> R,
-    {
-        match self.data.try_borrow_mut() {
-            Ok(mut data) => match &mut *data {
-                BuildingData::Processor(p) => f_processor(&mut p.state),
-                other => f_other(other),
-            },
-            Err(_) => f_processor(state),
-        }
-    }
 }
 
 impl PartialEq for Building {
@@ -218,6 +185,52 @@ impl PartialEq for Building {
         self.block == other.block && self.position == other.position
     }
 }
+
+macro_rules! borrow_data {
+    (
+        mut $ref:expr,
+        $state:ident => $expr1:expr,
+        $data:ident => $expr2:expr $(,)?
+    ) => {
+        borrow_data!(
+            @impl
+            mut, $ref.try_borrow_mut(),
+            $state => $expr1,
+            $data => $expr2
+        )
+    };
+    (
+        $ref:expr,
+        $state:ident => $expr1:expr,
+        $data:ident => $expr2:expr $(,)?
+    ) => {
+        borrow_data!(
+            @impl
+            $ref.try_borrow(),
+            $state => $expr1,
+            $data => $expr2
+        )
+    };
+    (
+        @impl
+        $($mut:ident,)? $ref:expr,
+        $state:ident => $expr1:expr,
+        $data:ident => $expr2:expr
+    ) => {
+        match $ref {
+            Ok($($mut)? data) => match &$($mut)? *data {
+                BuildingData::Processor(p) => {
+                    let $state = &$($mut)? p.state;
+                    $expr1
+                },
+                $data => $expr2,
+            },
+            Err(_) => $expr1,
+        }
+    };
+}
+
+pub(super) use borrow_data;
 
 #[derive(Debug, IntoStaticStr)]
 pub enum BuildingData {
