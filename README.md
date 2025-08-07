@@ -12,3 +12,9 @@ Rust tools for Mindustry.
 cargo build --profile profiling --features mlogv32 --bin mlogv32
 samply record target/profiling/mlogv32.exe schematics/mlogv32.msch --bin path/to/coremark.bin --delta 6
 ```
+
+[Iai-Callgrind](https://iai-callgrind.github.io/iai-callgrind):
+
+```sh
+cargo bench --features mlogv32 --bench coremark -- --nocapture
+```

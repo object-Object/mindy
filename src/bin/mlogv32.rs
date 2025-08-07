@@ -21,7 +21,7 @@ use mindustry_rs::logic::vm::LVar;
 use mindustry_rs::{
     logic::vm::{
         Building, BuildingData, LValue, LogicVM, LogicVMBuilder, MEMORY_BANK, MESSAGE,
-        MICRO_PROCESSOR, Processor, SWITCH, WORLD_PROCESSOR,
+        MICRO_PROCESSOR, SWITCH, WORLD_PROCESSOR,
     },
     types::{Object, Point2, ProcessorConfig, Schematic},
 };
@@ -55,6 +55,10 @@ struct Cli {
     /// Simulated time delta (0.5 = 120 fps, 1 = 60 fps, 2 = 30 fps)
     #[arg(long, default_value_t = 1.0, value_parser = time_delta_parser)]
     delta: f64,
+
+    /// Disable the TUI and all debug features.
+    #[arg(long)]
+    no_tui: bool,
 }
 
 fn time_delta_parser(s: &str) -> Result<f64, String> {
@@ -127,6 +131,20 @@ fn get_building<'a>(vm: &'a LogicVM, position: MetaPoint2, name: &str) -> &'a Bu
 }
 
 macro_rules! tui_println {
+    ($ok:expr, $text:ident) => {
+        if $ok {
+            tui_println!($text)
+        } else {
+            println!()
+        }
+    };
+    ($ok:expr, $text:ident, $($arg:tt)*) => {
+        if $ok {
+            tui_println!($text, $($arg)*)
+        } else {
+            println!($($arg)*)
+        }
+    };
     ($text:ident) => {
         $text.append("\n")
     };
@@ -466,32 +484,14 @@ fn main() -> Result<(), Box<dyn Error>> {
     let (tx_state, rx_state) = mpsc::channel();
     let (tx_cmd, rx_cmd) = mpsc::channel();
 
-    {
+    let do_tui = !cli.no_tui;
+    if do_tui {
         let stdout = stdout.clone();
         let debug = debug.clone();
         thread::spawn(move || {
             tui(stdout, debug, tx_cmd, rx_state);
         });
     }
-
-    let print_var = |processor: &Processor, name: U16String, radix: Option<String>| {
-        match processor
-            .state
-            .variable(&name)
-            .or_else(|| globals.get(&name).map(|v| v.get(&processor.state)))
-        {
-            Some(value) => match radix.as_deref() {
-                Some("x") => {
-                    tui_println!(debug, "{} = {:#010x}", name.display(), value.num() as u32)
-                }
-                Some("b") => {
-                    tui_println!(debug, "{} = {:#034b}", name.display(), value.num() as u32)
-                }
-                _ => tui_println!(debug, "{} = {value:?}", name.display()),
-            },
-            None => tui_println!(debug, "{} = <undefined>", name.display()),
-        };
-    };
 
     // start CPU
 
@@ -505,6 +505,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     let mut prev_power = false;
     let mut frozen = false;
     let mut ticks = 0;
+    let mut uart_buf = String::new();
     let mut start = Instant::now();
     let mut next_state_update = start;
     let state_update_interval = Duration::from_secs_f64(1. / 8.);
@@ -524,112 +525,165 @@ fn main() -> Result<(), Box<dyn Error>> {
             if rx_read != rx_write {
                 while rx_read != rx_write {
                     let c = uart0[UART_RX_START + rx_read] as u8;
-                    stdout.append(c as char);
+                    uart_buf.push(c as char);
                     rx_read = (rx_read + 1) % uart_fifo_modulo;
                 }
                 uart0[UART_RX_READ] = rx_write as f64;
+
+                if do_tui {
+                    stdout.append(&uart_buf);
+                } else {
+                    print!("{uart_buf}");
+                }
+                uart_buf.clear();
             }
         }
 
         if now >= next_state_update
             && let BuildingData::Switch(power) = &mut *power_switch.data.borrow_mut()
-            && let BuildingData::Switch(pause) = &mut *pause_switch.data.borrow_mut()
-            && let BuildingData::Switch(single_step) = &mut *single_step_switch.data.borrow_mut()
-            && let BuildingData::Processor(controller) = &mut *controller.data.borrow_mut()
-            && let BuildingData::Processor(config) = &mut *config.data.borrow_mut()
             && let BuildingData::Message(error_output) = &*error_output.data.borrow()
         {
             next_state_update = now + state_update_interval;
 
-            // handle commands
-            for cmd in rx_cmd.try_iter() {
-                match cmd {
-                    VMCommand::Exit => return Ok(()),
-                    VMCommand::Freeze => {
-                        frozen = true;
-                    }
-                    VMCommand::Pause => {
-                        *pause = true;
-                    }
-                    VMCommand::Step => {
-                        if *pause {
+            if do_tui
+                && let BuildingData::Switch(pause) = &mut *pause_switch.data.borrow_mut()
+                && let BuildingData::Switch(single_step) =
+                    &mut *single_step_switch.data.borrow_mut()
+                && let BuildingData::Processor(controller) = &mut *controller.data.borrow_mut()
+                && let BuildingData::Processor(config) = &mut *config.data.borrow_mut()
+            {
+                // handle commands
+                for cmd in rx_cmd.try_iter() {
+                    match cmd {
+                        VMCommand::Exit => return Ok(()),
+                        VMCommand::Freeze => {
+                            frozen = true;
+                        }
+                        VMCommand::Pause => {
+                            *pause = true;
+                        }
+                        VMCommand::Step => {
+                            if *pause {
+                                *pause = false;
+                                *single_step = true;
+                            }
+                        }
+                        VMCommand::Continue => {
+                            frozen = false;
                             *pause = false;
-                            *single_step = true;
+                            *single_step = false;
+                        }
+                        VMCommand::Restart => {
+                            controller.state.set_variable(u16str!("pc"), 0.into())?;
+                            *power = true;
+                            *pause = false;
+                            *single_step = false;
+                            start = Instant::now();
+                            next_state_update = start;
+                        }
+                        VMCommand::SetBreakpoint(Some(value)) => {
+                            config
+                                .state
+                                .set_variable(u16str!("BREAKPOINT_ADDRESS"), value.into())?;
+                            tui_println!(debug, "Breakpoint set: {value:#010x}");
+                        }
+                        VMCommand::SetBreakpoint(None) => {
+                            config
+                                .state
+                                .set_variable(u16str!("BREAKPOINT_ADDRESS"), LValue::Null)?;
+                            tui_println!(debug, "Breakpoint cleared.");
+                        }
+                        VMCommand::PrintVar(name, radix) => {
+                            match controller
+                                .state
+                                .variable(&name)
+                                .or_else(|| globals.get(&name).map(|v| v.get(&controller.state)))
+                            {
+                                Some(value) => match radix.as_deref() {
+                                    Some("x") => {
+                                        tui_println!(
+                                            do_tui,
+                                            debug,
+                                            "{} = {:#010x}",
+                                            name.display(),
+                                            value.num() as u32
+                                        )
+                                    }
+                                    Some("b") => {
+                                        tui_println!(
+                                            do_tui,
+                                            debug,
+                                            "{} = {:#034b}",
+                                            name.display(),
+                                            value.num() as u32
+                                        )
+                                    }
+                                    _ => {
+                                        tui_println!(
+                                            do_tui,
+                                            debug,
+                                            "{} = {value:?}",
+                                            name.display()
+                                        )
+                                    }
+                                },
+                                None => {
+                                    tui_println!(do_tui, debug, "{} = <undefined>", name.display())
+                                }
+                            };
                         }
                     }
-                    VMCommand::Continue => {
-                        frozen = false;
-                        *pause = false;
-                        *single_step = false;
-                    }
-                    VMCommand::Restart => {
-                        controller.state.set_variable(u16str!("pc"), 0.into())?;
-                        *power = true;
-                        *pause = false;
-                        *single_step = false;
-                        start = Instant::now();
-                        next_state_update = start;
-                    }
-                    VMCommand::SetBreakpoint(Some(value)) => {
-                        config
-                            .state
-                            .set_variable(u16str!("BREAKPOINT_ADDRESS"), value.into())?;
-                        tui_println!(debug, "Breakpoint set: {value:#010x}");
-                    }
-                    VMCommand::SetBreakpoint(None) => {
-                        config
-                            .state
-                            .set_variable(u16str!("BREAKPOINT_ADDRESS"), LValue::Null)?;
-                        tui_println!(debug, "Breakpoint cleared.");
-                    }
-                    VMCommand::PrintVar(name, radix) => print_var(controller, name, radix),
                 }
-            }
 
-            // send state change event
-            tx_state.send(VMState {
-                power: *power,
-                pause: *pause,
-                single_step: *single_step,
-                state: match controller.state.variable(u16str!("state")).unwrap() {
-                    LValue::String(state) => Some(state.to_ustring()),
-                    _ => None,
-                },
-                pc: controller.state.variable(u16str!("pc")).unwrap().numu(),
-                mcycle: controller
-                    .state
-                    .variable(u16str!("csr_mcycle"))
-                    .unwrap()
-                    .numu(),
-                mtime: controller
-                    .state
-                    .variable(u16str!("csr_mtime"))
-                    .unwrap()
-                    .numu(),
-                minstret: controller
-                    .state
-                    .variable(u16str!("csr_minstret"))
-                    .unwrap()
-                    .numu(),
-            })?;
+                // send state change event
+                tx_state.send(VMState {
+                    power: *power,
+                    pause: *pause,
+                    single_step: *single_step,
+                    state: match controller.state.variable(u16str!("state")).unwrap() {
+                        LValue::String(state) => Some(state.to_ustring()),
+                        _ => None,
+                    },
+                    pc: controller.state.variable(u16str!("pc")).unwrap().numu(),
+                    mcycle: controller
+                        .state
+                        .variable(u16str!("csr_mcycle"))
+                        .unwrap()
+                        .numu(),
+                    mtime: controller
+                        .state
+                        .variable(u16str!("csr_mtime"))
+                        .unwrap()
+                        .numu(),
+                    minstret: controller
+                        .state
+                        .variable(u16str!("csr_minstret"))
+                        .unwrap()
+                        .numu(),
+                })?;
+            }
 
             if *power != prev_power {
                 prev_power = *power;
                 if *power {
-                    tui_println!(debug, "Starting.");
+                    tui_println!(do_tui, debug, "Starting.");
                 } else {
-                    tui_println!(debug, "Processor halted.");
+                    tui_println!(do_tui, debug, "Processor halted.");
                     if !error_output.is_empty() {
-                        tui_println!(debug, "Error output: {}", error_output.display());
+                        tui_println!(do_tui, debug, "Error output: {}", error_output.display());
                     }
-                    tui_println!(debug, "Runtime: {time:?}");
-                    tui_println!(debug, "Ticks completed: {ticks}");
-                    tui_println!(debug, "Average time per tick: {:?}", time / ticks);
+                    tui_println!(do_tui, debug, "Runtime: {time:?}");
+                    tui_println!(do_tui, debug, "Ticks completed: {ticks}");
+                    tui_println!(do_tui, debug, "Average time per tick: {:?}", time / ticks);
                     tui_println!(
+                        do_tui,
                         debug,
                         "Average ticks per second: {:.1}",
                         (ticks as f64) / time.as_secs_f64()
                     );
+                    if !do_tui {
+                        return Ok(());
+                    }
                 }
             }
         }
