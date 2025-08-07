@@ -5,12 +5,12 @@ mod variables;
 
 pub use buildings::*;
 pub use processor::*;
+use rapidhash::fast::RapidHashMap;
 pub use variables::*;
 
 use std::{
     borrow::Cow,
     cell::Cell,
-    collections::HashMap,
     rc::Rc,
     time::{Duration, Instant},
 };
@@ -25,7 +25,7 @@ const NANOS_PER_MILLI: u32 = 1_000_000;
 pub struct LogicVM {
     /// Sorted with all processors in update order first, then all other buildings in arbitrary order.
     buildings: Vec<Building>,
-    buildings_map: HashMap<Point2, usize>,
+    buildings_map: RapidHashMap<Point2, usize>,
     total_processors: usize,
     running_processors: Rc<Cell<usize>>,
     time: Rc<Cell<f64>>,
@@ -35,7 +35,7 @@ impl LogicVM {
     fn new() -> Self {
         Self {
             buildings: Vec::new(),
-            buildings_map: HashMap::new(),
+            buildings_map: RapidHashMap::default(),
             total_processors: 0,
             running_processors: Rc::new(Cell::new(0)),
             time: Rc::new(Cell::new(0.)),

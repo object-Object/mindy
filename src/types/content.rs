@@ -156,9 +156,8 @@ impl Deref for MultiString {
 
 macro_rules! include_content {
     ($typ:ident, $file:expr) => {
-        use std::collections::HashMap;
-
         use lazy_static::lazy_static;
+        use rapidhash::fast::RapidHashMap;
 
         use super::$typ;
 
@@ -171,17 +170,17 @@ macro_rules! include_content {
                 .map(|v| v.unwrap())
                 .collect();
             /// Only includes values that have a valid logic id.
-            pub static ref FROM_ID: HashMap<i32, &'static $typ> = VALUES
+            pub static ref FROM_ID: RapidHashMap<i32, &'static $typ> = VALUES
                 .iter()
                 .filter(|v| v.logic_id >= 0)
                 .map(|v| (v.id, v))
                 .collect();
-            pub static ref FROM_LOGIC_ID: HashMap<i32, &'static $typ> = VALUES
+            pub static ref FROM_LOGIC_ID: RapidHashMap<i32, &'static $typ> = VALUES
                 .iter()
                 .filter(|v| v.logic_id >= 0)
                 .map(|v| (v.logic_id, v))
                 .collect();
-            pub static ref FROM_NAME: HashMap<&'static str, &'static $typ> =
+            pub static ref FROM_NAME: RapidHashMap<&'static str, &'static $typ> =
                 VALUES.iter().map(|v| (v.name.as_str(), v)).collect();
         }
     };

@@ -7,7 +7,6 @@ use std::{
     rc::Rc,
 };
 
-use indexmap::IndexMap;
 use num_traits::AsPrimitive;
 use strum::VariantArray;
 use thiserror::Error;
@@ -19,7 +18,7 @@ use crate::{
         ContentID, ContentType, LAccess, Point2, Team, colors,
         content::{self, Block, Item, Liquid, Unit},
     },
-    utils::u16format,
+    utils::{RapidIndexMap, u16format},
 };
 
 use super::processor::{ProcessorLink, ProcessorState};
@@ -35,8 +34,8 @@ pub(super) const RAD_DEG: f32 = 180. / PI;
 pub(super) const F64_DEG_RAD: f64 = 0.017453292519943295;
 pub(super) const F64_RAD_DEG: f64 = 57.29577951308232;
 
-pub(super) type Constants = IndexMap<U16String, LVar, rapidhash::fast::RandomState>;
-pub(super) type Variables = IndexMap<U16String, LValue, rapidhash::fast::RandomState>;
+pub(super) type Constants = RapidIndexMap<U16String, LVar>;
+pub(super) type Variables = RapidIndexMap<U16String, LValue>;
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum LVar {

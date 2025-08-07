@@ -7,6 +7,7 @@ use std::{
 
 use binrw::BinRead;
 use itertools::Itertools;
+use rapidhash::fast::RapidHashSet;
 use replace_with::replace_with_or_default_and_return;
 use thiserror::Error;
 use widestring::{U16Str, U16String};
@@ -187,7 +188,7 @@ pub struct ProcessorState {
     privileged: bool,
     num_instructions: usize,
     links: Vec<ProcessorLink>,
-    linked_positions: HashSet<Point2>,
+    linked_positions: RapidHashSet<Point2>,
 
     pub counter: usize,
     accumulator: f64,
@@ -244,7 +245,7 @@ impl ProcessorState {
         self.links.get(index).map(|l| l.position)
     }
 
-    pub fn linked_positions(&self) -> &HashSet<Point2> {
+    pub fn linked_positions(&self) -> &RapidHashSet<Point2> {
         &self.linked_positions
     }
 
@@ -400,7 +401,7 @@ impl ProcessorBuilder<'_> {
                 privileged,
                 num_instructions,
                 links,
-                linked_positions: HashSet::new(),
+                linked_positions: RapidHashSet::default(),
                 counter: 0,
                 accumulator: 0.,
                 ipt,

@@ -1,3 +1,4 @@
+use indexmap::IndexMap;
 use widestring::{U16Str, U16String};
 
 macro_rules! u16format {
@@ -18,3 +19,5 @@ pub(crate) fn leak_u16string(s: U16String) -> &'static mut U16Str {
     let slice = s.into_vec().leak();
     U16Str::from_slice_mut(slice)
 }
+
+pub(crate) type RapidIndexMap<K, V> = IndexMap<K, V, rapidhash::fast::RandomState>;
