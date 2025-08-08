@@ -3,6 +3,7 @@ use std::{borrow::Cow, collections::HashMap, rc::Rc};
 use enum_dispatch::enum_dispatch;
 use lazy_static::lazy_static;
 use noise::{NoiseFn, Simplex};
+use num_traits::AsPrimitive;
 use widestring::{U16Str, u16str};
 
 use super::{
@@ -361,17 +362,16 @@ pub(super) struct Read {
 
 impl Read {
     #[inline(always)]
-    fn read_slice<T>(slice: &[T], address: &LValue) -> LValue
+    fn read_slice<T>(slice: &[T], address: &LValue) -> f64
     where
-        T: Copy,
-        LValue: From<Option<T>>,
+        T: Copy + AsPrimitive<f64>,
     {
         address
             .num_usize()
             .ok()
             .and_then(|i| slice.get(i))
             .copied()
-            .into()
+            .map_or(f64::NAN, AsPrimitive::as_)
     }
 }
 
@@ -380,49 +380,59 @@ impl SimpleInstructionTrait for Read {
         let address = self.address.get(state);
         let target = self.target.get(state);
 
-        let result = match target.obj() {
+        match target.obj() {
             Some(LObject::Building(building)) => borrow_data!(
-                building.data,
-                state => match address.obj() {
+                building.data.clone(),
+                state: target_state => {
                     // read variable with name, returning null for constants and undefined
-                    Some(LObject::String(name)) => {
+                    // or no-op if the address is not a string
+                    if let Some(LObject::String(name)) = address.obj() {
                         // @counter should never be in state.variables, since globals are checked first
                         if **name != u16str!("@counter") {
-                            state.variables.get(&**name).cloned().or(Some(LValue::NULL))
+                            self.result.set(
+                                state,
+                                target_state
+                                    .variables
+                                    .get(&**name)
+                                    .cloned()
+                                    .unwrap_or(LValue::NULL),
+                            );
                         } else {
-                            Some(state.counter.into())
+                            // SAFETY: usize as f64 should always be finite
+                            unsafe {
+                                self.result
+                                    .setnum_unchecked(state, target_state.counter as f64);
+                            }
                         }
                     }
-
-                    // no-op if the address is not a string
-                    _ => None,
                 },
                 data => match data {
                     // read value at index
                     BuildingData::Memory(memory) => {
                         // coerce the address to a number, and return null if the address is not in range
-                        Some(Self::read_slice(memory, &address))
+                        self.result
+                            .setnum(state, Self::read_slice(memory, &address));
                     }
 
                     // read char at index
                     BuildingData::Message(message) => {
-                        Some(Self::read_slice(message.as_slice(), &address))
+                        self.result
+                            .setnum(state, Self::read_slice(message.as_slice(), &address));
                     }
 
                     // no-op if the target doesn't support reading
-                    _ => None,
+                    _ => {},
                 },
             ),
 
             // read char at index
-            Some(LObject::String(string)) => Some(Self::read_slice(string.as_slice(), &address)),
+            Some(LObject::String(string)) => {
+                self.result
+                    .setnum(state, Self::read_slice(string.as_slice(), &address));
+            }
 
-            _ => None,
+            _ => {}
         };
-
-        if let Some(result) = result {
-            self.result.set(state, result);
-        }
     }
 }
 
@@ -597,11 +607,14 @@ pub(super) struct GetLink {
 
 impl SimpleInstructionTrait for GetLink {
     fn execute(&self, state: &mut ProcessorState, _: &LogicVM) {
-        let result = match self.index.get(state).num_usize() {
-            Ok(index) => state.link(index).cloned().into(),
-            Err(_) => LValue::NULL,
+        match self.index.get(state).num_usize() {
+            // SAFETY: ProcessorLink.building can never become null
+            Ok(index) if index < state.links().len() => unsafe {
+                self.result
+                    .setobj_non_null(state, state.links()[index].building.clone().into());
+            },
+            _ => self.result.set(state, LValue::NULL),
         };
-        self.result.set(state, result);
     }
 }
 
@@ -649,6 +662,26 @@ impl SimpleInstructionTrait for Sensor {
         let target = self.target.get(state);
         let sensor = self.sensor.get(state);
 
+        macro_rules! setnull {
+            () => {{
+                self.result.set(state, LValue::NULL);
+                return;
+            }};
+        }
+
+        macro_rules! setobj {
+            (LObject::Null) => {
+                setnull!()
+            };
+            ($value:expr) => {
+                // SAFETY: we use setnull for setting null values
+                unsafe {
+                    self.result.setobj_non_null(state, $value.into());
+                    return;
+                }
+            };
+        }
+
         let result = match sensor.obj() {
             // normal sensors
             Some(LObject::Sensor(sensor)) => match target.obj() {
@@ -659,96 +692,102 @@ impl SimpleInstructionTrait for Sensor {
                 Some(LObject::Content(content)) => match content {
                     // TODO: color, health, maxHealth, solid, powerCapacity
                     Content::Block(block) => match sensor {
-                        Size => block.size.into(),
-                        ItemCapacity => block.item_capacity.into(),
-                        LiquidCapacity => block.liquid_capacity.into(),
-                        Id => block.logic_id.into(),
-                        Name => LString::Static(block.name.as_u16str()).into(),
-                        _ => LValue::NULL,
+                        Name => setobj!(LString::Static(block.name.as_u16str())),
+                        Size => block.size as f64,
+                        ItemCapacity => block.item_capacity as f64,
+                        LiquidCapacity => block.liquid_capacity as f64,
+                        Id => block.logic_id as f64,
+                        _ => setnull!(),
                     },
 
                     // TODO: color
                     Content::Item(item) => match sensor {
-                        Id => item.logic_id.into(),
-                        Name => LString::Static(item.name.as_u16str()).into(),
-                        _ => LValue::NULL,
+                        Name => setobj!(LString::Static(item.name.as_u16str())),
+                        Id => item.logic_id as f64,
+                        _ => setnull!(),
                     },
 
                     // TODO: color
                     Content::Liquid(liquid) => match sensor {
-                        Id => liquid.logic_id.into(),
-                        Name => LString::Static(liquid.name.as_u16str()).into(),
-                        _ => LValue::NULL,
+                        Name => setobj!(LString::Static(liquid.name.as_u16str())),
+                        Id => liquid.logic_id as f64,
+                        _ => setnull!(),
                     },
 
                     // TODO: health, maxHealth, size, itemCapacity, speed, payloadCapacity
                     Content::Unit(unit) => match sensor {
-                        Id => unit.logic_id.into(),
-                        Name => LString::Static(unit.name.as_u16str()).into(),
-                        _ => LValue::NULL,
+                        Name => setobj!(LString::Static(unit.name.as_u16str())),
+                        Id => unit.logic_id as f64,
+                        _ => setnull!(),
                     },
                 },
 
                 Some(LObject::Team(team)) => match sensor {
-                    Name => LString::Static(team.name_u16()).into(),
-                    Id => team.0.into(),
-                    Color => team.color().into(),
-                    _ => LValue::NULL,
+                    Name => setobj!(LString::Static(team.name_u16())),
+                    Id => team.0 as f64,
+                    Color => team.color(),
+                    _ => setnull!(),
                 },
 
                 // TODO: solid, health, maxHealth, powerCapacity
                 Some(LObject::Building(building)) => match sensor {
-                    X => building.position.x.into(),
-                    Y => building.position.y.into(),
-                    Color => colors::TEAM_SHARDED.into(),
+                    X => building.position.x as f64,
+                    Y => building.position.y as f64,
+                    Color => colors::TEAM_SHARDED_F64,
                     Dead => false.into(),
-                    Team => crate::types::Team::SHARDED.0.into(),
-                    Efficiency => 1.into(),
-                    Timescale => 1.into(),
-                    Range => building.block.range.into(),
-                    Rotation => 0.into(),
-                    TotalItems | TotalLiquids | TotalPower => 0.into(),
-                    ItemCapacity => building.block.item_capacity.into(),
-                    LiquidCapacity => building.block.liquid_capacity.into(),
-                    PowerNetIn | PowerNetOut | PowerNetStored | PowerNetCapacity => 0.into(),
+                    Team => crate::types::Team::SHARDED.0 as f64,
+                    Efficiency => 1.,
+                    Timescale => 1.,
+                    Range => building.block.range,
+                    Rotation => 0.,
+                    TotalItems | TotalLiquids | TotalPower => 0.,
+                    ItemCapacity => building.block.item_capacity as f64,
+                    LiquidCapacity => building.block.liquid_capacity as f64,
+                    PowerNetIn | PowerNetOut | PowerNetStored | PowerNetCapacity => 0.,
                     Controlled => false.into(),
-                    PayloadCount => 0.into(),
-                    Size => building.block.size.into(),
-                    CameraX | CameraY | CameraWidth | CameraHeight => 0.into(),
-                    Type => Content::Block(building.block).into(),
-                    FirstItem => LValue::NULL,
-                    PayloadType => LValue::NULL,
+                    PayloadCount => 0.,
+                    Size => building.block.size as f64,
+                    CameraX | CameraY | CameraWidth | CameraHeight => 0.,
+                    Type => setobj!(Content::Block(building.block)),
+                    FirstItem => setnull!(),
+                    PayloadType => setnull!(),
 
                     _ => borrow_data!(
-                        building.data,
+                        building.data.clone(),
                         state => match sensor {
                             LAccess::Enabled => state.enabled().into(),
-                            _ => LValue::NULL,
+                            _ => setnull!(),
                         },
                         data => match data {
                             BuildingData::Memory(memory) => match sensor {
-                                MemoryCapacity => memory.len().into(),
+                                MemoryCapacity => memory.len() as f64,
                                 Enabled => true.into(),
-                                _ => LValue::NULL,
+                                _ => setnull!(),
                             },
 
                             BuildingData::Message(buf) => match sensor {
-                                BufferSize => buf.len().into(),
+                                BufferSize => buf.len() as f64,
                                 Enabled => true.into(),
-                                _ => LValue::NULL,
+                                _ => setnull!(),
                             },
 
                             BuildingData::Switch(enabled) => match sensor {
                                 Enabled => (*enabled).into(),
-                                _ => LValue::NULL,
+                                _ => setnull!(),
                             },
 
                             BuildingData::Unknown {
                                 senseable_config, ..
                             } => match sensor {
-                                Config => senseable_config.clone().unwrap_or(LValue::NULL),
+                                Config => match senseable_config {
+                                    Some(value) => {
+                                        self.result.set(state, value.clone());
+                                        return;
+                                    }
+                                    None => setnull!(),
+                                },
                                 Enabled => true.into(),
-                                _ => LValue::NULL,
+                                _ => setnull!(),
                             },
 
                             BuildingData::Processor(_) => unreachable!(),
@@ -758,10 +797,10 @@ impl SimpleInstructionTrait for Sensor {
 
                 // string length
                 Some(LObject::String(string)) if matches!(sensor, BufferSize | Size) => {
-                    string.len().into()
+                    string.len() as f64
                 }
 
-                _ => LValue::NULL,
+                _ => setnull!(),
             },
 
             // if target doesn't implement Senseable, write null
@@ -770,17 +809,17 @@ impl SimpleInstructionTrait for Sensor {
                 Some(LObject::Content(_) | LObject::Team(_) | LObject::Building(_))
             ) =>
             {
-                LValue::NULL
+                setnull!()
             }
 
             // items/liquids aren't implemented, so always write null if sensing content
-            Some(LObject::Content(_)) => LValue::NULL,
+            Some(LObject::Content(_)) => setnull!(),
 
             // if target is Senseable and sensor isn't Content or LAccess, do not write to result
             _ => return,
         };
 
-        self.result.set(state, result);
+        self.result.setnum(state, result);
     }
 }
 
@@ -820,14 +859,14 @@ impl SimpleInstructionTrait for Op {
         }
 
         let result = match self.op {
-            LogicOp::Add => (x + y).into(),
-            LogicOp::Sub => (x - y).into(),
-            LogicOp::Mul => (x * y).into(),
-            LogicOp::Div => (x / y).into(),
-            LogicOp::Idiv => (x / y).floor().into(),
-            LogicOp::Mod => (x % y).into(),
-            LogicOp::Emod => (((x % y) + y) % y).into(),
-            LogicOp::Pow => x.powf(y).into(),
+            LogicOp::Add => x + y,
+            LogicOp::Sub => x - y,
+            LogicOp::Mul => x * y,
+            LogicOp::Div => x / y,
+            LogicOp::Idiv => (x / y).floor(),
+            LogicOp::Mod => x % y,
+            LogicOp::Emod => ((x % y) + y) % y,
+            LogicOp::Pow => x.powf(y),
 
             LogicOp::Equal => Jump::weak_equal(x_val, y_val).into(),
             LogicOp::NotEqual => (!Jump::weak_equal(x_val, y_val)).into(),
@@ -838,51 +877,57 @@ impl SimpleInstructionTrait for Op {
             LogicOp::StrictEqual => (x_val == y_val).into(),
 
             LogicOp::Land => (x != 0. && y != 0.).into(),
-            LogicOp::Shl => ((x as i64).wrapping_shl(y as i64 as u32)).into(),
-            LogicOp::Shr => ((x as i64).wrapping_shr(y as i64 as u32)).into(),
-            LogicOp::Ushr => (((x as i64 as u64).wrapping_shr(y as i64 as u32)) as i64).into(),
-            LogicOp::Or => ((x as i64) | (y as i64)).into(),
-            LogicOp::And => ((x as i64) & (y as i64)).into(),
-            LogicOp::Xor => ((x as i64) ^ (y as i64)).into(),
-            LogicOp::Not => (!(x as i64)).into(),
+            LogicOp::Shl => (x as i64).wrapping_shl(y as i64 as u32) as f64,
+            LogicOp::Shr => (x as i64).wrapping_shr(y as i64 as u32) as f64,
+            LogicOp::Ushr => ((x as i64 as u64).wrapping_shr(y as i64 as u32)) as i64 as f64,
+            LogicOp::Or => ((x as i64) | (y as i64)) as f64,
+            LogicOp::And => ((x as i64) & (y as i64)) as f64,
+            LogicOp::Xor => ((x as i64) ^ (y as i64)) as f64,
+            LogicOp::Not => (!(x as i64)) as f64,
 
-            LogicOp::Max => x.max(y).into(),
-            LogicOp::Min => x.min(y).into(),
-            LogicOp::Angle => wrap_angle((y as f32).atan2(x as f32) * RAD_DEG).into(),
+            LogicOp::Max => x.max(y),
+            LogicOp::Min => x.min(y),
+            LogicOp::Angle => wrap_angle((y as f32).atan2(x as f32) * RAD_DEG) as f64,
             LogicOp::AngleDiff => {
                 let x = (x as f32) % 360.;
                 let y = (y as f32) % 360.;
-                f32::min(wrap_angle(x - y), wrap_angle(y - x)).into()
+                f32::min(wrap_angle(x - y), wrap_angle(y - x)) as f64
             }
             LogicOp::Len => {
                 let x = x as f32;
                 let y = y as f32;
-                (x * x + y * y).sqrt().into()
+                (x * x + y * y).sqrt() as f64
             }
-            LogicOp::Noise => SIMPLEX.get([x, y]).into(),
-            LogicOp::Abs => x.abs().into(),
+            LogicOp::Noise => SIMPLEX.get([x, y]),
+            LogicOp::Abs => x.abs(),
             // https://github.com/rust-lang/rust/issues/57543
-            LogicOp::Sign => (if x == 0. { 0. } else { x.signum() }).into(),
-            LogicOp::Log => x.ln().into(),
-            LogicOp::Logn => x.log(y).into(),
-            LogicOp::Log10 => x.log10().into(),
-            LogicOp::Floor => x.floor().into(),
-            LogicOp::Ceil => x.ceil().into(),
+            LogicOp::Sign => {
+                if x == 0. {
+                    0.
+                } else {
+                    x.signum()
+                }
+            }
+            LogicOp::Log => x.ln(),
+            LogicOp::Logn => x.log(y),
+            LogicOp::Log10 => x.log10(),
+            LogicOp::Floor => x.floor(),
+            LogicOp::Ceil => x.ceil(),
             // java's Math.round rounds toward +inf, but rust's f64::round rounds away from 0
-            LogicOp::Round => (x + 0.5).floor().into(),
-            LogicOp::Sqrt => x.sqrt().into(),
-            LogicOp::Rand => (rand::random::<f64>() * x).into(),
+            LogicOp::Round => (x + 0.5).floor(),
+            LogicOp::Sqrt => x.sqrt(),
+            LogicOp::Rand => rand::random::<f64>() * x,
 
-            LogicOp::Sin => (x * F64_DEG_RAD).sin().into(),
-            LogicOp::Cos => (x * F64_DEG_RAD).cos().into(),
-            LogicOp::Tan => (x * F64_DEG_RAD).tan().into(),
+            LogicOp::Sin => (x * F64_DEG_RAD).sin(),
+            LogicOp::Cos => (x * F64_DEG_RAD).cos(),
+            LogicOp::Tan => (x * F64_DEG_RAD).tan(),
 
-            LogicOp::Asin => (x.asin() * F64_RAD_DEG).into(),
-            LogicOp::Acos => (x.acos() * F64_RAD_DEG).into(),
-            LogicOp::Atan => (x.atan() * F64_RAD_DEG).into(),
+            LogicOp::Asin => x.asin() * F64_RAD_DEG,
+            LogicOp::Acos => x.acos() * F64_RAD_DEG,
+            LogicOp::Atan => x.atan() * F64_RAD_DEG,
         };
 
-        self.result.set(state, result);
+        self.result.setnum(state, result);
     }
 }
 
@@ -941,10 +986,10 @@ impl SimpleInstructionTrait for Lookup {
 
             ContentType::Team => id.try_into().ok().map(Team).into(),
 
-            _ => LValue::NULL,
+            _ => LObject::Null,
         };
 
-        self.result.set(state, result);
+        self.result.setobj(state, result);
     }
 }
 
@@ -959,16 +1004,14 @@ pub(super) struct PackColor {
 
 impl SimpleInstructionTrait for PackColor {
     fn execute(&self, state: &mut ProcessorState, _: &LogicVM) {
-        self.result.set(
-            state,
-            f32_to_double_bits(
-                self.r.get(state).numf().clamp(0., 1.),
-                self.g.get(state).numf().clamp(0., 1.),
-                self.b.get(state).numf().clamp(0., 1.),
-                self.a.get(state).numf().clamp(0., 1.),
-            )
-            .into(),
+        let value = f32_to_double_bits(
+            self.r.get(state).numf().clamp(0., 1.),
+            self.g.get(state).numf().clamp(0., 1.),
+            self.b.get(state).numf().clamp(0., 1.),
+            self.a.get(state).numf().clamp(0., 1.),
         );
+        // SAFETY: f32_to_double_bits always returns a finite value
+        unsafe { self.result.setnum_unchecked(state, value) };
     }
 }
 
@@ -984,10 +1027,13 @@ pub(super) struct UnpackColor {
 impl SimpleInstructionTrait for UnpackColor {
     fn execute(&self, state: &mut ProcessorState, _: &LogicVM) {
         let (r, g, b, a) = f64_from_double_bits(self.value.get(state).num());
-        self.r.set(state, r.into());
-        self.g.set(state, g.into());
-        self.b.set(state, b.into());
-        self.a.set(state, a.into());
+        // SAFETY: f64_from_double_bits always returns finite values
+        unsafe {
+            self.r.setnum_unchecked(state, r);
+            self.g.setnum_unchecked(state, g);
+            self.b.setnum_unchecked(state, b);
+            self.a.setnum_unchecked(state, a);
+        }
     }
 }
 
@@ -1108,9 +1154,9 @@ impl SimpleInstructionTrait for GetBlock {
                 TileLayer::Block => Content::Block(building.block).into(),
                 TileLayer::Building => building.clone().into(),
             },
-            None => LValue::NULL,
+            None => LObject::Null,
         };
-        self.result.set(state, result);
+        self.result.setobj(state, result);
     }
 }
 

@@ -195,6 +195,66 @@ impl LVar {
     }
 
     #[inline(always)]
+    pub fn setnum(&self, state: &mut ProcessorState, value: f64) {
+        match self {
+            Self::Variable(i) => {
+                let var = &mut state.variables[*i];
+                if LValue::valid(value) {
+                    var.numval = value;
+                    var.objval = None;
+                } else {
+                    *var = LValue::NULL;
+                }
+            }
+            Self::Counter => {
+                state.counter = value as usize;
+            }
+            _ => {}
+        }
+    }
+
+    /// # Safety
+    ///
+    /// The caller must ensure `value` is finite (ie. not infinite or NaN).
+    #[inline(always)]
+    pub unsafe fn setnum_unchecked(&self, state: &mut ProcessorState, value: f64) {
+        match self {
+            Self::Variable(i) => {
+                let var = &mut state.variables[*i];
+                var.numval = value;
+                var.objval = None;
+            }
+            Self::Counter => {
+                state.counter = value as usize;
+            }
+            _ => {}
+        }
+    }
+
+    #[inline(always)]
+    pub fn setobj(&self, state: &mut ProcessorState, value: LObject) {
+        // setting @counter to an object is a no-op
+        if let Self::Variable(i) = self {
+            let var = &mut state.variables[*i];
+            var.numval = (value != LObject::Null).into();
+            var.objval = Some(value);
+        }
+    }
+
+    /// # Safety
+    ///
+    /// The caller must ensure `value` is not `LObject::Null`.
+    #[inline(always)]
+    pub unsafe fn setobj_non_null(&self, state: &mut ProcessorState, value: LObject) {
+        // setting @counter to an object is a no-op
+        if let Self::Variable(i) = self {
+            let var = &mut state.variables[*i];
+            var.numval = 1.;
+            var.objval = Some(value);
+        }
+    }
+
+    #[inline(always)]
     pub fn set_from(&self, state: &mut ProcessorState, other: &LVar) {
         let value = other.get_inner(state, &state.variables);
         if *self != LVar::Counter {
@@ -232,12 +292,18 @@ impl LValue {
         objval: Some(LObject::Null),
     };
 
+    /// The caller must ensure `value` is not `LObject::Null`.
     #[inline(always)]
-    fn non_null(value: LObject) -> Self {
+    unsafe fn non_null(value: LObject) -> Self {
         Self {
             numval: 1.,
             objval: value.into(),
         }
+    }
+
+    #[inline(always)]
+    pub fn valid(value: f64) -> bool {
+        value.is_finite()
     }
 
     #[inline(always)]
@@ -301,13 +367,13 @@ where
 {
     fn from(value: T) -> Self {
         let value = value.as_();
-        if value.is_nan() || value.is_infinite() {
-            Self::NULL
-        } else {
+        if Self::valid(value) {
             Self {
                 numval: value,
                 objval: None,
             }
+        } else {
+            Self::NULL
         }
     }
 }
@@ -323,14 +389,14 @@ impl From<LObject> for LValue {
         if value == LObject::Null {
             Self::NULL
         } else {
-            Self::non_null(value)
+            unsafe { Self::non_null(value) }
         }
     }
 }
 
 impl From<LString> for LValue {
     fn from(value: LString) -> Self {
-        Self::non_null(LObject::String(value))
+        unsafe { Self::non_null(LObject::String(value)) }
     }
 }
 
@@ -354,25 +420,25 @@ impl From<String> for LValue {
 
 impl From<Content> for LValue {
     fn from(value: Content) -> Self {
-        Self::non_null(LObject::Content(value))
+        unsafe { Self::non_null(LObject::Content(value)) }
     }
 }
 
 impl From<Team> for LValue {
     fn from(value: Team) -> Self {
-        Self::non_null(LObject::Team(value))
+        unsafe { Self::non_null(LObject::Team(value)) }
     }
 }
 
 impl From<Building> for LValue {
     fn from(value: Building) -> Self {
-        Self::non_null(LObject::Building(value))
+        unsafe { Self::non_null(LObject::Building(value)) }
     }
 }
 
 impl From<LAccess> for LValue {
     fn from(value: LAccess) -> Self {
-        Self::non_null(LObject::Sensor(value))
+        unsafe { Self::non_null(LObject::Sensor(value)) }
     }
 }
 
@@ -401,6 +467,48 @@ pub enum LObject {
 impl Default for LObject {
     fn default() -> Self {
         Self::Null
+    }
+}
+
+impl From<LString> for LObject {
+    fn from(value: LString) -> Self {
+        Self::String(value)
+    }
+}
+
+impl From<Content> for LObject {
+    fn from(value: Content) -> Self {
+        Self::Content(value)
+    }
+}
+
+impl From<Team> for LObject {
+    fn from(value: Team) -> Self {
+        Self::Team(value)
+    }
+}
+
+impl From<Building> for LObject {
+    fn from(value: Building) -> Self {
+        Self::Building(value)
+    }
+}
+
+impl From<LAccess> for LObject {
+    fn from(value: LAccess) -> Self {
+        Self::Sensor(value)
+    }
+}
+
+impl<T> From<Option<T>> for LObject
+where
+    LObject: From<T>,
+{
+    fn from(value: Option<T>) -> Self {
+        match value {
+            Some(value) => value.into(),
+            None => Self::Null,
+        }
     }
 }
 

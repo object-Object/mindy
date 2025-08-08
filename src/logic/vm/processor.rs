@@ -269,6 +269,11 @@ impl ProcessorState {
     }
 
     #[inline(always)]
+    pub(super) fn links(&self) -> &[ProcessorLink] {
+        &self.links
+    }
+
+    #[inline(always)]
     pub fn linked_positions(&self) -> &RapidHashSet<PackedPoint2> {
         &self.linked_positions
     }

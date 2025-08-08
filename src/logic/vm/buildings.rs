@@ -203,6 +203,18 @@ macro_rules! borrow_data {
     };
     (
         $ref:expr,
+        $state:ident : $bind:ident => $expr1:expr,
+        $data:ident => $expr2:expr $(,)?
+    ) => {
+        borrow_data!(
+            @impl
+            $ref.try_borrow(),
+            $bind, let $bind = &$state => $expr1,
+            $data => $expr2
+        )
+    };
+    (
+        $ref:expr,
         $state:ident => $expr1:expr,
         $data:ident => $expr2:expr $(,)?
     ) => {
@@ -216,7 +228,7 @@ macro_rules! borrow_data {
     (
         @impl
         $($mut:ident,)? $ref:expr,
-        $state:ident => $expr1:expr,
+        $state:ident $(, $bind:stmt)? => $expr1:expr,
         $data:ident => $expr2:expr
     ) => {
         match $ref {
@@ -227,7 +239,10 @@ macro_rules! borrow_data {
                 },
                 $data => $expr2,
             },
-            Err(_) => $expr1,
+            Err(_) => {
+                $($bind)?
+                $expr1
+            },
         }
     };
 }
