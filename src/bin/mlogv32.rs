@@ -1,6 +1,7 @@
 #![allow(dead_code)]
 
 use std::borrow::Cow;
+use std::collections::VecDeque;
 use std::io::{Cursor, Read};
 use std::sync::mpsc::{self, Receiver, Sender};
 use std::thread;
@@ -167,6 +168,7 @@ enum VMCommand {
     SetSingleStep(bool),
     SetBreakpoint(Option<u32>),
     PrintVar(U16String, Option<String>),
+    TxUART0(String),
 }
 
 struct VMState {
@@ -200,11 +202,46 @@ fn tui(
     siv.add_fullscreen_layer(
         LinearLayout::horizontal()
             .child(
+                // slider to set the size of the UART0 panel
+                PaddedView::new(
+                    Margins::tb(1, 1),
+                    SliderView::vertical(100)
+                        .value(stdout_scroll_height)
+                        .on_change(|siv, value| {
+                            siv.call_on_name(
+                                "stdout_scroll",
+                                |v: &mut ResizedView<LinearLayout>| {
+                                    v.set_height(SizeConstraint::Fixed(value));
+                                },
+                            );
+                        }),
+                )
+                .fixed_width(1),
+            )
+            .child(
                 LinearLayout::vertical()
                     .child(
                         Panel::new(
-                            ScrollView::new(TextView::new_with_content(stdout))
-                                .scroll_strategy(ScrollStrategy::StickToBottom)
+                            LinearLayout::vertical()
+                                .child(
+                                    ScrollView::new(TextView::new_with_content(stdout))
+                                        .scroll_strategy(ScrollStrategy::StickToBottom)
+                                        .full_height(),
+                                )
+                                .child(
+                                    EditView::new()
+                                        .on_submit({
+                                            let tx = tx.clone();
+                                            move |siv, cmd| {
+                                                tx.send(VMCommand::TxUART0(cmd.to_string() + "\r"))
+                                                    .unwrap();
+                                                siv.call_on_name("stdin", |view: &mut EditView| {
+                                                    view.set_content("");
+                                                });
+                                            }
+                                        })
+                                        .with_name("stdin"),
+                                )
                                 .fixed_height(stdout_scroll_height)
                                 .with_name("stdout_scroll"),
                         )
@@ -287,23 +324,6 @@ fn tui(
                                     .min_width("State trap_breakpoint".len()),
                             )),
                     ),
-            )
-            .child(
-                // slider to set the size of the UART0 panel
-                PaddedView::new(
-                    Margins::tb(1, 1),
-                    SliderView::vertical(100)
-                        .value(stdout_scroll_height)
-                        .on_change(|siv, value| {
-                            siv.call_on_name(
-                                "stdout_scroll",
-                                |v: &mut ResizedView<ScrollView<TextView>>| {
-                                    v.set_height(SizeConstraint::Fixed(value));
-                                },
-                            );
-                        }),
-                )
-                .fixed_width(1),
             )
             .full_screen(),
     );
@@ -545,7 +565,8 @@ fn main() -> Result<(), Box<dyn Error>> {
     let mut prev_power = true;
     let mut frozen = false;
     let mut ticks = 0;
-    let mut uart_buf = String::new();
+    let mut uart_rx_buf = String::new();
+    let mut uart_tx_buf = VecDeque::<u8>::new();
     let state_update_interval = Duration::from_secs_f64(1. / 8.);
     let start = Instant::now();
     let mut run_start = start;
@@ -557,24 +578,38 @@ fn main() -> Result<(), Box<dyn Error>> {
             ticks += 1;
         }
 
-        // UART0 terminal
+        // UART0 rx
         if let BuildingData::Memory(uart0) = &mut *uart0.data.borrow_mut() {
             let mut rx_read = (uart0[UART_RX_READ] as usize) % uart_fifo_modulo;
             let rx_write = (uart0[UART_RX_WRITE] as usize) % uart_fifo_modulo;
             if rx_read != rx_write {
                 while rx_read != rx_write {
                     let c = uart0[UART_RX_START + rx_read] as u8;
-                    uart_buf.push(c as char);
+                    uart_rx_buf.push(c as char);
                     rx_read = (rx_read + 1) % uart_fifo_modulo;
                 }
                 uart0[UART_RX_READ] = rx_write as f64;
 
                 if do_tui {
-                    stdout.append(&uart_buf);
+                    stdout.append(&uart_rx_buf);
                 } else {
-                    print!("{uart_buf}");
+                    print!("{uart_rx_buf}");
                 }
-                uart_buf.clear();
+                uart_rx_buf.clear();
+            }
+
+            if !uart_tx_buf.is_empty() {
+                let tx_read = (uart0[UART_TX_READ] as usize) % uart_fifo_modulo;
+                let mut tx_write = (uart0[UART_TX_WRITE] as usize) % uart_fifo_modulo;
+                let mut next_tx_write = (tx_write + 1) % uart_fifo_modulo;
+                while next_tx_write != tx_read
+                    && let Some(c) = uart_tx_buf.pop_front()
+                {
+                    uart0[tx_write] = c as f64;
+                    tx_write = next_tx_write;
+                    next_tx_write = (tx_write + 1) % uart_fifo_modulo;
+                }
+                uart0[UART_TX_WRITE] = tx_write as f64;
             }
         }
 
@@ -672,6 +707,9 @@ fn main() -> Result<(), Box<dyn Error>> {
                                     tui_println!(do_tui, debug, "{} = <undefined>", name.display())
                                 }
                             };
+                        }
+                        VMCommand::TxUART0(msg) => {
+                            uart_tx_buf.extend(msg.as_bytes());
                         }
                     }
                 }
