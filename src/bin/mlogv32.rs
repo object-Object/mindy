@@ -24,7 +24,7 @@ use mindustry_rs::{
         Building, BuildingData, LValue, LogicVM, LogicVMBuilder, MEMORY_BANK, MESSAGE,
         MICRO_PROCESSOR, SWITCH, WORLD_PROCESSOR,
     },
-    types::{Object, Point2, ProcessorConfig, Schematic},
+    types::{Object, PackedPoint2, ProcessorConfig, Schematic},
 };
 use serde::Deserialize;
 use widestring::{U16String, u16str};
@@ -100,13 +100,13 @@ struct Metadata {
 }
 
 #[derive(Debug, Clone, Copy, Deserialize)]
-struct MetaPoint2(i32, i32);
+struct MetaPoint2(i16, i16);
 
 impl MetaPoint2 {
-    fn x(&self) -> i32 {
+    fn x(&self) -> i16 {
         self.0
     }
-    fn y(&self) -> i32 {
+    fn y(&self) -> i16 {
         self.1
     }
 }
@@ -117,7 +117,7 @@ impl Display for MetaPoint2 {
     }
 }
 
-impl From<MetaPoint2> for Point2 {
+impl From<MetaPoint2> for PackedPoint2 {
     fn from(MetaPoint2(x, y): MetaPoint2) -> Self {
         Self { x, y }
     }
@@ -477,10 +477,10 @@ fn main() -> Result<(), Box<dyn Error>> {
             .into_iter()
             .zip(schematic.tiles_mut().iter_mut().filter(|t| {
                 t.block == MICRO_PROCESSOR
-                    && (t.position.x as i32) >= meta.memory.x()
-                    && (t.position.x as i32) < meta.memory.x() + (meta.memory_width as i32)
-                    && (t.position.y as i32) >= meta.memory.y()
-                    && (t.position.y as i32) < meta.memory.y() + (meta.memory_height as i32)
+                    && t.position.x >= meta.memory.x()
+                    && t.position.x < meta.memory.x() + (meta.memory_width as i16)
+                    && t.position.y >= meta.memory.y()
+                    && t.position.y < meta.memory.y() + (meta.memory_height as i16)
             }))
             .progress_count(bar_count)
         {

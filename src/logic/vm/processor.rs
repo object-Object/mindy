@@ -21,7 +21,7 @@ use super::{
 };
 use crate::{
     logic::{LogicParser, ast},
-    types::{Object, Point2, ProcessorConfig, content},
+    types::{Object, PackedPoint2, ProcessorConfig, content},
 };
 
 pub(super) const MAX_TEXT_BUFFER: usize = 400;
@@ -205,7 +205,7 @@ pub struct ProcessorState {
     privileged: bool,
     num_instructions: usize,
     links: Box<[ProcessorLink]>,
-    linked_positions: RapidHashSet<Point2>,
+    linked_positions: RapidHashSet<PackedPoint2>,
 
     pub counter: usize,
     accumulator: f64,
@@ -269,7 +269,7 @@ impl ProcessorState {
     }
 
     #[inline(always)]
-    pub fn linked_positions(&self) -> &RapidHashSet<Point2> {
+    pub fn linked_positions(&self) -> &RapidHashSet<PackedPoint2> {
         &self.linked_positions
     }
 
@@ -334,7 +334,7 @@ pub(super) struct ProcessorBuilder<'a> {
     pub privileged: bool,
     pub running_processors: Rc<Cell<usize>>,
     pub time: Rc<Cell<f64>>,
-    pub position: Point2,
+    pub position: PackedPoint2,
     pub config: &'a ProcessorConfig,
 }
 
@@ -414,9 +414,9 @@ impl ProcessorBuilder<'_> {
                 name: link.name.to_string(),
                 building: Building {
                     block: &content::blocks::AIR,
-                    position: Point2 {
-                        x: position.x + link.x as i32,
-                        y: position.y + link.y as i32,
+                    position: PackedPoint2 {
+                        x: position.x + link.x,
+                        y: position.y + link.y,
                     },
                     data: fake_data.clone(),
                 },

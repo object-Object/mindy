@@ -7,7 +7,7 @@ use mindustry_rs::{
         Building, BuildingData, HYPER_PROCESSOR, LOGIC_PROCESSOR, LogicVMBuilder, MEMORY_BANK,
         MEMORY_CELL, MESSAGE, MICRO_PROCESSOR, WORLD_PROCESSOR,
     },
-    types::{Object, Point2, ProcessorConfig, ProcessorLinkConfig},
+    types::{Object, ProcessorConfig, ProcessorLinkConfig},
 };
 use strum_macros::EnumString;
 use widestring::U16String;
@@ -67,7 +67,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     builder.add_buildings([
         Building::from_processor_config(
             cli.processor.name(),
-            Point2::new(0, 0),
+            (0, 0).into(),
             &ProcessorConfig {
                 code: cli.code.contents()?,
                 links: vec![
@@ -78,9 +78,9 @@ fn main() -> Result<(), Box<dyn Error>> {
             },
             &builder,
         )?,
-        Building::from_config(MESSAGE, Point2::new(3, 0), &Object::Null, &builder)?,
-        Building::from_config(MEMORY_CELL, Point2::new(4, 0), &Object::Null, &builder)?,
-        Building::from_config(MEMORY_BANK, Point2::new(5, 0), &Object::Null, &builder)?,
+        Building::from_config(MESSAGE, (3, 0).into(), &Object::Null, &builder)?,
+        Building::from_config(MEMORY_CELL, (4, 0).into(), &Object::Null, &builder)?,
+        Building::from_config(MEMORY_BANK, (5, 0).into(), &Object::Null, &builder)?,
     ]);
     let vm = builder.build()?;
 

@@ -20,7 +20,7 @@ use crate::{
         },
     },
     types::{
-        ContentType, LAccess, Point2, Team,
+        ContentType, LAccess, PackedPoint2, Team,
         colors::{self, f32_to_double_bits, f64_from_double_bits},
         content,
     },
@@ -1098,9 +1098,9 @@ pub(super) struct GetBlock {
 
 impl SimpleInstructionTrait for GetBlock {
     fn execute(&self, state: &mut ProcessorState, vm: &LogicVM) {
-        let result = match vm.building(Point2 {
-            x: self.x.get(state).numf().round() as i32,
-            y: self.y.get(state).numf().round() as i32,
+        let result = match vm.building(PackedPoint2 {
+            x: self.x.get(state).numf().round() as i16,
+            y: self.y.get(state).numf().round() as i16,
         }) {
             Some(building) => match self.layer {
                 TileLayer::Floor => Content::Block(&content::blocks::STONE).into(),

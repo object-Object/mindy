@@ -9,7 +9,7 @@ pub struct Block {
     pub name: MultiString,
     pub id: i32,
     pub logic_id: i32,
-    pub size: i32,
+    pub size: i16,
     pub legacy: bool,
     pub range: f64,
     pub item_capacity: i32,

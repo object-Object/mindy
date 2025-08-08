@@ -62,6 +62,12 @@ impl TryFrom<Point2> for PackedPoint2 {
     }
 }
 
+impl From<(i16, i16)> for PackedPoint2 {
+    fn from((x, y): (i16, i16)) -> Self {
+        Self { x, y }
+    }
+}
+
 impl Display for PackedPoint2 {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "({}, {})", self.x, self.y)

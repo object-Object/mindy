@@ -17,7 +17,7 @@ use std::{
 
 use thiserror::Error;
 
-use crate::types::{Point2, Schematic, SchematicTile};
+use crate::types::{PackedPoint2, Schematic, SchematicTile};
 
 const MILLIS_PER_SEC: u64 = 1_000;
 const NANOS_PER_MILLI: u32 = 1_000_000;
@@ -25,7 +25,7 @@ const NANOS_PER_MILLI: u32 = 1_000_000;
 pub struct LogicVM {
     /// Sorted with all processors in update order first, then all other buildings in arbitrary order.
     buildings: Vec<Building>,
-    buildings_map: RapidHashMap<Point2, usize>,
+    buildings_map: RapidHashMap<PackedPoint2, usize>,
     total_processors: usize,
     running_processors: Rc<Cell<usize>>,
     time: Rc<Cell<f64>>,
@@ -52,7 +52,7 @@ impl LogicVM {
         builder.build()
     }
 
-    pub fn building(&self, position: Point2) -> Option<&Building> {
+    pub fn building(&self, position: PackedPoint2) -> Option<&Building> {
         self.buildings_map
             .get(&position)
             .map(|&i| &self.buildings[i])
@@ -202,7 +202,7 @@ impl LogicVMBuilder {
 
             for x in position.x..position.x + size {
                 for y in position.y..position.y + size {
-                    let position = Point2 { x, y };
+                    let position = PackedPoint2 { x, y };
                     if vm.buildings_map.contains_key(&position) {
                         return Err(VMLoadError::Overlap(position));
                     }
@@ -255,7 +255,7 @@ pub enum VMLoadError {
     AlreadyInitialized,
 
     #[error("tried to place multiple blocks at {0}")]
-    Overlap(Point2),
+    Overlap(PackedPoint2),
 }
 
 #[cfg(test)]
@@ -295,7 +295,7 @@ mod tests {
         builder.add_building(
             Building::from_processor_config(
                 name,
-                Point2::new(0, 0),
+                PackedPoint2::new(0, 0),
                 &ProcessorConfig::from_code(code),
                 &builder,
             )
@@ -309,7 +309,7 @@ mod tests {
         builder.add_building(
             Building::from_processor_config(
                 name,
-                Point2::new(0, 0),
+                PackedPoint2::new(0, 0),
                 &ProcessorConfig::from_code(code),
                 &builder,
             )
@@ -330,7 +330,7 @@ mod tests {
 
     fn with_processor<T>(vm: &mut LogicVM, position: T, f: impl FnOnce(&mut Processor))
     where
-        T: Into<Point2>,
+        T: Into<PackedPoint2>,
     {
         f(vm.building(position.into())
             .unwrap()
@@ -341,7 +341,7 @@ mod tests {
 
     fn take_processor<T>(vm: &mut LogicVM, position: T) -> Processor
     where
-        T: Into<Point2>,
+        T: Into<PackedPoint2>,
     {
         vm.building(position.into())
             .unwrap()
@@ -436,7 +436,7 @@ mod tests {
     fn assert_variables_buildings<'a, T, V>(processor: &Processor, vars: T)
     where
         T: IntoIterator<Item = (&'a U16Str, V)>,
-        V: Into<Option<Point2>>,
+        V: Into<Option<PackedPoint2>>,
     {
         for (name, want) in vars {
             match want.into() {
@@ -465,7 +465,7 @@ mod tests {
     fn assert_locals_buildings<'a, T, V>(processor: &Processor, vars: T)
     where
         T: IntoIterator<Item = (&'a U16Str, V)>,
-        V: Into<Option<Point2>>,
+        V: Into<Option<PackedPoint2>>,
     {
         for (name, want) in vars {
             match want.into() {
@@ -525,20 +525,25 @@ mod tests {
             [
                 Building::from_processor_config(
                     MICRO_PROCESSOR,
-                    Point2 { x: 0, y: 0 },
+                    PackedPoint2 { x: 0, y: 0 },
                     &ProcessorConfig::from_code("stop"),
                     &builder,
                 ),
                 Building::from_processor_config(
                     MICRO_PROCESSOR,
-                    Point2 { x: 1, y: 0 },
+                    PackedPoint2 { x: 1, y: 0 },
                     &ProcessorConfig::from_code("stop"),
                     &builder,
                 ),
-                Building::from_config(MEMORY_CELL, Point2 { x: 2, y: 0 }, &Object::Null, &builder),
+                Building::from_config(
+                    MEMORY_CELL,
+                    PackedPoint2 { x: 2, y: 0 },
+                    &Object::Null,
+                    &builder,
+                ),
                 Building::from_processor_config(
                     MICRO_PROCESSOR,
-                    Point2 { x: 3, y: 0 },
+                    PackedPoint2 { x: 3, y: 0 },
                     &ProcessorConfig {
                         code: "
                         set link0 processor0
@@ -591,9 +596,9 @@ mod tests {
         assert_variables_buildings(
             &processor,
             map_iter! {
-                u16str!("link1"): Point2 { x: 0, y: 0 },
-                u16str!("link2"): Point2 { x: 1, y: 0 },
-                u16str!("link5"): Point2 { x: 2, y: 0 },
+                u16str!("link1"): PackedPoint2 { x: 0, y: 0 },
+                u16str!("link2"): PackedPoint2 { x: 1, y: 0 },
+                u16str!("link5"): PackedPoint2 { x: 2, y: 0 },
             },
         );
     }
@@ -605,32 +610,37 @@ mod tests {
             [
                 Building::from_processor_config(
                     MICRO_PROCESSOR,
-                    Point2 { x: 0, y: 0 },
+                    PackedPoint2 { x: 0, y: 0 },
                     &ProcessorConfig::from_code("stop"),
                     &builder,
                 ),
                 Building::from_processor_config(
                     MICRO_PROCESSOR,
-                    Point2 { x: 1, y: 0 },
+                    PackedPoint2 { x: 1, y: 0 },
                     &ProcessorConfig::from_code("stop"),
                     &builder,
                 ),
                 Building::from_processor_config(
                     MICRO_PROCESSOR,
-                    Point2 { x: 2, y: 0 },
+                    PackedPoint2 { x: 2, y: 0 },
                     &ProcessorConfig::from_code("stop"),
                     &builder,
                 ),
                 Building::from_processor_config(
                     MICRO_PROCESSOR,
-                    Point2 { x: 3, y: 0 },
+                    PackedPoint2 { x: 3, y: 0 },
                     &ProcessorConfig::from_code("stop"),
                     &builder,
                 ),
-                Building::from_config(MEMORY_CELL, Point2 { x: 4, y: 0 }, &Object::Null, &builder),
+                Building::from_config(
+                    MEMORY_CELL,
+                    PackedPoint2 { x: 4, y: 0 },
+                    &Object::Null,
+                    &builder,
+                ),
                 Building::from_processor_config(
                     MICRO_PROCESSOR,
-                    Point2 { x: 5, y: 0 },
+                    PackedPoint2 { x: 5, y: 0 },
                     &ProcessorConfig {
                         code: "stop".into(),
                         links: vec![
@@ -680,10 +690,10 @@ mod tests {
             &processor,
             map_iter! {
                 // conflicts should prefer the last building linked
-                u16str!("processor1"): Point2 { x: 1, y: 0 },
-                u16str!("processor2"): Point2 { x: 3, y: 0 },
-                u16str!("processor10"): Point2 { x: 2, y: 0 },
-                u16str!("cellFoo"): Point2 { x: 4, y: 0 },
+                u16str!("processor1"): PackedPoint2 { x: 1, y: 0 },
+                u16str!("processor2"): PackedPoint2 { x: 3, y: 0 },
+                u16str!("processor10"): PackedPoint2 { x: 2, y: 0 },
+                u16str!("cellFoo"): PackedPoint2 { x: 4, y: 0 },
             },
         );
     }
@@ -698,10 +708,10 @@ mod tests {
         assert_locals_buildings(
             &processor,
             map_iter! {
-                u16str!("cell1"): Point2 { x: 0, y: 10 },
-                u16str!("cell2"): Point2 { x: 7, y: 7 },
-                u16str!("cell3"): Point2 { x: 9, y: 5 },
-                u16str!("bank1"): Point2 { x: 10, y: 2 },
+                u16str!("cell1"): PackedPoint2 { x: 0, y: 10 },
+                u16str!("cell2"): PackedPoint2 { x: 7, y: 7 },
+                u16str!("cell3"): PackedPoint2 { x: 9, y: 5 },
+                u16str!("bank1"): PackedPoint2 { x: 10, y: 2 },
             },
         );
     }
@@ -713,7 +723,7 @@ mod tests {
             [
                 Building::from_processor_config(
                     MICRO_PROCESSOR,
-                    Point2 { x: 1, y: 1 },
+                    PackedPoint2 { x: 1, y: 1 },
                     &ProcessorConfig {
                         code: "stop".into(),
                         links: vec![
@@ -761,14 +771,54 @@ mod tests {
                     },
                     &builder,
                 ),
-                Building::from_config(MEMORY_CELL, Point2 { x: 1, y: 11 }, &Object::Null, &builder),
-                Building::from_config(MEMORY_CELL, Point2 { x: 1, y: 12 }, &Object::Null, &builder),
-                Building::from_config(MEMORY_BANK, Point2 { x: 7, y: 10 }, &Object::Null, &builder),
-                Building::from_config(MEMORY_CELL, Point2 { x: 8, y: 8 }, &Object::Null, &builder),
-                Building::from_config(MEMORY_CELL, Point2 { x: 9, y: 9 }, &Object::Null, &builder),
-                Building::from_config(MEMORY_CELL, Point2 { x: 9, y: 8 }, &Object::Null, &builder),
-                Building::from_config(MEMORY_CELL, Point2 { x: 10, y: 6 }, &Object::Null, &builder),
-                Building::from_config(MEMORY_BANK, Point2 { x: 11, y: 3 }, &Object::Null, &builder),
+                Building::from_config(
+                    MEMORY_CELL,
+                    PackedPoint2 { x: 1, y: 11 },
+                    &Object::Null,
+                    &builder,
+                ),
+                Building::from_config(
+                    MEMORY_CELL,
+                    PackedPoint2 { x: 1, y: 12 },
+                    &Object::Null,
+                    &builder,
+                ),
+                Building::from_config(
+                    MEMORY_BANK,
+                    PackedPoint2 { x: 7, y: 10 },
+                    &Object::Null,
+                    &builder,
+                ),
+                Building::from_config(
+                    MEMORY_CELL,
+                    PackedPoint2 { x: 8, y: 8 },
+                    &Object::Null,
+                    &builder,
+                ),
+                Building::from_config(
+                    MEMORY_CELL,
+                    PackedPoint2 { x: 9, y: 9 },
+                    &Object::Null,
+                    &builder,
+                ),
+                Building::from_config(
+                    MEMORY_CELL,
+                    PackedPoint2 { x: 9, y: 8 },
+                    &Object::Null,
+                    &builder,
+                ),
+                Building::from_config(
+                    MEMORY_CELL,
+                    PackedPoint2 { x: 10, y: 6 },
+                    &Object::Null,
+                    &builder,
+                ),
+                Building::from_config(
+                    MEMORY_BANK,
+                    PackedPoint2 { x: 11, y: 3 },
+                    &Object::Null,
+                    &builder,
+                ),
             ]
             .map(|v| v.unwrap()),
         );
@@ -787,10 +837,10 @@ mod tests {
         assert_locals_buildings(
             &processor,
             map_iter! {
-                u16str!("cell1"): Point2 { x: 1, y: 11 },
-                u16str!("cell3"): Point2 { x: 8, y: 8 },
-                u16str!("cell6"): Point2 { x: 10, y: 6 },
-                u16str!("bank2"): Point2 { x: 11, y: 3 },
+                u16str!("cell1"): PackedPoint2 { x: 1, y: 11 },
+                u16str!("cell3"): PackedPoint2 { x: 8, y: 8 },
+                u16str!("cell6"): PackedPoint2 { x: 10, y: 6 },
+                u16str!("bank2"): PackedPoint2 { x: 11, y: 3 },
             },
         );
     }
@@ -802,7 +852,7 @@ mod tests {
             [
                 Building::from_processor_config(
                     MICRO_PROCESSOR,
-                    Point2 { x: 0, y: 0 },
+                    PackedPoint2 { x: 0, y: 0 },
                     &ProcessorConfig {
                         code: format!(
                             r#"
@@ -838,7 +888,7 @@ mod tests {
                 ),
                 Building::from_config(
                     MESSAGE,
-                    Point2 { x: 1, y: 0 },
+                    PackedPoint2 { x: 1, y: 0 },
                     &Object::String(Some("foo".into())),
                     &builder,
                 ),
@@ -935,7 +985,7 @@ mod tests {
             [
                 Building::from_processor_config(
                     HYPER_PROCESSOR,
-                    Point2 { x: 0, y: 0 },
+                    PackedPoint2 { x: 0, y: 0 },
                     &ProcessorConfig {
                         code: "
                         getlink link_-1 -1
@@ -955,9 +1005,9 @@ mod tests {
                     },
                     &builder,
                 ),
-                Building::from_config(SWITCH, Point2 { x: 3, y: 0 }, &Object::Null, &builder),
-                Building::from_config(SWITCH, Point2 { x: 4, y: 0 }, &Object::Null, &builder),
-                Building::from_config(SWITCH, Point2 { x: 5, y: 0 }, &Object::Null, &builder),
+                Building::from_config(SWITCH, PackedPoint2 { x: 3, y: 0 }, &Object::Null, &builder),
+                Building::from_config(SWITCH, PackedPoint2 { x: 4, y: 0 }, &Object::Null, &builder),
+                Building::from_config(SWITCH, PackedPoint2 { x: 5, y: 0 }, &Object::Null, &builder),
             ]
             .map(|v| v.unwrap()),
         );
@@ -976,10 +1026,10 @@ mod tests {
         assert_variables_buildings(
             &processor,
             map_iter! {
-                u16str!("link_null"): Point2 { x: 3, y: 0 },
-                u16str!("link_0"): Point2 { x: 3, y: 0 },
-                u16str!("link_1"): Point2 { x: 4, y: 0 },
-                u16str!("link_2"): Point2 { x: 5, y: 0 },
+                u16str!("link_null"): PackedPoint2 { x: 3, y: 0 },
+                u16str!("link_0"): PackedPoint2 { x: 3, y: 0 },
+                u16str!("link_1"): PackedPoint2 { x: 4, y: 0 },
+                u16str!("link_2"): PackedPoint2 { x: 5, y: 0 },
             },
         );
     }
@@ -991,11 +1041,11 @@ mod tests {
             [
                 Building::from_processor_config(
                     HYPER_PROCESSOR,
-                    Point2 { x: 0, y: 0 },
+                    PackedPoint2 { x: 0, y: 0 },
                     &ProcessorConfig::default(),
                     &builder,
                 ),
-                Building::from_config(SWITCH, Point2 { x: 2, y: 2 }, &Object::Null, &builder),
+                Building::from_config(SWITCH, PackedPoint2 { x: 2, y: 2 }, &Object::Null, &builder),
             ]
             .map(|v| v.unwrap()),
         );
@@ -1005,7 +1055,7 @@ mod tests {
         };
 
         assert!(
-            matches!(err, VMLoadError::Overlap(Point2 { x: 2, y: 2 })),
+            matches!(err, VMLoadError::Overlap(PackedPoint2 { x: 2, y: 2 })),
             "{err:?}"
         );
     }
@@ -1017,7 +1067,7 @@ mod tests {
             [
                 Building::from_processor_config(
                     WORLD_PROCESSOR,
-                    Point2 { x: 1, y: 2 },
+                    PackedPoint2 { x: 1, y: 2 },
                     &ProcessorConfig::from_code(
                         "
                         getblock floor floor1 @thisx @thisy
@@ -1040,7 +1090,7 @@ mod tests {
                     ),
                     &builder,
                 ),
-                Building::from_config(SWITCH, Point2 { x: 1, y: 3 }, &Object::Null, &builder),
+                Building::from_config(SWITCH, PackedPoint2 { x: 1, y: 3 }, &Object::Null, &builder),
             ]
             .map(|v| v.unwrap()),
         );
@@ -1069,8 +1119,8 @@ mod tests {
         assert_variables_buildings(
             &processor,
             map_iter! {
-                u16str!("building1"): Point2 { x: 1, y: 2 },
-                u16str!("building2"): Point2 { x: 1, y: 3 },
+                u16str!("building1"): PackedPoint2 { x: 1, y: 2 },
+                u16str!("building2"): PackedPoint2 { x: 1, y: 3 },
             },
         );
     }
@@ -1156,7 +1206,7 @@ mod tests {
                 [
                     Building::from_processor_config(
                         WORLD_PROCESSOR,
-                        Point2 { x: 0, y: 0 },
+                        PackedPoint2 { x: 0, y: 0 },
                         &ProcessorConfig {
                             code,
                             links: vec![
@@ -1174,39 +1224,49 @@ mod tests {
                     ),
                     Building::from_processor_config(
                         MICRO_PROCESSOR,
-                        Point2 { x: 1, y: 0 },
+                        PackedPoint2 { x: 1, y: 0 },
                         &ProcessorConfig::default(),
                         &builder,
                     ),
                     Building::from_processor_config(
                         MICRO_PROCESSOR,
-                        Point2 { x: 1, y: 1 },
+                        PackedPoint2 { x: 1, y: 1 },
                         &ProcessorConfig::from_code("wait 0; wait 0; stop"),
                         &builder,
                     ),
                     Building::from_config(
                         MEMORY_CELL,
-                        Point2 { x: 2, y: 0 },
+                        PackedPoint2 { x: 2, y: 0 },
                         &Object::Null,
                         &builder,
                     ),
                     Building::from_config(
                         WORLD_CELL,
-                        Point2 { x: 2, y: 1 },
+                        PackedPoint2 { x: 2, y: 1 },
                         &Object::Null,
                         &builder,
                     ),
                     Building::from_config(
                         MESSAGE,
-                        Point2 { x: 3, y: 0 },
+                        PackedPoint2 { x: 3, y: 0 },
                         &Object::String(Some("foo".into())),
                         &builder,
                     ),
-                    Building::from_config(SWITCH, Point2 { x: 4, y: 0 }, &false.into(), &builder),
-                    Building::from_config(SWITCH, Point2 { x: 4, y: 1 }, &true.into(), &builder),
+                    Building::from_config(
+                        SWITCH,
+                        PackedPoint2 { x: 4, y: 0 },
+                        &false.into(),
+                        &builder,
+                    ),
+                    Building::from_config(
+                        SWITCH,
+                        PackedPoint2 { x: 4, y: 1 },
+                        &true.into(),
+                        &builder,
+                    ),
                     Building::from_config(
                         "sorter",
-                        Point2 { x: 5, y: 0 },
+                        PackedPoint2 { x: 5, y: 0 },
                         &Object::Content(ContentID {
                             type_: ContentType::Item,
                             id: content::items::FROM_NAME["graphite"].id as i16,
@@ -1305,7 +1365,7 @@ mod tests {
             [
                 Building::from_processor_config(
                     WORLD_PROCESSOR,
-                    Point2 { x: 0, y: 0 },
+                    PackedPoint2 { x: 0, y: 0 },
                     &ProcessorConfig {
                         code: "
                         getblock building unlinked 4 0
@@ -1333,13 +1393,18 @@ mod tests {
                 ),
                 Building::from_processor_config(
                     MICRO_PROCESSOR,
-                    Point2 { x: 1, y: 0 },
+                    PackedPoint2 { x: 1, y: 0 },
                     &ProcessorConfig::from_code("noop"),
                     &builder,
                 ),
-                Building::from_config(SWITCH, Point2 { x: 2, y: 0 }, &false.into(), &builder),
-                Building::from_config(MEMORY_CELL, Point2 { x: 3, y: 0 }, &Object::Null, &builder),
-                Building::from_config(SWITCH, Point2 { x: 4, y: 0 }, &true.into(), &builder),
+                Building::from_config(SWITCH, PackedPoint2 { x: 2, y: 0 }, &false.into(), &builder),
+                Building::from_config(
+                    MEMORY_CELL,
+                    PackedPoint2 { x: 3, y: 0 },
+                    &Object::Null,
+                    &builder,
+                ),
+                Building::from_config(SWITCH, PackedPoint2 { x: 4, y: 0 }, &true.into(), &builder),
             ]
             .map(|v| v.unwrap()),
         );
@@ -1366,7 +1431,7 @@ mod tests {
             [
                 Building::from_processor_config(
                     LOGIC_PROCESSOR,
-                    Point2 { x: 0, y: 0 },
+                    PackedPoint2 { x: 0, y: 0 },
                     &ProcessorConfig {
                         code: r#"
                         set number 10
@@ -1379,10 +1444,15 @@ mod tests {
                     },
                     &builder,
                 ),
-                Building::from_config(MEMORY_CELL, Point2 { x: 0, y: 2 }, &Object::Null, &builder),
+                Building::from_config(
+                    MEMORY_CELL,
+                    PackedPoint2 { x: 0, y: 2 },
+                    &Object::Null,
+                    &builder,
+                ),
                 Building::from_processor_config(
                     HYPER_PROCESSOR,
-                    Point2 { x: 2, y: 0 },
+                    PackedPoint2 { x: 2, y: 0 },
                     &ProcessorConfig {
                         code: r#"
                         read processor_number processor1 "number"
@@ -1434,20 +1504,25 @@ mod tests {
                     },
                     &builder,
                 ),
-                Building::from_config(MEMORY_CELL, Point2 { x: 5, y: 0 }, &Object::Null, &builder),
+                Building::from_config(
+                    MEMORY_CELL,
+                    PackedPoint2 { x: 5, y: 0 },
+                    &Object::Null,
+                    &builder,
+                ),
                 Building::from_config(
                     MESSAGE,
-                    Point2 { x: 6, y: 0 },
+                    PackedPoint2 { x: 6, y: 0 },
                     &Object::String(Some("def".into())),
                     &builder,
                 ),
-                Building::from_config(SWITCH, Point2 { x: 7, y: 0 }, &true.into(), &builder),
+                Building::from_config(SWITCH, PackedPoint2 { x: 7, y: 0 }, &true.into(), &builder),
             ]
             .map(|v| v.unwrap()),
         );
         let mut vm = builder.build().unwrap();
 
-        if let Some(building) = vm.building(Point2 { x: 0, y: 2 })
+        if let Some(building) = vm.building(PackedPoint2 { x: 0, y: 2 })
             && let BuildingData::Memory(memory) = &mut *building.data.borrow_mut()
         {
             memory[63] = 20.;
@@ -1455,7 +1530,7 @@ mod tests {
             panic!("unexpected building");
         }
 
-        if let Some(building) = vm.building(Point2 { x: 5, y: 0 })
+        if let Some(building) = vm.building(PackedPoint2 { x: 5, y: 0 })
             && let BuildingData::Memory(memory) = &mut *building.data.borrow_mut()
         {
             memory[0] = 30.;
@@ -1500,7 +1575,7 @@ mod tests {
         assert_variables_buildings(
             &processor,
             map_iter! {
-                u16str!("processor_building"): Point2 { x: 0, y: 2 },
+                u16str!("processor_building"): PackedPoint2 { x: 0, y: 2 },
             },
         );
     }
@@ -1512,7 +1587,7 @@ mod tests {
             [
                 Building::from_processor_config(
                     LOGIC_PROCESSOR,
-                    Point2 { x: 0, y: 0 },
+                    PackedPoint2 { x: 0, y: 0 },
                     &ProcessorConfig {
                         code: r#"
                         # if the world proc runs before this one, canary won't be set
@@ -1528,11 +1603,21 @@ mod tests {
                     },
                     &builder,
                 ),
-                Building::from_config(MEMORY_CELL, Point2 { x: 0, y: 2 }, &Object::Null, &builder),
-                Building::from_config(WORLD_CELL, Point2 { x: 0, y: 3 }, &Object::Null, &builder),
+                Building::from_config(
+                    MEMORY_CELL,
+                    PackedPoint2 { x: 0, y: 2 },
+                    &Object::Null,
+                    &builder,
+                ),
+                Building::from_config(
+                    WORLD_CELL,
+                    PackedPoint2 { x: 0, y: 3 },
+                    &Object::Null,
+                    &builder,
+                ),
                 Building::from_processor_config(
                     WORLD_PROCESSOR,
-                    Point2 { x: 2, y: 0 },
+                    PackedPoint2 { x: 2, y: 0 },
                     &ProcessorConfig {
                         code: r#"
                         setrate 1000
@@ -1595,7 +1680,7 @@ mod tests {
             },
         );
 
-        if let Some(building) = vm.building(Point2 { x: 0, y: 2 })
+        if let Some(building) = vm.building(PackedPoint2 { x: 0, y: 2 })
             && let BuildingData::Memory(memory) = &mut *building.data.borrow_mut()
         {
             assert_eq!(memory[0], 30.);
@@ -1606,7 +1691,7 @@ mod tests {
             panic!("unexpected building");
         }
 
-        if let Some(building) = vm.building(Point2 { x: 0, y: 3 })
+        if let Some(building) = vm.building(PackedPoint2 { x: 0, y: 3 })
             && let BuildingData::Memory(memory) = &mut *building.data.borrow_mut()
         {
             assert_eq!(memory[0], 60.);

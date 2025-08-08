@@ -9,7 +9,7 @@ use super::{
     variables::LValue,
 };
 use crate::types::{
-    Object, Point2, ProcessorConfig, SchematicTile,
+    Object, PackedPoint2, ProcessorConfig, SchematicTile,
     content::{self, Block},
 };
 
@@ -34,12 +34,12 @@ const MESSAGE_MAX_LINES: usize = 24;
 #[derive(Debug, Clone)]
 pub struct Building {
     pub block: &'static Block,
-    pub position: Point2,
+    pub position: PackedPoint2,
     pub data: Rc<RefCell<BuildingData>>,
 }
 
 impl Building {
-    pub fn new(name: &str, position: Point2, data: BuildingData) -> VMLoadResult<Self> {
+    pub fn new(name: &str, position: PackedPoint2, data: BuildingData) -> VMLoadResult<Self> {
         let block = *content::blocks::FROM_NAME
             .get(name)
             .ok_or_else(|| VMLoadError::UnknownBlockType(name.to_string()))?;
@@ -53,7 +53,7 @@ impl Building {
 
     pub fn from_config(
         name: &str,
-        position: Point2,
+        position: PackedPoint2,
         config: &Object,
         builder: &LogicVMBuilder,
     ) -> VMLoadResult<Self> {
@@ -109,7 +109,7 @@ impl Building {
 
     pub fn from_processor_config(
         name: &str,
-        position: Point2,
+        position: PackedPoint2,
         config: &ProcessorConfig,
         builder: &LogicVMBuilder,
     ) -> VMLoadResult<Self> {
@@ -178,7 +178,7 @@ impl Building {
         }: &SchematicTile,
         builder: &LogicVMBuilder,
     ) -> VMLoadResult<Self> {
-        Self::from_config(name, (*position).into(), config, builder)
+        Self::from_config(name, *position, config, builder)
     }
 }
 
