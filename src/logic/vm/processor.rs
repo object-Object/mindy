@@ -222,10 +222,12 @@ pub struct ProcessorState {
 }
 
 impl ProcessorState {
+    #[inline(always)]
     pub fn enabled(&self) -> bool {
         self.enabled
     }
 
+    #[inline(always)]
     pub fn set_enabled(&mut self, enabled: bool) {
         match (self.enabled, enabled) {
             // if transitioning from enabled to disabled, decrement running_processors
@@ -243,53 +245,57 @@ impl ProcessorState {
         self.enabled = enabled;
     }
 
+    #[inline(always)]
     pub fn stopped(&self) -> bool {
         self.stopped
     }
 
     /// For use by the `stop` and `write` instructions only.
+    #[inline(always)]
     pub fn set_stopped(&mut self, stopped: bool) {
         self.stopped = stopped;
         self.set_enabled(!stopped);
     }
 
+    #[inline(always)]
     pub fn tick(&self) -> f64 {
         self.time.get() * 60. / 1000.
     }
 
+    #[inline(always)]
     pub fn link(&self, index: usize) -> Option<&Building> {
         self.links.get(index).map(|l| &l.building)
     }
 
+    #[inline(always)]
     pub fn linked_positions(&self) -> &RapidHashSet<Point2> {
         &self.linked_positions
     }
 
+    #[inline(always)]
     pub fn privileged(&self) -> bool {
         self.privileged
     }
 
+    #[inline(always)]
     pub fn num_instructions(&self) -> usize {
         self.num_instructions
     }
 
-    pub fn try_set_counter(&mut self, value: LValue) -> bool {
+    #[inline(always)]
+    pub fn try_set_counter(&mut self, value: LValue) {
         if let LValue::Number(n) = value {
-            let counter = n as usize;
-            self.counter = if (0..self.num_instructions).contains(&counter) {
-                counter
-            } else {
-                0
-            };
-            true
-        } else {
-            false
+            // we do a bounds check in the exec loop, so don't bother here
+            self.counter = n as usize;
         }
     }
 
+    #[inline(always)]
     pub fn locals(&self) -> &Constants {
         &self.locals
     }
+
+    // these aren't used internally, so don't bother inlining
 
     /// Checks if a variable or local constant exists.
     pub fn has_variable(&self, name: &U16Str) -> bool {

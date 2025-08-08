@@ -170,16 +170,16 @@ impl LVar {
         }
     }
 
-    /// Returns true if the variable was successfully set.
     #[inline(always)]
-    pub fn set(&self, state: &mut ProcessorState, value: LValue) -> bool {
+    pub fn set(&self, state: &mut ProcessorState, value: LValue) {
         match self {
             Self::Variable(i) => {
                 state.variables[*i] = value;
-                true
             }
-            Self::Counter => state.try_set_counter(value),
-            _ => false,
+            Self::Counter => {
+                state.try_set_counter(value);
+            }
+            _ => {}
         }
     }
 
