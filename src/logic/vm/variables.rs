@@ -365,6 +365,7 @@ impl<T> From<T> for LValue
 where
     T: AsPrimitive<f64> + Numeric,
 {
+    #[inline]
     fn from(value: T) -> Self {
         let value = value.as_();
         if Self::valid(value) {
@@ -379,12 +380,14 @@ where
 }
 
 impl From<bool> for LValue {
+    #[inline]
     fn from(value: bool) -> Self {
         (if value { 1. } else { 0. }).into()
     }
 }
 
 impl From<LObject> for LValue {
+    #[inline]
     fn from(value: LObject) -> Self {
         if value == LObject::Null {
             Self::NULL
@@ -395,48 +398,56 @@ impl From<LObject> for LValue {
 }
 
 impl From<LString> for LValue {
+    #[inline]
     fn from(value: LString) -> Self {
         unsafe { Self::non_null(LObject::String(value)) }
     }
 }
 
 impl From<Rc<U16Str>> for LValue {
+    #[inline]
     fn from(value: Rc<U16Str>) -> Self {
         LString::Rc(value).into()
     }
 }
 
 impl From<&'static U16Str> for LValue {
+    #[inline]
     fn from(value: &'static U16Str) -> Self {
         LString::Static(value).into()
     }
 }
 
 impl From<String> for LValue {
+    #[inline]
     fn from(value: String) -> Self {
         LString::rc(U16String::from_str(&value).as_ustr()).into()
     }
 }
 
 impl From<Content> for LValue {
+    #[inline]
     fn from(value: Content) -> Self {
         unsafe { Self::non_null(LObject::Content(value)) }
     }
 }
 
 impl From<Team> for LValue {
+    #[inline]
     fn from(value: Team) -> Self {
         unsafe { Self::non_null(LObject::Team(value)) }
     }
 }
 
 impl From<Building> for LValue {
+    #[inline]
     fn from(value: Building) -> Self {
         unsafe { Self::non_null(LObject::Building(value)) }
     }
 }
 
 impl From<LAccess> for LValue {
+    #[inline]
     fn from(value: LAccess) -> Self {
         unsafe { Self::non_null(LObject::Sensor(value)) }
     }
@@ -446,6 +457,7 @@ impl<T> From<Option<T>> for LValue
 where
     LValue: From<T>,
 {
+    #[inline]
     fn from(value: Option<T>) -> Self {
         match value {
             Some(value) => value.into(),
@@ -471,30 +483,35 @@ impl Default for LObject {
 }
 
 impl From<LString> for LObject {
+    #[inline]
     fn from(value: LString) -> Self {
         Self::String(value)
     }
 }
 
 impl From<Content> for LObject {
+    #[inline]
     fn from(value: Content) -> Self {
         Self::Content(value)
     }
 }
 
 impl From<Team> for LObject {
+    #[inline]
     fn from(value: Team) -> Self {
         Self::Team(value)
     }
 }
 
 impl From<Building> for LObject {
+    #[inline]
     fn from(value: Building) -> Self {
         Self::Building(value)
     }
 }
 
 impl From<LAccess> for LObject {
+    #[inline]
     fn from(value: LAccess) -> Self {
         Self::Sensor(value)
     }
@@ -504,6 +521,7 @@ impl<T> From<Option<T>> for LObject
 where
     LObject: From<T>,
 {
+    #[inline]
     fn from(value: Option<T>) -> Self {
         match value {
             Some(value) => value.into(),
