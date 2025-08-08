@@ -357,6 +357,7 @@ pub(super) struct Read {
 }
 
 impl Read {
+    #[inline(always)]
     fn read_slice<T>(slice: &[T], address: &LValue) -> LValue
     where
         T: Copy,
@@ -464,6 +465,7 @@ pub(super) struct Print {
 }
 
 impl Print {
+    #[inline(always)]
     fn to_string<'a>(value: &'a LValue) -> Cow<'a, U16Str> {
         match value {
             LValue::Null => Cow::from(u16str!("null")),
@@ -1033,6 +1035,7 @@ pub(super) struct Jump {
 }
 
 impl Jump {
+    #[inline(always)]
     fn test(op: ConditionOp, x: &LVar, y: &LVar, state: &mut ProcessorState) -> bool {
         if matches!(op, ConditionOp::Always) {
             return true;
@@ -1053,6 +1056,7 @@ impl Jump {
         }
     }
 
+    #[inline(always)]
     fn weak_equal(x: LValue, y: LValue) -> bool {
         if x.isobj() && y.isobj() {
             x == y
