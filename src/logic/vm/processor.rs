@@ -148,7 +148,7 @@ impl Processor {
     }
 
     pub fn do_tick(&mut self, vm: &LogicVM, time: f64, delta: f64) {
-        if !self.state.enabled || self.state.wait_end_time > time {
+        if !self.state.enabled {
             return;
         }
 
@@ -157,13 +157,21 @@ impl Processor {
             MAX_INSTRUCTION_SCALE * self.state.ipt,
         );
 
-        while self.state.accumulator >= 1. {
-            let res = self.step(vm);
-            self.state.accumulator -= 1.;
-            if let InstructionResult::Yield = res {
-                break;
+        if self.state.wait_end_time > time {
+            return;
+        }
+
+        // casting to usize truncates the fractional part
+        // so this is equivalent to `while self.state.accumulator >= 1.`
+        for i in 0..(self.state.accumulator as usize) {
+            if let InstructionResult::Yield = self.step(vm) {
+                self.state.accumulator -= (i + 1) as f64;
+                return;
             }
         }
+        // if we didn't yield, then we consumed all integer steps in the accumulator
+        // so leave only the fractional part
+        self.state.accumulator = self.state.accumulator.fract();
     }
 
     /// Do not call if the processor is disabled.
@@ -174,7 +182,9 @@ impl Processor {
         }
 
         self.state.counter = counter + 1;
-        self.instructions[counter].execute(&mut self.state, vm)
+        // SAFETY: we checked the upper bound already
+        // and processors without instructions are always disabled, so self.instructions cannot be empty here
+        unsafe { self.instructions.get_unchecked(counter) }.execute(&mut self.state, vm)
     }
 }
 
