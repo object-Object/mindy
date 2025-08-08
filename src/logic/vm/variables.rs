@@ -1,4 +1,5 @@
 use std::{
+    borrow::Cow,
     fmt::Display,
     hash::{Hash, Hasher},
     num::TryFromIntError,
@@ -157,16 +158,26 @@ impl LVar {
     }
 
     #[inline(always)]
-    pub fn get<'a>(&'a self, state: &'a ProcessorState) -> LValue {
+    pub fn get<'a>(&'a self, state: &'a ProcessorState) -> Cow<'a, LValue> {
+        self.get_inner(state, &state.variables)
+    }
+
+    /// Same as get, but state.variables is explicitly passed separately to help with lifetime issues.
+    #[inline(always)]
+    pub fn get_inner<'a>(
+        &'a self,
+        state: &ProcessorState,
+        variables: &'a Variables,
+    ) -> Cow<'a, LValue> {
         match self {
-            Self::Variable(i) => state.variables[*i].clone(),
-            Self::Constant(value) => value.clone(),
-            Self::Counter => state.counter.into(),
-            Self::Ipt => state.ipt.into(),
-            Self::Time => state.time.get().into(),
-            Self::Tick => state.tick().into(),
-            Self::Second => (state.tick() / 60.).into(),
-            Self::Minute => (state.tick() / 60. / 60.).into(),
+            Self::Variable(i) => Cow::Borrowed(&variables[*i]),
+            Self::Constant(value) => Cow::Borrowed(value),
+            Self::Counter => Cow::Owned(state.counter.into()),
+            Self::Ipt => Cow::Owned(state.ipt.into()),
+            Self::Time => Cow::Owned(state.time.get().into()),
+            Self::Tick => Cow::Owned(state.tick().into()),
+            Self::Second => Cow::Owned((state.tick() / 60.).into()),
+            Self::Minute => Cow::Owned((state.tick() / 60. / 60.).into()),
         }
     }
 
@@ -177,7 +188,7 @@ impl LVar {
                 state.variables[*i] = value;
             }
             Self::Counter => {
-                state.try_set_counter(value);
+                ProcessorState::try_set_counter(&mut state.counter, &value);
             }
             _ => {}
         }
@@ -185,7 +196,12 @@ impl LVar {
 
     #[inline(always)]
     pub fn set_from(&self, state: &mut ProcessorState, other: &LVar) {
-        self.set(state, other.get(state));
+        let value = other.get_inner(state, &state.variables);
+        if *self != LVar::Counter {
+            self.set(state, value.into_owned());
+        } else {
+            ProcessorState::try_set_counter(&mut state.counter, &value);
+        }
     }
 }
 

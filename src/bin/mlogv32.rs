@@ -682,7 +682,7 @@ fn main() -> Result<(), Box<dyn Error>> {
                     power: *power,
                     pause: *pause,
                     single_step: *single_step,
-                    state: match controller.state.variable(u16str!("state")).unwrap() {
+                    state: match &*controller.state.variable(u16str!("state")).unwrap() {
                         LValue::String(state) => Some(state.to_ustring()),
                         _ => None,
                     },

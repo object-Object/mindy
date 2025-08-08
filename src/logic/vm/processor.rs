@@ -1,4 +1,5 @@
 use std::{
+    borrow::Cow,
     cell::{Cell, RefCell},
     collections::{HashMap, HashSet},
     io::Cursor,
@@ -283,10 +284,10 @@ impl ProcessorState {
     }
 
     #[inline(always)]
-    pub fn try_set_counter(&mut self, value: LValue) {
+    pub fn try_set_counter(counter: &mut usize, value: &LValue) {
         if let LValue::Number(n) = value {
             // we do a bounds check in the exec loop, so don't bother here
-            self.counter = n as usize;
+            *counter = *n as usize;
         }
     }
 
@@ -303,10 +304,10 @@ impl ProcessorState {
     }
 
     /// Looks up a variable or local constant by name.
-    pub fn variable(&self, name: &U16Str) -> Option<LValue> {
+    pub fn variable<'a>(&'a self, name: &U16Str) -> Option<Cow<'a, LValue>> {
         self.variables
             .get(name)
-            .cloned()
+            .map(Cow::Borrowed)
             .or_else(|| self.locals.get(name).map(|v| v.get(self)))
     }
 

@@ -390,7 +390,7 @@ mod tests {
                         name.display()
                     );
                     assert_eq!(
-                        processor.state.locals[name].get(&processor.state),
+                        *processor.state.locals[name].get(&processor.state),
                         want,
                         "{}",
                         name.display()
@@ -475,7 +475,7 @@ mod tests {
                         "variable not found: {}",
                         name.display()
                     );
-                    match &processor.state.locals[name].get(&processor.state) {
+                    match &*processor.state.locals[name].get(&processor.state) {
                         LValue::Building(building) => {
                             assert_eq!(building.position, want, "{}", name.display())
                         }

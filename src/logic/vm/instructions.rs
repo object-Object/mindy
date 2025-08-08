@@ -376,16 +376,17 @@ impl SimpleInstructionTrait for Read {
     fn execute(&self, state: &mut ProcessorState, _: &LogicVM) {
         let address = self.address.get(state);
 
-        let result = match self.target.get(state) {
+        let result = match &*self.target.get(state) {
             LValue::Building(building) => borrow_data!(
                 building.data,
-                state => match address {
+                state => match &*address {
                     // read variable with name, returning null for constants and undefined
                     LValue::String(name) => {
-                        if *name == u16str!("@counter") {
-                            Some(state.counter.into())
+                        // @counter should never be in state.variables, since globals are checked first
+                        if **name != u16str!("@counter") {
+                            state.variables.get(&**name).cloned().or(Some(LValue::Null))
                         } else {
-                            state.variables.get(&*name).cloned().or(Some(LValue::Null))
+                            Some(state.counter.into())
                         }
                     }
 
@@ -430,21 +431,25 @@ pub(super) struct Write {
 
 impl SimpleInstructionTrait for Write {
     fn execute(&self, state: &mut ProcessorState, _: &LogicVM) {
-        if let LValue::Building(building) = self.target.get(state) {
+        if let LValue::Building(building) = &*self.target.get(state) {
             let address = self.address.get(state);
-            let value = self.value.get(state);
+            let value = self.value.get_inner(state, &state.variables);
 
             borrow_data!(
-                mut building.data,
-                state => match address {
-                    LValue::String(name) if *name == u16str!("@counter") => {
-                        state.try_set_counter(value);
-                        state.set_stopped(false);
+                mut Rc::clone(&building.data),
+                state => {
+                    if let LValue::String(name) = address.into_owned() {
+                        // @counter should never be in state.variables, since globals are checked first
+                        if *name != u16str!("@counter") {
+                            let value = value.into_owned();
+                            if let Some(var) = state.variables.get_mut(&*name) {
+                                *var = value;
+                            }
+                        } else {
+                            ProcessorState::try_set_counter(&mut state.counter, &value);
+                            state.set_stopped(false);
+                        }
                     }
-                    LValue::String(name) if state.variables.contains_key(&*name) => {
-                        state.variables[&*name] = value;
-                    }
-                    _ => {}
                 },
                 data => {
                     if let BuildingData::Memory(memory) = data
@@ -492,7 +497,7 @@ impl SimpleInstructionTrait for Print {
             return;
         }
 
-        let value = self.value.get(state);
+        let value = self.value.get_inner(state, &state.variables);
         state.printbuffer += Print::to_string(&value).as_ref();
     }
 }
@@ -509,7 +514,7 @@ impl SimpleInstructionTrait for PrintChar {
         }
 
         // TODO: content emojis
-        if let LValue::Number(c) = self.value.get(state) {
+        if let LValue::Number(c) = *self.value.get(state) {
             // Java converts from float to char via int, not directly
             state.printbuffer.push_slice([c.floor() as u32 as u16]);
         }
@@ -547,7 +552,7 @@ impl SimpleInstructionTrait for Format {
             return;
         }
 
-        let value = self.value.get(state);
+        let value = self.value.get_inner(state, &state.variables);
         state.printbuffer.as_mut_vec().splice(
             placeholder_index..placeholder_index + 3,
             // TODO: this feels scuffed
@@ -565,7 +570,7 @@ pub(super) struct PrintFlush {
 
 impl SimpleInstructionTrait for PrintFlush {
     fn execute(&self, state: &mut ProcessorState, _: &LogicVM) {
-        if let LValue::Building(target) = self.target.get(state)
+        if let LValue::Building(target) = &*self.target.get_inner(state, &state.variables)
             && let Ok(mut data) = target.data.try_borrow_mut()
             && let BuildingData::Message(message_buffer) = &mut *data
         {
@@ -604,14 +609,14 @@ pub(super) struct Control {
 impl SimpleInstructionTrait for Control {
     fn execute(&self, state: &mut ProcessorState, _: &LogicVM) {
         if self.control == LAccess::Enabled
-            && let LValue::Building(building) = self.target.get(state)
+            && let LValue::Building(building) = &*self.target.get(state)
             && (state.privileged() || state.linked_positions().contains(&building.position))
         {
             let enabled = self.p1.get(state);
             if !enabled.isobj() {
                 let enabled = enabled.numf() != 0.;
                 borrow_data!(
-                    mut building.data,
+                    mut Rc::clone(&building.data),
                     state => state.set_enabled(enabled),
                     data => {
                         if let BuildingData::Switch(value) = data {
@@ -638,11 +643,11 @@ impl SimpleInstructionTrait for Sensor {
         let target = self.target.get(state);
         let sensor = self.sensor.get(state);
 
-        let result = match sensor {
+        let result = match &*sensor {
             // normal sensors
-            LValue::Sensor(sensor) => match target {
+            LValue::Sensor(sensor) => match &*target {
                 // dead
-                LValue::Null if sensor == Dead => true.into(),
+                LValue::Null if *sensor == Dead => true.into(),
 
                 // senseable
                 LValue::Content(content) => match content {
@@ -755,7 +760,7 @@ impl SimpleInstructionTrait for Sensor {
 
             // if target doesn't implement Senseable, write null
             _ if !matches!(
-                target,
+                &*target,
                 LValue::Content(_) | LValue::Team(_) | LValue::Building(_)
             ) =>
             {
@@ -1057,7 +1062,7 @@ impl Jump {
     }
 
     #[inline(always)]
-    fn weak_equal(x: LValue, y: LValue) -> bool {
+    fn weak_equal(x: Cow<'_, LValue>, y: Cow<'_, LValue>) -> bool {
         if x.isobj() && y.isobj() {
             x == y
         } else {
