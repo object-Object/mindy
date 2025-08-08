@@ -285,9 +285,9 @@ impl ProcessorState {
 
     #[inline(always)]
     pub fn try_set_counter(counter: &mut usize, value: &LValue) {
-        if let LValue::Number(n) = value {
+        if value.isnum() {
             // we do a bounds check in the exec loop, so don't bother here
-            *counter = *n as usize;
+            *counter = value.num() as usize;
         }
     }
 

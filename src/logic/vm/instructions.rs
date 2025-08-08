@@ -14,7 +14,10 @@ use super::{
 use crate::{
     logic::{
         ast::{self, ConditionOp, LogicOp, TileLayer},
-        vm::variables::{F64_DEG_RAD, F64_RAD_DEG, LString},
+        vm::{
+            LObject,
+            variables::{F64_DEG_RAD, F64_RAD_DEG, LString},
+        },
     },
     types::{
         ContentType, LAccess, Point2, Team,
@@ -126,13 +129,13 @@ impl InstructionBuilder {
                     .or_else(|| variables.get_index_of(&name).map(LVar::Variable))
                     // if none of those exist, create a new variable defaulting to null
                     .unwrap_or_else(|| {
-                        let (i, _) = variables.insert_full(name, LValue::Null);
+                        let (i, _) = variables.insert_full(name, LValue::NULL);
                         LVar::Variable(i)
                     })
             }
             ast::Value::String(value) => LVar::Constant(value.into()),
             ast::Value::Number(value) => LVar::Constant(value.into()),
-            ast::Value::None => LVar::Constant(LValue::Null),
+            ast::Value::None => LVar::Constant(LValue::NULL),
         };
 
         let jump_target =
@@ -375,16 +378,17 @@ impl Read {
 impl SimpleInstructionTrait for Read {
     fn execute(&self, state: &mut ProcessorState, _: &LogicVM) {
         let address = self.address.get(state);
+        let target = self.target.get(state);
 
-        let result = match &*self.target.get(state) {
-            LValue::Building(building) => borrow_data!(
+        let result = match target.obj() {
+            Some(LObject::Building(building)) => borrow_data!(
                 building.data,
-                state => match &*address {
+                state => match address.obj() {
                     // read variable with name, returning null for constants and undefined
-                    LValue::String(name) => {
+                    Some(LObject::String(name)) => {
                         // @counter should never be in state.variables, since globals are checked first
                         if **name != u16str!("@counter") {
-                            state.variables.get(&**name).cloned().or(Some(LValue::Null))
+                            state.variables.get(&**name).cloned().or(Some(LValue::NULL))
                         } else {
                             Some(state.counter.into())
                         }
@@ -411,7 +415,7 @@ impl SimpleInstructionTrait for Read {
             ),
 
             // read char at index
-            LValue::String(string) => Some(Self::read_slice(string.as_slice(), &address)),
+            Some(LObject::String(string)) => Some(Self::read_slice(string.as_slice(), &address)),
 
             _ => None,
         };
@@ -431,18 +435,18 @@ pub(super) struct Write {
 
 impl SimpleInstructionTrait for Write {
     fn execute(&self, state: &mut ProcessorState, _: &LogicVM) {
-        if let LValue::Building(building) = &*self.target.get(state) {
+        if let Some(LObject::Building(building)) = self.target.get(state).obj() {
             let address = self.address.get(state);
             let value = self.value.get_inner(state, &state.variables);
 
             borrow_data!(
                 mut Rc::clone(&building.data),
                 state => {
-                    if let LValue::String(name) = address.into_owned() {
+                    if let Some(LObject::String(name)) = address.into_owned().obj() {
                         // @counter should never be in state.variables, since globals are checked first
-                        if *name != u16str!("@counter") {
+                        if **name != u16str!("@counter") {
                             let value = value.into_owned();
-                            if let Some(var) = state.variables.get_mut(&*name) {
+                            if let Some(var) = state.variables.get_mut(&**name) {
                                 *var = value;
                             }
                         } else {
@@ -472,9 +476,10 @@ pub(super) struct Print {
 impl Print {
     #[inline(always)]
     fn to_string<'a>(value: &'a LValue) -> Cow<'a, U16Str> {
-        match value {
-            LValue::Null => Cow::from(u16str!("null")),
-            LValue::Number(n) => {
+        match value.obj() {
+            Some(LObject::Null) => Cow::from(u16str!("null")),
+            None => {
+                let n = value.num();
                 let rounded = n.round() as u64;
                 Cow::from(if (n - (rounded as f64)).abs() < PRINT_EPSILON {
                     u16format!("{rounded}")
@@ -482,11 +487,11 @@ impl Print {
                     u16format!("{n}")
                 })
             }
-            LValue::String(string) => Cow::Borrowed(string),
-            LValue::Content(content) => Cow::Borrowed(content.name()),
-            LValue::Team(team) => Cow::from(team.name_u16()),
-            LValue::Building(building) => Cow::Borrowed(building.block.name.as_u16str()),
-            LValue::Sensor(sensor) => Cow::from(sensor.name_u16()),
+            Some(LObject::String(string)) => Cow::Borrowed(string),
+            Some(LObject::Content(content)) => Cow::Borrowed(content.name()),
+            Some(LObject::Team(team)) => Cow::from(team.name_u16()),
+            Some(LObject::Building(building)) => Cow::Borrowed(building.block.name.as_u16str()),
+            Some(LObject::Sensor(sensor)) => Cow::from(sensor.name_u16()),
         }
     }
 }
@@ -514,7 +519,7 @@ impl SimpleInstructionTrait for PrintChar {
         }
 
         // TODO: content emojis
-        if let LValue::Number(c) = *self.value.get(state) {
+        if let Some(c) = self.value.get(state).try_num() {
             // Java converts from float to char via int, not directly
             state.printbuffer.push_slice([c.floor() as u32 as u16]);
         }
@@ -570,7 +575,8 @@ pub(super) struct PrintFlush {
 
 impl SimpleInstructionTrait for PrintFlush {
     fn execute(&self, state: &mut ProcessorState, _: &LogicVM) {
-        if let LValue::Building(target) = &*self.target.get_inner(state, &state.variables)
+        if let Some(LObject::Building(target)) =
+            self.target.get_inner(state, &state.variables).obj()
             && let Ok(mut data) = target.data.try_borrow_mut()
             && let BuildingData::Message(message_buffer) = &mut *data
         {
@@ -593,7 +599,7 @@ impl SimpleInstructionTrait for GetLink {
     fn execute(&self, state: &mut ProcessorState, _: &LogicVM) {
         let result = match self.index.get(state).num_usize() {
             Ok(index) => state.link(index).cloned().into(),
-            Err(_) => LValue::Null,
+            Err(_) => LValue::NULL,
         };
         self.result.set(state, result);
     }
@@ -609,11 +615,11 @@ pub(super) struct Control {
 impl SimpleInstructionTrait for Control {
     fn execute(&self, state: &mut ProcessorState, _: &LogicVM) {
         if self.control == LAccess::Enabled
-            && let LValue::Building(building) = &*self.target.get(state)
+            && let Some(LObject::Building(building)) = self.target.get(state).obj()
             && (state.privileged() || state.linked_positions().contains(&building.position))
         {
             let enabled = self.p1.get(state);
-            if !enabled.isobj() {
+            if enabled.isnum() {
                 let enabled = enabled.numf() != 0.;
                 borrow_data!(
                     mut Rc::clone(&building.data),
@@ -643,14 +649,14 @@ impl SimpleInstructionTrait for Sensor {
         let target = self.target.get(state);
         let sensor = self.sensor.get(state);
 
-        let result = match &*sensor {
+        let result = match sensor.obj() {
             // normal sensors
-            LValue::Sensor(sensor) => match &*target {
+            Some(LObject::Sensor(sensor)) => match target.obj() {
                 // dead
-                LValue::Null if *sensor == Dead => true.into(),
+                Some(LObject::Null) if *sensor == Dead => true.into(),
 
                 // senseable
-                LValue::Content(content) => match content {
+                Some(LObject::Content(content)) => match content {
                     // TODO: color, health, maxHealth, solid, powerCapacity
                     Content::Block(block) => match sensor {
                         Size => block.size.into(),
@@ -658,40 +664,40 @@ impl SimpleInstructionTrait for Sensor {
                         LiquidCapacity => block.liquid_capacity.into(),
                         Id => block.logic_id.into(),
                         Name => LString::Static(block.name.as_u16str()).into(),
-                        _ => LValue::Null,
+                        _ => LValue::NULL,
                     },
 
                     // TODO: color
                     Content::Item(item) => match sensor {
                         Id => item.logic_id.into(),
                         Name => LString::Static(item.name.as_u16str()).into(),
-                        _ => LValue::Null,
+                        _ => LValue::NULL,
                     },
 
                     // TODO: color
                     Content::Liquid(liquid) => match sensor {
                         Id => liquid.logic_id.into(),
                         Name => LString::Static(liquid.name.as_u16str()).into(),
-                        _ => LValue::Null,
+                        _ => LValue::NULL,
                     },
 
                     // TODO: health, maxHealth, size, itemCapacity, speed, payloadCapacity
                     Content::Unit(unit) => match sensor {
                         Id => unit.logic_id.into(),
                         Name => LString::Static(unit.name.as_u16str()).into(),
-                        _ => LValue::Null,
+                        _ => LValue::NULL,
                     },
                 },
 
-                LValue::Team(team) => match sensor {
+                Some(LObject::Team(team)) => match sensor {
                     Name => LString::Static(team.name_u16()).into(),
                     Id => team.0.into(),
                     Color => team.color().into(),
-                    _ => LValue::Null,
+                    _ => LValue::NULL,
                 },
 
                 // TODO: solid, health, maxHealth, powerCapacity
-                LValue::Building(building) => match sensor {
+                Some(LObject::Building(building)) => match sensor {
                     X => building.position.x.into(),
                     Y => building.position.y.into(),
                     Color => colors::TEAM_SHARDED.into(),
@@ -710,39 +716,39 @@ impl SimpleInstructionTrait for Sensor {
                     Size => building.block.size.into(),
                     CameraX | CameraY | CameraWidth | CameraHeight => 0.into(),
                     Type => Content::Block(building.block).into(),
-                    FirstItem => LValue::Null,
-                    PayloadType => LValue::Null,
+                    FirstItem => LValue::NULL,
+                    PayloadType => LValue::NULL,
 
                     _ => borrow_data!(
                         building.data,
                         state => match sensor {
                             LAccess::Enabled => state.enabled().into(),
-                            _ => LValue::Null,
+                            _ => LValue::NULL,
                         },
                         data => match data {
                             BuildingData::Memory(memory) => match sensor {
                                 MemoryCapacity => memory.len().into(),
                                 Enabled => true.into(),
-                                _ => LValue::Null,
+                                _ => LValue::NULL,
                             },
 
                             BuildingData::Message(buf) => match sensor {
                                 BufferSize => buf.len().into(),
                                 Enabled => true.into(),
-                                _ => LValue::Null,
+                                _ => LValue::NULL,
                             },
 
                             BuildingData::Switch(enabled) => match sensor {
                                 Enabled => (*enabled).into(),
-                                _ => LValue::Null,
+                                _ => LValue::NULL,
                             },
 
                             BuildingData::Unknown {
                                 senseable_config, ..
                             } => match sensor {
-                                Config => senseable_config.clone().unwrap_or(LValue::Null),
+                                Config => senseable_config.clone().unwrap_or(LValue::NULL),
                                 Enabled => true.into(),
-                                _ => LValue::Null,
+                                _ => LValue::NULL,
                             },
 
                             BuildingData::Processor(_) => unreachable!(),
@@ -751,24 +757,24 @@ impl SimpleInstructionTrait for Sensor {
                 },
 
                 // string length
-                LValue::String(string) if matches!(sensor, BufferSize | Size) => {
+                Some(LObject::String(string)) if matches!(sensor, BufferSize | Size) => {
                     string.len().into()
                 }
 
-                _ => LValue::Null,
+                _ => LValue::NULL,
             },
 
             // if target doesn't implement Senseable, write null
             _ if !matches!(
-                &*target,
-                LValue::Content(_) | LValue::Team(_) | LValue::Building(_)
+                target.obj(),
+                Some(LObject::Content(_) | LObject::Team(_) | LObject::Building(_))
             ) =>
             {
-                LValue::Null
+                LValue::NULL
             }
 
             // items/liquids aren't implemented, so always write null if sensing content
-            LValue::Content(_) => LValue::Null,
+            Some(LObject::Content(_)) => LValue::NULL,
 
             // if target is Senseable and sensor isn't Content or LAccess, do not write to result
             _ => return,
@@ -935,7 +941,7 @@ impl SimpleInstructionTrait for Lookup {
 
             ContentType::Team => id.try_into().ok().map(Team).into(),
 
-            _ => LValue::Null,
+            _ => LValue::NULL,
         };
 
         self.result.set(state, result);
@@ -1102,7 +1108,7 @@ impl SimpleInstructionTrait for GetBlock {
                 TileLayer::Block => Content::Block(building.block).into(),
                 TileLayer::Building => building.clone().into(),
             },
-            None => LValue::Null,
+            None => LValue::NULL,
         };
         self.result.set(state, result);
     }

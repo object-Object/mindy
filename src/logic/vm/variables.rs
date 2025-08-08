@@ -61,7 +61,7 @@ impl LVar {
 
             "false": constant(0),
             "true": constant(1),
-            "null": constant(LValue::Null),
+            "null": constant(LObject::Null),
 
             "@pi": constant(PI),
             "π": constant(PI),
@@ -142,7 +142,7 @@ impl LVar {
         links: &[ProcessorLink],
     ) {
         locals.extend(map_iter_from! {
-            "@this": constant(LValue::Building(building.clone())),
+            "@this": constant(LObject::Building(building.clone())),
             "@thisx": constant(building.position.x),
             "@thisy": constant(building.position.y),
             "@links": constant(links.len()),
@@ -152,7 +152,7 @@ impl LVar {
         for link in links {
             locals.insert(
                 U16String::from_str(&link.name),
-                constant(LValue::Building(link.building.clone())),
+                constant(LObject::Building(link.building.clone())),
             );
         }
     }
@@ -221,72 +221,116 @@ where
 }
 
 #[derive(Debug, Clone, PartialEq)]
-pub enum LValue {
-    Null,
-    Number(f64),
-    String(LString),
-    Content(Content),
-    Team(Team),
-    Building(Building),
-    Sensor(LAccess),
+pub struct LValue {
+    numval: f64,
+    objval: Option<LObject>,
 }
 
 impl LValue {
-    pub fn num(&self) -> f64 {
-        match *self {
-            Self::Number(n) if !invalid(n) => n,
-            Self::Null => 0.,
-            _ => 1.,
+    pub const NULL: Self = Self {
+        numval: 0.,
+        objval: Some(LObject::Null),
+    };
+
+    #[inline(always)]
+    fn non_null(value: LObject) -> Self {
+        Self {
+            numval: 1.,
+            objval: value.into(),
         }
     }
 
+    #[inline(always)]
+    pub fn num(&self) -> f64 {
+        self.numval
+    }
+
+    pub fn try_num(&self) -> Option<f64> {
+        if self.isnum() {
+            Some(self.numval)
+        } else {
+            None
+        }
+    }
+
+    #[inline(always)]
     pub fn numi(&self) -> i32 {
         self.num() as i32
     }
 
+    #[inline(always)]
     pub fn numu(&self) -> u32 {
         self.num() as u32
     }
 
+    #[inline(always)]
     pub fn num_usize(&self) -> Result<usize, TryFromIntError> {
         self.numi().try_into()
     }
 
+    #[inline(always)]
     pub fn numf(&self) -> f32 {
         self.num() as f32
     }
 
+    #[inline(always)]
+    pub fn obj(&self) -> &Option<LObject> {
+        &self.objval
+    }
+
+    #[inline(always)]
+    pub fn isnum(&self) -> bool {
+        self.objval.is_none()
+    }
+
+    #[inline(always)]
     pub fn isobj(&self) -> bool {
-        !matches!(self, Self::Number(_))
+        self.objval.is_some()
     }
 }
 
 impl Default for LValue {
     fn default() -> Self {
-        Self::Null
+        Self::NULL
     }
 }
 
-impl<T: AsPrimitive<f64> + Numeric> From<T> for LValue {
+impl<T> From<T> for LValue
+where
+    T: AsPrimitive<f64> + Numeric,
+{
     fn from(value: T) -> Self {
         let value = value.as_();
-        if invalid(value) {
-            Self::Null
+        if value.is_nan() || value.is_infinite() {
+            Self::NULL
         } else {
-            Self::Number(value)
+            Self {
+                numval: value,
+                objval: None,
+            }
         }
     }
 }
 
 impl From<bool> for LValue {
     fn from(value: bool) -> Self {
-        Self::Number(if value { 1. } else { 0. })
+        (if value { 1. } else { 0. }).into()
+    }
+}
+
+impl From<LObject> for LValue {
+    fn from(value: LObject) -> Self {
+        if value == LObject::Null {
+            Self::NULL
+        } else {
+            Self::non_null(value)
+        }
     }
 }
 
 impl From<LString> for LValue {
     fn from(value: LString) -> Self {
-        Self::String(value)
+        Self::non_null(LObject::String(value))
     }
 }
 
@@ -310,25 +354,25 @@ impl From<String> for LValue {
 
 impl From<Content> for LValue {
     fn from(value: Content) -> Self {
-        Self::Content(value)
+        Self::non_null(LObject::Content(value))
     }
 }
 
 impl From<Team> for LValue {
     fn from(value: Team) -> Self {
-        Self::Team(value)
+        Self::non_null(LObject::Team(value))
     }
 }
 
 impl From<Building> for LValue {
     fn from(value: Building) -> Self {
-        Self::Building(value)
+        Self::non_null(LObject::Building(value))
     }
 }
 
 impl From<LAccess> for LValue {
     fn from(value: LAccess) -> Self {
-        Self::Sensor(value)
+        Self::non_null(LObject::Sensor(value))
     }
 }
 
@@ -339,13 +383,25 @@ where
     fn from(value: Option<T>) -> Self {
         match value {
             Some(value) => value.into(),
-            None => Self::Null,
+            None => Self::NULL,
         }
     }
 }
 
-fn invalid(n: f64) -> bool {
-    n.is_nan() || n.is_infinite()
+#[derive(Debug, Clone, PartialEq)]
+pub enum LObject {
+    Null,
+    String(LString),
+    Content(Content),
+    Team(Team),
+    Building(Building),
+    Sensor(LAccess),
+}
+
+impl Default for LObject {
+    fn default() -> Self {
+        Self::Null
+    }
 }
 
 #[derive(Debug, Clone)]

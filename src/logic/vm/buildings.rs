@@ -4,7 +4,7 @@ use strum_macros::IntoStaticStr;
 use widestring::U16String;
 
 use super::{
-    LogicVMBuilder, VMLoadError, VMLoadResult,
+    LObject, LogicVMBuilder, VMLoadError, VMLoadResult,
     processor::{Processor, ProcessorBuilder},
     variables::LValue,
 };
@@ -96,7 +96,9 @@ impl Building {
 
             _ => BuildingData::Unknown {
                 senseable_config: match *config {
-                    Object::Content(content) => content.try_into().map(LValue::Content).ok(),
+                    Object::Content(content) => {
+                        content.try_into().map(|v| LObject::Content(v).into()).ok()
+                    }
                     _ => None,
                 },
             },

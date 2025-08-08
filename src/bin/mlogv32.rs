@@ -17,7 +17,7 @@ use cursive::views::{
 };
 use indicatif::ProgressIterator;
 use itertools::Itertools;
-use mindustry_rs::logic::vm::LVar;
+use mindustry_rs::logic::vm::{LObject, LVar};
 use mindustry_rs::{
     logic::vm::{
         Building, BuildingData, LValue, LogicVM, LogicVMBuilder, MEMORY_BANK, MESSAGE,
@@ -631,7 +631,7 @@ fn main() -> Result<(), Box<dyn Error>> {
                         VMCommand::SetBreakpoint(None) => {
                             config
                                 .state
-                                .set_variable(u16str!("BREAKPOINT_ADDRESS"), LValue::Null)?;
+                                .set_variable(u16str!("BREAKPOINT_ADDRESS"), LValue::NULL)?;
                             tui_println!(debug, "Breakpoint cleared.");
                         }
                         VMCommand::PrintVar(name, radix) => {
@@ -682,8 +682,8 @@ fn main() -> Result<(), Box<dyn Error>> {
                     power: *power,
                     pause: *pause,
                     single_step: *single_step,
-                    state: match &*controller.state.variable(u16str!("state")).unwrap() {
-                        LValue::String(state) => Some(state.to_ustring()),
+                    state: match controller.state.variable(u16str!("state")).unwrap().obj() {
+                        Some(LObject::String(state)) => Some(state.to_ustring()),
                         _ => None,
                     },
                     pc: controller.state.variable(u16str!("pc")).unwrap().numu(),
