@@ -1,27 +1,36 @@
-use std::{
+use alloc::{
     borrow::Cow,
-    cell::{Cell, RefCell},
-    collections::{HashMap, HashSet},
-    io::Cursor,
+    boxed::Box,
+    format,
     rc::Rc,
+    string::{String, ToString},
+    vec::Vec,
 };
+use core::cell::{Cell, RefCell};
+#[cfg(feature = "std")]
+use std::io::Cursor;
 
+#[cfg(feature = "std")]
 use binrw::BinRead;
 use itertools::Itertools;
-use rapidhash::fast::RapidHashSet;
+#[allow(unused_imports)]
+use num_traits::float::FloatCore;
 use replace_with::replace_with_or_default_and_return;
 use thiserror::Error;
 use widestring::{U16Str, U16String};
 
 use super::{
-    BuildingData, Constants, LValue, LogicVM, VMLoadError, VMLoadResult,
+    BuildingData, Constants, LValue, LogicVM, LogicVMBuilder, VMLoadError, VMLoadResult,
     buildings::Building,
     instructions::{Instruction, InstructionBuilder, InstructionResult, InstructionTrait, Noop},
     variables::{LVar, Variables},
 };
+#[cfg(feature = "std")]
+use crate::types::{Object, ProcessorConfig};
 use crate::{
-    logic::{LogicParser, ast},
-    types::{Object, PackedPoint2, ProcessorConfig, content},
+    logic::ast,
+    types::{PackedPoint2, ProcessorLinkConfig, content},
+    utils::{RapidHashMap, RapidHashSet},
 };
 
 pub(super) const MAX_TEXT_BUFFER: usize = 400;
@@ -44,9 +53,9 @@ impl Processor {
         // this is the only reason for the late init logic to exist
         // TODO: this may produce different link names than mindustry in specific cases
         // ie. if a custom link name is specified for a building that would be built after this processor
-        let mut taken_names = HashMap::new();
+        let mut taken_names = RapidHashMap::default();
 
-        let mut links = std::mem::take(&mut self.state.links).into_vec();
+        let mut links = core::mem::take(&mut self.state.links).into_vec();
         links.retain_mut(|link| {
             // resolve the actual building at the link position
             // before this, link.building is just air
@@ -70,7 +79,7 @@ impl Processor {
                 other.position.y as f64 + other_size,
             );
 
-            let dist_sq = (here.0 - there.0).powf(2.) + (here.1 - there.1).powf(2.);
+            let dist_sq = (here.0 - there.0).powi(2) + (here.1 - there.1).powi(2);
             let range = building.block.range + other_size;
             if dist_sq > range * range {
                 return false;
@@ -91,7 +100,7 @@ impl Processor {
 
             // link indices that are already in use for this prefix
             if !taken_names.contains_key(name_prefix) {
-                taken_names.insert(name_prefix.to_string(), HashSet::new());
+                taken_names.insert(name_prefix.to_string(), RapidHashSet::default());
             }
             let taken = taken_names.get_mut(name_prefix).unwrap();
 
@@ -334,16 +343,16 @@ pub(super) struct ProcessorLink {
 }
 
 #[derive(Debug)]
-pub(super) struct ProcessorBuilder<'a> {
+pub struct ProcessorBuilder<'a> {
     pub ipt: f64,
     pub privileged: bool,
-    pub running_processors: Rc<Cell<usize>>,
-    pub time: Rc<Cell<f64>>,
     pub position: PackedPoint2,
-    pub config: &'a ProcessorConfig,
+    pub code: Box<[ast::Statement]>,
+    pub links: &'a [ProcessorLinkConfig],
 }
 
 impl ProcessorBuilder<'_> {
+    #[cfg(feature = "std")]
     pub fn parse_config(config: &Object) -> VMLoadResult<ProcessorConfig> {
         let data = match config {
             Object::ByteArray { values } => values,
@@ -358,25 +367,19 @@ impl ProcessorBuilder<'_> {
         Ok(ProcessorConfig::read(&mut Cursor::new(data))?)
     }
 
-    pub fn build(self) -> VMLoadResult<Box<Processor>> {
+    pub fn build(self, builder: &LogicVMBuilder) -> VMLoadResult<Box<Processor>> {
         let ProcessorBuilder {
             ipt,
             privileged,
-            running_processors,
-            time,
             position,
-            config,
+            code,
+            links,
         } = self;
-
-        let code = LogicParser::new()
-            .parse(&config.code)
-            // FIXME: hack
-            .map_err(|e| VMLoadError::BadProcessorCode(e.to_string()))?;
 
         // TODO: this could be more efficient
         let mut num_instructions = 0;
         let labels = {
-            let mut labels = HashMap::new();
+            let mut labels = RapidHashMap::default();
             for statement in &code {
                 match statement {
                     ast::Statement::Label(label) => {
@@ -405,15 +408,14 @@ impl ProcessorBuilder<'_> {
 
         let enabled = !instructions.is_empty();
         if enabled {
-            running_processors.update(|n| n + 1);
+            builder.vm.running_processors.update(|n| n + 1);
         }
 
         let fake_data = Rc::new(RefCell::new(BuildingData::Unknown {
             senseable_config: None,
         }));
 
-        let links = config
-            .links
+        let links = links
             .iter()
             .map(|link| ProcessorLink {
                 name: link.name.to_string(),
@@ -441,8 +443,8 @@ impl ProcessorBuilder<'_> {
                 counter: 0,
                 accumulator: 0.,
                 ipt,
-                running_processors,
-                time,
+                running_processors: builder.vm.running_processors.clone(),
+                time: builder.vm.time.clone(),
                 printbuffer: U16String::new(),
                 locals: Constants::default(),
                 variables: Variables::default(),

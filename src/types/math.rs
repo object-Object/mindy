@@ -1,4 +1,4 @@
-use std::{fmt::Display, hash::Hash, num::TryFromIntError};
+use core::{fmt::Display, hash::Hash, num::TryFromIntError};
 
 use binrw::prelude::*;
 
@@ -32,7 +32,7 @@ impl From<(i32, i32)> for Point2 {
 }
 
 impl Display for Point2 {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         write!(f, "({}, {})", self.x, self.y)
     }
 }
@@ -69,7 +69,7 @@ impl From<(i16, i16)> for PackedPoint2 {
 }
 
 impl Display for PackedPoint2 {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         write!(f, "({}, {})", self.x, self.y)
     }
 }

@@ -1,6 +1,8 @@
+use alloc::string::{String, ToString};
+
 use lazy_static::lazy_static;
-use rapidhash::fast::RapidHashMap;
-use velcro::map_iter;
+
+use crate::utils::RapidHashMap;
 
 // https://github.com/Anuken/Arc/blob/071fdffaf220cd57cf971a0ee58db2f321f92ee1/arc-core/src/arc/graphics/Color.java#L11
 
@@ -64,53 +66,54 @@ pub const TEAM_NEOPLASTIC_F64: f64 = rgba8888_to_double_bits(TEAM_NEOPLASTIC);
 
 lazy_static! {
     // https://github.com/Anuken/Arc/blob/071fdffaf220cd57cf971a0ee58db2f321f92ee1/arc-core/src/arc/graphics/Colors.java#L53
-    pub static ref COLORS: RapidHashMap<String, f64> = map_iter! {
-        "CLEAR": CLEAR,
-        "BLACK": BLACK,
+    pub static ref COLORS: RapidHashMap<String, f64> = [
+        ("CLEAR", CLEAR),
+        ("BLACK", BLACK),
 
-        "WHITE": WHITE,
-        "LIGHT_GRAY": LIGHT_GRAY,
-        "GRAY": GRAY,
-        "DARK_GRAY": DARK_GRAY,
-        "LIGHT_GREY": LIGHT_GRAY,
-        "GREY": GRAY,
-        "DARK_GREY": DARK_GRAY,
+        ("WHITE", WHITE),
+        ("LIGHT_GRAY", LIGHT_GRAY),
+        ("GRAY", GRAY),
+        ("DARK_GRAY", DARK_GRAY),
+        ("LIGHT_GREY", LIGHT_GRAY),
+        ("GREY", GRAY),
+        ("DARK_GREY", DARK_GRAY),
 
-        "BLUE": ROYAL,
-        "NAVY": NAVY,
-        "ROYAL": ROYAL,
-        "SLATE": SLATE,
-        "SKY": SKY,
-        "CYAN": CYAN,
-        "TEAL": TEAL,
+        ("BLUE", ROYAL),
+        ("NAVY", NAVY),
+        ("ROYAL", ROYAL),
+        ("SLATE", SLATE),
+        ("SKY", SKY),
+        ("CYAN", CYAN),
+        ("TEAL", TEAL),
 
-        "GREEN": 0x38_d6_67_ffu32,
-        "ACID": ACID,
-        "LIME": LIME,
-        "FOREST": FOREST,
-        "OLIVE": OLIVE,
+        ("GREEN", 0x38_d6_67_ffu32),
+        ("ACID", ACID),
+        ("LIME", LIME),
+        ("FOREST", FOREST),
+        ("OLIVE", OLIVE),
 
-        "YELLOW": YELLOW,
-        "GOLD": GOLD,
-        "GOLDENROD": GOLDENROD,
-        "ORANGE": ORANGE,
+        ("YELLOW", YELLOW),
+        ("GOLD", GOLD),
+        ("GOLDENROD", GOLDENROD),
+        ("ORANGE", ORANGE),
 
-        "BROWN": BROWN,
-        "TAN": TAN,
-        "BRICK": BRICK,
+        ("BROWN", BROWN),
+        ("TAN", TAN),
+        ("BRICK", BRICK),
 
-        "RED": 0xe5_54_54_ffu32,
-        "SCARLET": SCARLET,
-        "CRIMSON": CRIMSON,
-        "CORAL": CORAL,
-        "SALMON": SALMON,
-        "PINK": PINK,
-        "MAGENTA": MAGENTA,
+        ("RED", 0xe5_54_54_ffu32),
+        ("SCARLET", SCARLET),
+        ("CRIMSON", CRIMSON),
+        ("CORAL", CORAL),
+        ("SALMON", SALMON),
+        ("PINK", PINK),
+        ("MAGENTA", MAGENTA),
 
-        "PURPLE": PURPLE,
-        "VIOLET": VIOLET,
-        "MAROON": MAROON,
-    }
+        ("PURPLE", PURPLE),
+        ("VIOLET", VIOLET),
+        ("MAROON", MAROON),
+    ]
+    .into_iter()
     .flat_map(|(k, v)| [(k.to_lowercase(), v), (k.to_string(), v)])
     .map(|(k, v)| (k, rgba8888_to_double_bits(v)))
     .collect();

@@ -1,16 +1,22 @@
 pub mod ast;
+#[cfg(feature = "std")]
+mod grammar_util;
 pub mod vm;
 
+#[cfg(feature = "std")]
 lalrpop_util::lalrpop_mod!(
     #[allow(deprecated)]
     grammar,
     "/logic/grammar.rs"
 );
 
+#[cfg(feature = "std")]
 pub use grammar::LogicParser;
 
-#[cfg(test)]
+#[cfg(all(test, feature = "std"))]
 mod tests {
+    use std::{format, prelude::rust_2024::*, vec};
+
     use pretty_assertions::assert_eq;
 
     use super::{

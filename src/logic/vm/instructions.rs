@@ -1,9 +1,13 @@
-use std::{borrow::Cow, collections::HashMap, rc::Rc};
+use alloc::{borrow::Cow, format, rc::Rc, string::String};
 
 use enum_dispatch::enum_dispatch;
+#[cfg(feature = "std")]
 use lazy_static::lazy_static;
+#[cfg(feature = "std")]
 use noise::{NoiseFn, Simplex};
 use num_traits::AsPrimitive;
+#[allow(unused_imports)]
+use num_traits::float::FloatCore;
 use widestring::{U16Str, u16str};
 
 use super::{
@@ -25,13 +29,14 @@ use crate::{
         colors::{self, f32_to_double_bits, f64_from_double_bits},
         content,
     },
-    utils::u16format,
+    utils::{RapidHashMap, u16format},
 };
 
 const MAX_IPT: i32 = 1000;
 const EQUALITY_EPSILON: f64 = 0.000001;
 const PRINT_EPSILON: f64 = 0.00001;
 
+#[cfg(feature = "std")]
 lazy_static! {
     static ref SIMPLEX: Simplex = Simplex::new(0);
 }
@@ -101,7 +106,7 @@ impl Default for Instruction {
 #[derive(Debug)]
 pub(super) struct InstructionBuilder {
     pub(super) instruction: ast::Instruction,
-    pub(super) labels: Rc<HashMap<String, usize>>,
+    pub(super) labels: Rc<RapidHashMap<String, usize>>,
 }
 
 impl InstructionBuilder {
@@ -593,7 +598,7 @@ impl SimpleInstructionTrait for PrintFlush {
             if state.printbuffer.len() > MAX_TEXT_BUFFER {
                 state.printbuffer.drain(MAX_TEXT_BUFFER..);
             }
-            std::mem::swap(&mut state.printbuffer, message_buffer);
+            core::mem::swap(&mut state.printbuffer, message_buffer);
         }
         state.printbuffer.clear();
     }
@@ -858,6 +863,20 @@ impl SimpleInstructionTrait for Op {
             if a < 0. { a + 360. } else { a }
         }
 
+        #[cfg(feature = "std")]
+        macro_rules! libm {
+            ($std:expr, $no_std:expr) => {
+                $std
+            };
+        }
+
+        #[cfg(all(not(feature = "std"), feature = "no_std"))]
+        macro_rules! libm {
+            ($std:expr, $no_std:expr) => {
+                $no_std
+            };
+        }
+
         let result = match self.op {
             LogicOp::Add => x + y,
             LogicOp::Sub => x - y,
@@ -866,7 +885,7 @@ impl SimpleInstructionTrait for Op {
             LogicOp::Idiv => (x / y).floor(),
             LogicOp::Mod => x % y,
             LogicOp::Emod => ((x % y) + y) % y,
-            LogicOp::Pow => x.powf(y),
+            LogicOp::Pow => libm!(f64::powf, libm::pow)(x, y),
 
             LogicOp::Equal => Jump::weak_equal(x_val, y_val).into(),
             LogicOp::NotEqual => (!Jump::weak_equal(x_val, y_val)).into(),
@@ -887,7 +906,9 @@ impl SimpleInstructionTrait for Op {
 
             LogicOp::Max => x.max(y),
             LogicOp::Min => x.min(y),
-            LogicOp::Angle => wrap_angle((y as f32).atan2(x as f32) * RAD_DEG) as f64,
+            LogicOp::Angle => {
+                wrap_angle(libm!(f32::atan2, libm::atan2f)(y as f32, x as f32) * RAD_DEG) as f64
+            }
             LogicOp::AngleDiff => {
                 let x = (x as f32) % 360.;
                 let y = (y as f32) % 360.;
@@ -896,9 +917,8 @@ impl SimpleInstructionTrait for Op {
             LogicOp::Len => {
                 let x = x as f32;
                 let y = y as f32;
-                (x * x + y * y).sqrt() as f64
+                libm!(f32::sqrt, libm::sqrtf)(x * x + y * y) as f64
             }
-            LogicOp::Noise => SIMPLEX.get([x, y]),
             LogicOp::Abs => x.abs(),
             // https://github.com/rust-lang/rust/issues/57543
             LogicOp::Sign => {
@@ -908,23 +928,32 @@ impl SimpleInstructionTrait for Op {
                     x.signum()
                 }
             }
-            LogicOp::Log => x.ln(),
-            LogicOp::Logn => x.log(y),
-            LogicOp::Log10 => x.log10(),
+            LogicOp::Log => libm!(f64::ln, libm::log)(x),
+            LogicOp::Logn => libm!(x.log(y), libm::log(x) / libm::log(y)),
+            LogicOp::Log10 => libm!(f64::log10, libm::log10)(x),
             LogicOp::Floor => x.floor(),
             LogicOp::Ceil => x.ceil(),
             // java's Math.round rounds toward +inf, but rust's f64::round rounds away from 0
             LogicOp::Round => (x + 0.5).floor(),
-            LogicOp::Sqrt => x.sqrt(),
+            LogicOp::Sqrt => libm!(f64::sqrt, libm::sqrt)(x),
+
+            #[cfg(feature = "std")]
+            LogicOp::Noise => SIMPLEX.get([x, y]),
+            #[cfg(not(feature = "std"))]
+            LogicOp::Noise => 0., // TODO: implement
+
+            #[cfg(feature = "std")]
             LogicOp::Rand => rand::random::<f64>() * x,
+            #[cfg(not(feature = "std"))]
+            LogicOp::Rand => x, // TODO: implement
 
-            LogicOp::Sin => (x * F64_DEG_RAD).sin(),
-            LogicOp::Cos => (x * F64_DEG_RAD).cos(),
-            LogicOp::Tan => (x * F64_DEG_RAD).tan(),
+            LogicOp::Sin => libm!(f64::sin, libm::sin)(x * F64_DEG_RAD),
+            LogicOp::Cos => libm!(f64::cos, libm::cos)(x * F64_DEG_RAD),
+            LogicOp::Tan => libm!(f64::tan, libm::tan)(x * F64_DEG_RAD),
 
-            LogicOp::Asin => x.asin() * F64_RAD_DEG,
-            LogicOp::Acos => x.acos() * F64_RAD_DEG,
-            LogicOp::Atan => x.atan() * F64_RAD_DEG,
+            LogicOp::Asin => libm!(f64::asin, libm::asin)(x) * F64_RAD_DEG,
+            LogicOp::Acos => libm!(f64::acos, libm::acos)(x) * F64_RAD_DEG,
+            LogicOp::Atan => libm!(f64::atan, libm::atan)(x) * F64_RAD_DEG,
         };
 
         self.result.setnum(state, result);

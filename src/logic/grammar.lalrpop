@@ -1,6 +1,8 @@
 // -*- mode: Rust; -*-
 
-use super::ast::*;
+use alloc::{string::String, vec::Vec};
+
+use super::{ast::*, grammar_util::*};
 use crate::types::{colors::{COLORS, to_double_bits}, ContentType, LAccess};
 
 grammar;

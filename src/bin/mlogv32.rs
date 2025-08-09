@@ -24,7 +24,7 @@ use mindustry_rs::{
         Building, BuildingData, LValue, LogicVM, LogicVMBuilder, MEMORY_BANK, MESSAGE,
         MICRO_PROCESSOR, SWITCH, WORLD_PROCESSOR,
     },
-    types::{Object, PackedPoint2, ProcessorConfig, Schematic},
+    types::{Object, PackedPoint2, ProcessorConfig, schematics::Schematic},
 };
 use serde::Deserialize;
 use widestring::{U16String, u16str};

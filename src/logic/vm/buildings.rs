@@ -1,16 +1,22 @@
-use std::{cell::RefCell, rc::Rc};
+use alloc::{boxed::Box, rc::Rc, string::ToString};
+use core::cell::RefCell;
 
 use strum_macros::IntoStaticStr;
 use widestring::U16String;
 
+#[cfg(feature = "std")]
+use super::processor::ProcessorBuilder;
 use super::{
-    LObject, LogicVMBuilder, VMLoadError, VMLoadResult,
-    processor::{Processor, ProcessorBuilder},
-    variables::LValue,
+    LObject, LogicVMBuilder, VMLoadError, VMLoadResult, processor::Processor, variables::LValue,
 };
 use crate::types::{
-    Object, PackedPoint2, ProcessorConfig, SchematicTile,
+    Object, PackedPoint2,
     content::{self, Block},
+};
+#[cfg(feature = "std")]
+use crate::{
+    logic::LogicParser,
+    types::{ProcessorConfig, schematics::SchematicTile},
 };
 
 pub const MICRO_PROCESSOR: &str = "micro-processor";
@@ -55,16 +61,19 @@ impl Building {
         name: &str,
         position: PackedPoint2,
         config: &Object,
-        builder: &LogicVMBuilder,
+        #[cfg_attr(not(feature = "std"), allow(unused_variables))] builder: &LogicVMBuilder,
     ) -> VMLoadResult<Self> {
         let data = match name {
             MICRO_PROCESSOR | LOGIC_PROCESSOR | HYPER_PROCESSOR | WORLD_PROCESSOR => {
+                #[cfg(feature = "std")]
                 return Self::from_processor_config(
                     name,
                     position,
                     &ProcessorBuilder::parse_config(config)?,
                     builder,
                 );
+                #[cfg(not(feature = "std"))]
+                panic!("processor config parsing is not supported on no_std");
             }
 
             MEMORY_CELL => BuildingData::Memory([0.; 64].into()),
@@ -107,56 +116,59 @@ impl Building {
         Self::new(name, position, data)
     }
 
+    #[cfg(feature = "std")]
     pub fn from_processor_config(
         name: &str,
         position: PackedPoint2,
         config: &ProcessorConfig,
         builder: &LogicVMBuilder,
     ) -> VMLoadResult<Self> {
+        let code = LogicParser::new()
+            .parse(&config.code)
+            // FIXME: hack
+            .map_err(|e| VMLoadError::BadProcessorCode(e.to_string()))?
+            .into_boxed_slice();
+
         let data = match name {
             MICRO_PROCESSOR => BuildingData::Processor(
                 ProcessorBuilder {
                     ipt: 2.,
                     privileged: false,
-                    running_processors: Rc::clone(&builder.vm.running_processors),
-                    time: Rc::clone(&builder.vm.time),
                     position,
-                    config,
+                    code,
+                    links: &config.links,
                 }
-                .build()?,
+                .build(builder)?,
             ),
             LOGIC_PROCESSOR => BuildingData::Processor(
                 ProcessorBuilder {
                     ipt: 8.,
                     privileged: false,
-                    running_processors: Rc::clone(&builder.vm.running_processors),
-                    time: Rc::clone(&builder.vm.time),
                     position,
-                    config,
+                    code,
+                    links: &config.links,
                 }
-                .build()?,
+                .build(builder)?,
             ),
             HYPER_PROCESSOR => BuildingData::Processor(
                 ProcessorBuilder {
                     ipt: 25.,
                     privileged: false,
-                    running_processors: Rc::clone(&builder.vm.running_processors),
-                    time: Rc::clone(&builder.vm.time),
                     position,
-                    config,
+                    code,
+                    links: &config.links,
                 }
-                .build()?,
+                .build(builder)?,
             ),
             WORLD_PROCESSOR => BuildingData::Processor(
                 ProcessorBuilder {
                     ipt: 8.,
                     privileged: true,
-                    running_processors: Rc::clone(&builder.vm.running_processors),
-                    time: Rc::clone(&builder.vm.time),
                     position,
-                    config,
+                    code,
+                    links: &config.links,
                 }
-                .build()?,
+                .build(builder)?,
             ),
             _ => {
                 return Err(VMLoadError::BadBlockType {
@@ -169,6 +181,7 @@ impl Building {
         Self::new(name, position, data)
     }
 
+    #[cfg(feature = "std")]
     pub fn from_schematic_tile(
         SchematicTile {
             block: name,

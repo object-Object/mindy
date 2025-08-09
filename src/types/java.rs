@@ -1,4 +1,9 @@
-use std::{
+use alloc::{
+    boxed::Box,
+    string::{String, ToString},
+    vec::Vec,
+};
+use core::{
     borrow::Borrow,
     fmt,
     hash::{Hash, Hasher},
@@ -16,11 +21,8 @@ pub struct JavaString {
     count: u16,
 
     /// The string value.
-    #[br(
-        count = count,
-        try_map = |s: Vec<u8>| cesu8::from_java_cesu8(&s).map(|v| v.to_string()),
-    )]
-    #[bw(map = |s| cesu8::to_java_cesu8(s).to_vec())]
+    #[br(count = count, try_map = try_map_read)]
+    #[bw(map = map_write)]
     pub value: String,
 }
 
@@ -88,4 +90,26 @@ impl fmt::Display for JavaString {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "{}", self.value)
     }
+}
+
+#[cfg(feature = "std")]
+type MapReadError = cesu8::Cesu8DecodingError;
+#[cfg(not(feature = "std"))]
+type MapReadError = String;
+
+#[cfg_attr(not(feature = "std"), allow(unused_variables))]
+fn try_map_read(s: Vec<u8>) -> Result<String, MapReadError> {
+    #[cfg(feature = "std")]
+    return cesu8::from_java_cesu8(&s).map(|s| s.to_string());
+    #[cfg(not(feature = "std"))]
+    panic!("cesu8 does not support no_std");
+}
+
+#[allow(clippy::ptr_arg)]
+#[cfg_attr(not(feature = "std"), allow(unused_variables))]
+fn map_write(s: &String) -> Vec<u8> {
+    #[cfg(feature = "std")]
+    return cesu8::to_java_cesu8(s).to_vec();
+    #[cfg(not(feature = "std"))]
+    panic!("cesu8 does not support no_std");
 }

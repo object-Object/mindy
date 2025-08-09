@@ -1,7 +1,10 @@
 use std::{
     error::Error,
+    format,
     io::{self, Cursor, Read, Seek},
     ops::Sub,
+    prelude::rust_2024::*,
+    vec,
 };
 
 use base64::prelude::*;

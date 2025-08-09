@@ -1,12 +1,24 @@
-use std::{fmt::Display, ops::Deref};
+use core::{fmt::Display, ops::Deref};
 
 use serde::Deserialize;
-use widestring::{U16Str, U16String};
+use widestring::U16Str;
+
+macro_rules! impl_content {
+    ($typ:ident) => {
+        impl PartialEq for $typ {
+            fn eq(&self, other: &Self) -> bool {
+                self.id == other.id
+            }
+        }
+
+        impl Eq for $typ {}
+    };
+}
 
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Block {
-    pub name: MultiString,
+    pub name: MultiStr,
     pub id: i32,
     pub logic_id: i32,
     pub size: i16,
@@ -16,7 +28,7 @@ pub struct Block {
     pub liquid_capacity: f32,
     /*
     pub visibility: Visibility,
-    pub subclass: MultiString,
+    pub subclass: MultiStr,
     pub configurable: bool,
     pub category: Category,
     pub has_items: bool,
@@ -34,141 +46,135 @@ pub struct Block {
     pub max_nodes: i32,
     pub output_facing: bool,
     pub rotate: bool,
-    pub unit_plans: MultiString,
+    pub unit_plans: MultiStr,
     */
 }
 
-impl PartialEq for Block {
-    fn eq(&self, other: &Self) -> bool {
-        self.id == other.id
-    }
-}
-
-impl Eq for Block {}
+impl_content!(Block);
 
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Item {
-    pub name: MultiString,
+    pub name: MultiStr,
     pub id: i32,
     pub logic_id: i32,
 }
 
-impl PartialEq for Item {
-    fn eq(&self, other: &Self) -> bool {
-        self.id == other.id
-    }
-}
-
-impl Eq for Item {}
+impl_content!(Item);
 
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Liquid {
-    pub name: MultiString,
+    pub name: MultiStr,
     pub id: i32,
     pub logic_id: i32,
 }
 
-impl PartialEq for Liquid {
-    fn eq(&self, other: &Self) -> bool {
-        self.id == other.id
-    }
-}
-
-impl Eq for Liquid {}
+impl_content!(Liquid);
 
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Unit {
-    pub name: MultiString,
+    pub name: MultiStr,
     pub id: i32,
     pub logic_id: i32,
 }
 
-impl PartialEq for Unit {
-    fn eq(&self, other: &Self) -> bool {
-        self.id == other.id
-    }
-}
+impl_content!(Unit);
 
-impl Eq for Unit {}
+const MULTISTR_LEN: usize = 32;
 
 #[derive(Debug, Clone, Deserialize)]
-#[serde(from = "String")]
-pub struct MultiString {
-    string: String,
-    u16string: U16String,
+#[serde(from = "&str")]
+pub struct MultiStr {
+    string: [u8; MULTISTR_LEN],
+    u16string: [u16; MULTISTR_LEN],
+    len: u8,
 }
 
-impl MultiString {
-    pub fn as_string(&self) -> &String {
-        &self.string
-    }
-
+impl MultiStr {
     pub fn as_str(&self) -> &str {
-        &self.string
-    }
-
-    pub fn as_u16string(&self) -> &U16String {
-        &self.u16string
+        unsafe { str::from_utf8_unchecked(&self.string[0..(self.len as usize)]) }
     }
 
     pub fn as_u16str(&self) -> &U16Str {
-        &self.u16string
+        U16Str::from_slice(&self.u16string[0..(self.len as usize)])
     }
 }
 
-impl From<String> for MultiString {
-    fn from(string: String) -> Self {
+impl From<&str> for MultiStr {
+    fn from(s: &str) -> Self {
+        assert!(
+            s.len() <= MULTISTR_LEN,
+            "MultiStr too long (want <={MULTISTR_LEN}, got {}): {s}",
+            s.len()
+        );
+
+        let mut string = [0; MULTISTR_LEN];
+        for (i, c) in s.bytes().enumerate() {
+            string[i] = c;
+        }
+
+        let mut i = 0;
+        let mut u16string = [0; MULTISTR_LEN];
+        for c in s.encode_utf16() {
+            u16string[i] = c;
+            i += 1;
+        }
+        assert!(i == s.len());
+
         Self {
-            u16string: U16String::from_str(&string),
             string,
+            u16string,
+            len: s.len() as u8,
         }
     }
 }
 
-impl From<MultiString> for String {
-    fn from(value: MultiString) -> Self {
-        value.string
+impl Display for MultiStr {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        self.as_str().fmt(f)
     }
 }
 
-impl From<MultiString> for U16String {
-    fn from(value: MultiString) -> Self {
-        value.u16string
-    }
-}
-
-impl Display for MultiString {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        self.string.fmt(f)
-    }
-}
-
-impl Deref for MultiString {
-    type Target = String;
+impl Deref for MultiStr {
+    type Target = str;
 
     fn deref(&self) -> &Self::Target {
-        &self.string
+        self.as_str()
     }
 }
 
 macro_rules! include_content {
-    ($typ:ident, $file:expr) => {
+    ($typ:ident, $file_std:expr, $file_no_std:expr; $num:expr) => {
+        #[cfg(feature = "std")]
+        use alloc::vec::Vec;
+
         use lazy_static::lazy_static;
-        use rapidhash::fast::RapidHashMap;
 
         use super::$typ;
+        use crate::utils::RapidHashMap;
 
+        #[cfg(feature = "std")]
         lazy_static! {
             pub static ref VALUES: Vec<$typ> = csv::ReaderBuilder::new()
                 .delimiter(b';')
                 .comment(Some(b'/'))
-                .from_reader(&include_bytes!($file)[..])
+                .from_reader(&include_bytes!($file_std)[..])
                 .deserialize()
                 .map(|v| v.unwrap())
                 .collect();
+        }
+
+        #[cfg(all(not(feature = "std"), feature = "no_std"))]
+        lazy_static! {
+            pub static ref VALUES: [$typ; $num] =
+                serde_json_core::from_slice(&include_bytes!($file_no_std)[..])
+                    .unwrap()
+                    .0;
+        }
+
+        lazy_static! {
             /// Only includes values that have a valid logic id.
             pub static ref FROM_ID: RapidHashMap<i32, &'static $typ> = VALUES
                 .iter()
@@ -189,7 +195,8 @@ macro_rules! include_content {
 pub mod blocks {
     include_content!(
         Block,
-        "../../submodules/mimex-data/data/be/mimex-blocks.txt"
+        "../../submodules/mimex-data/data/be/mimex-blocks.txt",
+        "content/blocks.json"; 2
     );
 
     lazy_static! {
@@ -199,16 +206,25 @@ pub mod blocks {
 }
 
 pub mod items {
-    include_content!(Item, "../../submodules/mimex-data/data/be/mimex-items.txt");
+    include_content!(
+        Item,
+        "../../submodules/mimex-data/data/be/mimex-items.txt",
+        "content/items.json"; 0
+    );
 }
 
 pub mod liquids {
     include_content!(
         Liquid,
-        "../../submodules/mimex-data/data/be/mimex-liquids.txt"
+        "../../submodules/mimex-data/data/be/mimex-liquids.txt",
+        "content/liquids.json"; 0
     );
 }
 
 pub mod units {
-    include_content!(Unit, "../../submodules/mimex-data/data/be/mimex-units.txt");
+    include_content!(
+        Unit,
+        "../../submodules/mimex-data/data/be/mimex-units.txt",
+        "content/units.json"; 0
+    );
 }

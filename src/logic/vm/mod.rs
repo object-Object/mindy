@@ -5,19 +5,18 @@ mod variables;
 
 pub use buildings::*;
 pub use processor::*;
-use rapidhash::fast::RapidHashMap;
 pub use variables::*;
 
-use std::{
-    borrow::Cow,
-    cell::Cell,
-    rc::Rc,
-    time::{Duration, Instant},
-};
+use alloc::{borrow::Cow, rc::Rc, string::String, vec::Vec};
+use core::{cell::Cell, time::Duration};
+#[cfg(feature = "std")]
+use std::time::Instant;
 
 use thiserror::Error;
 
-use crate::types::{PackedPoint2, Schematic, SchematicTile};
+#[cfg(feature = "std")]
+use crate::types::schematics::{Schematic, SchematicTile};
+use crate::{types::PackedPoint2, utils::RapidHashMap};
 
 const MILLIS_PER_SEC: u64 = 1_000;
 const NANOS_PER_MILLI: u32 = 1_000_000;
@@ -42,10 +41,12 @@ impl LogicVM {
         }
     }
 
+    #[cfg(feature = "std")]
     pub fn from_schematic(schematic: &Schematic) -> VMLoadResult<Self> {
         Self::from_schematic_tiles(schematic.tiles())
     }
 
+    #[cfg(feature = "std")]
     pub fn from_schematic_tiles(tiles: &[SchematicTile]) -> VMLoadResult<Self> {
         let mut builder = LogicVMBuilder::new();
         builder.add_schematic_tiles(tiles)?;
@@ -60,12 +61,14 @@ impl LogicVM {
 
     /// Run the simulation until all processors halt, or until a number of ticks are finished.
     /// Returns true if all processors halted, or false if the tick limit was reached.
+    #[cfg(feature = "std")]
     pub fn run(&self, max_ticks: Option<usize>) -> bool {
         self.run_with_delta(max_ticks, 1.0)
     }
 
     /// Run the simulation until all processors halt, or until a number of ticks are finished.
     /// Returns true if all processors halted, or false if the tick limit was reached.
+    #[cfg(feature = "std")]
     pub fn run_with_delta(&self, max_ticks: Option<usize>, delta: f64) -> bool {
         let start = Instant::now();
         let mut tick = 0;
@@ -163,12 +166,14 @@ impl LogicVMBuilder {
         }
     }
 
+    #[cfg(feature = "std")]
     pub fn add_schematic_tile(&mut self, tile: &SchematicTile) -> VMLoadResult<()> {
         let building = Building::from_schematic_tile(tile, self)?;
         self.add_building(building);
         Ok(())
     }
 
+    #[cfg(feature = "std")]
     pub fn add_schematic_tiles(&mut self, tiles: &[SchematicTile]) -> VMLoadResult<()> {
         for tile in tiles {
             self.add_schematic_tile(tile)?;
@@ -193,7 +198,7 @@ impl LogicVMBuilder {
 
         vm.total_processors = self.processors.len();
 
-        vm.buildings = std::mem::take(&mut self.processors); // yoink
+        vm.buildings = core::mem::take(&mut self.processors); // yoink
         vm.buildings.extend(self.other_buildings.drain(0..));
 
         for (i, building) in vm.buildings.iter().enumerate() {
@@ -245,6 +250,7 @@ pub enum VMLoadError {
     #[error("expected {want} block type but got {got}")]
     BadBlockType { want: String, got: String },
 
+    #[cfg(feature = "std")]
     #[error("failed to decode processor config")]
     BadProcessorConfig(#[from] binrw::Error),
 
@@ -258,9 +264,9 @@ pub enum VMLoadError {
     Overlap(PackedPoint2),
 }
 
-#[cfg(test)]
+#[cfg(all(test, feature = "std"))]
 mod tests {
-    use std::io::Cursor;
+    use std::{format, io::Cursor, prelude::rust_2024::*, thread_local, vec};
 
     use binrw::{BinRead, BinWrite};
     use itertools::Itertools;

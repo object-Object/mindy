@@ -1,12 +1,12 @@
 #![allow(deprecated)]
 
-use std::hash::Hash;
+use alloc::{format, vec, vec::Vec};
+use core::hash::Hash;
 
 use binrw::prelude::*;
 use lazy_static::lazy_static;
 use strum::VariantArray;
 use strum_macros::{AsRefStr, IntoStaticStr, VariantArray};
-use velcro::vec;
 use widestring::{U16Str, U16String};
 
 use crate::utils::leak_u16string;
@@ -135,16 +135,21 @@ lazy_static! {
         .iter()
         .map(|v| -> &'static U16Str { leak_u16string(U16String::from_str(v)) })
         .collect();
-    static ref TEAM_NAMES: Vec<&'static str> = vec![
-        "derelict",
-        "sharded",
-        "crux",
-        "malis",
-        "green",
-        "blue",
-        "neoplastic",
-        ..(Team::BASE_TEAMS.len()..256).map(|i| -> &'static str { format!("team#{i}").leak() }),
-    ];
+    static ref TEAM_NAMES: Vec<&'static str> = {
+        let mut v = vec![
+            "derelict",
+            "sharded",
+            "crux",
+            "malis",
+            "green",
+            "blue",
+            "neoplastic",
+        ];
+        v.extend(
+            (Team::BASE_TEAMS.len()..256).map(|i| -> &'static str { format!("team#{i}").leak() }),
+        );
+        v
+    };
     static ref TEAM_NAMES_U16: Vec<&'static U16Str> = TEAM_NAMES
         .iter()
         .map(|v| -> &'static U16Str { leak_u16string(U16String::from_str(v)) })

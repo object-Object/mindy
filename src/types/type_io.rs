@@ -1,4 +1,5 @@
-use std::hash::Hash;
+use alloc::{boxed::Box, string::String, vec::Vec};
+use core::hash::Hash;
 
 use binrw::prelude::*;
 use itertools::Itertools;

@@ -1,12 +1,24 @@
-use binrw::{io::NoSeek, prelude::*};
+use alloc::{
+    boxed::Box,
+    string::{String, ToString},
+    vec::Vec,
+};
+
+#[cfg(feature = "std")]
+use binrw::io::NoSeek;
+use binrw::prelude::*;
+#[cfg(feature = "std")]
 use flate2::{Compression, read::ZlibDecoder, write::ZlibEncoder};
 
 use crate::types::JavaString;
 
 #[binrw]
 #[brw(big)]
-#[br(map_stream = |s| NoSeek::new(ZlibDecoder::new(s)))]
-#[bw(map_stream = |s| NoSeek::new(ZlibEncoder::new(s, Compression::default())))]
+#[cfg_attr(
+    feature = "std",
+    br(map_stream = |s| NoSeek::new(ZlibDecoder::new(s))),
+    bw(map_stream = |s| NoSeek::new(ZlibEncoder::new(s, Compression::default()))),
+)]
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct ProcessorConfig {
     #[brw(magic = 1u8)] // config format version

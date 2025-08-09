@@ -1,16 +1,14 @@
-use std::{
-    borrow::Cow,
+use alloc::{borrow::Cow, rc::Rc, string::String};
+use core::{
     fmt::Display,
     hash::{Hash, Hasher},
     num::TryFromIntError,
     ops::Deref,
-    rc::Rc,
 };
 
 use num_traits::AsPrimitive;
 use strum::VariantArray;
 use thiserror::Error;
-use velcro::map_iter_from;
 use widestring::{U16Str, U16String};
 
 use crate::{
@@ -55,35 +53,38 @@ pub enum LVar {
 impl LVar {
     // https://github.com/Anuken/Mindustry/blob/e95c543fb224b8d8cb21f834e0d02cbdb9f34d48/core/src/mindustry/logic/GlobalVars.java#L41
     pub fn create_global_constants() -> Constants {
-        let mut globals: Constants = map_iter_from! {
-            "@counter": Self::Counter,
-            "@ipt": Self::Ipt,
-
-            "false": constant(0),
-            "true": constant(1),
-            "null": constant(LObject::Null),
-
-            "@pi": constant(PI),
-            "π": constant(PI),
-            "@e": constant(E),
-            "@degToRad": constant(DEG_RAD),
-            "@radToDeg": constant(RAD_DEG),
-
-            "@time": Self::Time,
-            "@tick": Self::Tick,
-            "@second": Self::Second,
-            "@minute": Self::Minute,
-            "@waveNumber": constant(0),
-            "@waveTime": constant(0),
-
-            "@server": constant(1),
-            "@client": constant(0),
-
-            "@blockCount": constant(content::blocks::FROM_LOGIC_ID.len()),
-            "@itemCount": constant(content::items::FROM_LOGIC_ID.len()),
-            "@liquidCount": constant(content::liquids::FROM_LOGIC_ID.len()),
-            "@unitCount": constant(content::units::FROM_LOGIC_ID.len()),
-        }
+        let mut globals: Constants = [
+            ("@counter", Self::Counter),
+            ("@ipt", Self::Ipt),
+            ("false", constant(0)),
+            ("true", constant(1)),
+            ("null", constant(LObject::Null)),
+            ("@pi", constant(PI)),
+            ("π", constant(PI)),
+            ("@e", constant(E)),
+            ("@degToRad", constant(DEG_RAD)),
+            ("@radToDeg", constant(RAD_DEG)),
+            ("@time", Self::Time),
+            ("@tick", Self::Tick),
+            ("@second", Self::Second),
+            ("@minute", Self::Minute),
+            ("@waveNumber", constant(0)),
+            ("@waveTime", constant(0)),
+            ("@server", constant(1)),
+            ("@client", constant(0)),
+            (
+                "@blockCount",
+                constant(content::blocks::FROM_LOGIC_ID.len()),
+            ),
+            ("@itemCount", constant(content::items::FROM_LOGIC_ID.len())),
+            (
+                "@liquidCount",
+                constant(content::liquids::FROM_LOGIC_ID.len()),
+            ),
+            ("@unitCount", constant(content::units::FROM_LOGIC_ID.len())),
+        ]
+        .into_iter()
+        .map(|(k, v)| (k.into(), v))
         .collect();
 
         globals.extend(
@@ -141,12 +142,16 @@ impl LVar {
         building: &Building,
         links: &[ProcessorLink],
     ) {
-        locals.extend(map_iter_from! {
-            "@this": constant(LObject::Building(building.clone())),
-            "@thisx": constant(building.position.x),
-            "@thisy": constant(building.position.y),
-            "@links": constant(links.len()),
-        });
+        locals.extend(
+            [
+                ("@this", constant(LObject::Building(building.clone()))),
+                ("@thisx", constant(building.position.x)),
+                ("@thisy", constant(building.position.y)),
+                ("@links", constant(links.len())),
+            ]
+            .into_iter()
+            .map(|(k, v)| (k.into(), v)),
+        );
 
         // if multiple links have the same name, the last one wins
         for link in links {
@@ -566,13 +571,13 @@ impl PartialEq for LString {
 impl Eq for LString {}
 
 impl PartialOrd for LString {
-    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+    fn partial_cmp(&self, other: &Self) -> Option<core::cmp::Ordering> {
         Some(self.cmp(other))
     }
 }
 
 impl Ord for LString {
-    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+    fn cmp(&self, other: &Self) -> core::cmp::Ordering {
         (**self).cmp(&**other)
     }
 }
