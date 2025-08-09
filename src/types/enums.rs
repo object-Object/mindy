@@ -2,6 +2,7 @@
 
 use alloc::{format, vec, vec::Vec};
 use core::hash::Hash;
+use serde::{Deserialize, Serialize};
 
 use binrw::prelude::*;
 use lazy_static::lazy_static;
@@ -15,7 +16,7 @@ use super::colors;
 
 #[binrw]
 #[brw(big, repr = i8)]
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Deserialize, Serialize)]
 pub enum ContentType {
     Item,
     Block,
@@ -55,6 +56,8 @@ pub enum ContentType {
     IntoStaticStr,
     VariantArray,
     strum_macros::Display,
+    Deserialize,
+    Serialize,
 )]
 #[strum(serialize_all = "camelCase")]
 pub enum LAccess {

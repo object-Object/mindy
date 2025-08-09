@@ -1,7 +1,9 @@
 use alloc::{string::String, vec::Vec};
+use serde::{Deserialize, Serialize};
 
 use crate::types::{ContentType, LAccess};
 
+#[cfg_attr(feature = "serde_alloc", derive(Deserialize, Serialize))]
 #[derive(Debug, Clone, PartialEq)]
 pub enum Statement {
     Label(String),
@@ -9,6 +11,7 @@ pub enum Statement {
     Instruction(Instruction, Vec<Value>),
 }
 
+#[cfg_attr(feature = "serde_alloc", derive(Deserialize, Serialize))]
 #[derive(Debug, Clone, PartialEq)]
 pub enum Instruction {
     // input/output
@@ -128,7 +131,7 @@ pub enum Instruction {
     Unknown(String),
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Deserialize, Serialize)]
 pub enum DrawOp {
     Clear,
     Color,
@@ -148,7 +151,7 @@ pub enum DrawOp {
     Reset,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Deserialize, Serialize)]
 pub enum ConditionOp {
     Equal,
     NotEqual,
@@ -160,7 +163,7 @@ pub enum ConditionOp {
     Always,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Deserialize, Serialize)]
 pub enum LogicOp {
     Add,
     Sub,
@@ -214,7 +217,7 @@ pub enum LogicOp {
     Atan,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Deserialize, Serialize)]
 pub enum TileLayer {
     Floor,
     Ore,
@@ -222,6 +225,7 @@ pub enum TileLayer {
     Building,
 }
 
+#[cfg_attr(feature = "serde_alloc", derive(Deserialize, Serialize))]
 #[derive(Debug, Clone, PartialEq)]
 pub enum Value {
     Variable(String),

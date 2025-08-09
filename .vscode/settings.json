@@ -3,6 +3,6 @@
         "**/mimex-*.txt": "csv"
     },
     // "rust-analyzer.cargo.noDefaultFeatures": true,
-    // "rust-analyzer.cargo.features": ["no_std"]
+    // "rust-analyzer.cargo.features": ["no_std", "serde_alloc"]
     "rust-analyzer.cargo.features": "all"
 }

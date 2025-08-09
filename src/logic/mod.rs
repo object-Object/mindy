@@ -13,6 +13,56 @@ lalrpop_util::lalrpop_mod!(
 #[cfg(feature = "std")]
 pub use grammar::LogicParser;
 
+#[cfg(feature = "serde_alloc")]
+use alloc::vec::Vec;
+#[cfg(feature = "serde_alloc")]
+use core::error::Error;
+#[cfg(feature = "std")]
+use std::{boxed::Box, string::ToString};
+
+#[cfg(feature = "std")]
+use crate::types::{PackedPoint2, content};
+#[cfg(feature = "std")]
+use vm::{Building, LogicVMBuilder, ProcessorBuilder};
+
+#[cfg(feature = "std")]
+pub fn parse_and_serialize_ast(
+    parser: &LogicParser,
+    code: &str,
+    verify: bool,
+) -> Result<Vec<u8>, Box<dyn Error>> {
+    let ast = parser.parse(code).map_err(|e| e.to_string())?;
+
+    // build a fake VM to make sure the AST will load properly
+    if verify {
+        let mut builder = LogicVMBuilder::new();
+        builder.add_building(Building::from_processor_builder(
+            &content::blocks::AIR,
+            PackedPoint2 { x: 0, y: 0 },
+            ProcessorBuilder {
+                ipt: 1.,
+                privileged: false,
+                code: ast.clone().into_boxed_slice(),
+                links: &[],
+            },
+            &builder,
+        ));
+        builder.build()?;
+    }
+
+    Ok(serialize_ast(&ast)?)
+}
+
+#[cfg(feature = "std")]
+pub fn serialize_ast(ast: &[ast::Statement]) -> Result<Vec<u8>, impl Error + use<>> {
+    postcard::to_allocvec(ast)
+}
+
+#[cfg(feature = "serde_alloc")]
+pub fn deserialize_ast(data: &[u8]) -> Result<Vec<ast::Statement>, impl Error + use<>> {
+    postcard::from_bytes(data)
+}
+
 #[cfg(all(test, feature = "std"))]
 mod tests {
     use std::{format, prelude::rust_2024::*, vec};
