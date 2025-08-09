@@ -1296,8 +1296,9 @@ dependencies = [
 
 [[package]]
 name = "rapidhash"
-version = "3.0.0"
-source = "git+https://github.com/hoxxep/rapidhash?rev=582477028c#582477028c3a9f1a7247f72971fce7e95adab015"
+version = "3.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "efee4b7317469c6c6e7fdeee3d094313af846a97678d6ed971d83a852d730083"
 
 [[package]]
 name = "redox_syscall"
