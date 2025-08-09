@@ -35,8 +35,8 @@ pub(super) const RAD_DEG: f32 = 180. / PI;
 pub(super) const F64_DEG_RAD: f64 = 0.017453292519943295;
 pub(super) const F64_RAD_DEG: f64 = 57.29577951308232;
 
-pub(super) type Constants = RapidIndexMap<U16String, LVar>;
-pub(super) type Variables = RapidIndexMap<U16String, LValue>;
+pub type Constants = RapidIndexMap<U16String, LVar>;
+pub type Variables = RapidIndexMap<U16String, LValue>;
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum LVar {
