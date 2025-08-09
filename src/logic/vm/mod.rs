@@ -299,44 +299,41 @@ mod tests {
         )]);
 
         let mut builder = LogicVMBuilder::new();
-        builder.add_buildings([Building {
-            block: &content::blocks::AIR,
-            position: PackedPoint2 { x: 1, y: 2 },
-            data: Rc::new(RefCell::new(BuildingData::Processor(
-                ProcessorBuilder {
-                    ipt: 3.,
-                    privileged: false,
-                    position: PackedPoint2 { x: 1, y: 2 },
-                    code: Box::new([
-                        ast::Statement::Instruction(
-                            ast::Instruction::Set {
-                                to: ast::Value::Variable("ipt".into()),
-                                from: ast::Value::Variable("@ipt".into()),
-                            },
-                            vec![],
-                        ),
-                        ast::Statement::Instruction(
-                            ast::Instruction::Set {
-                                to: ast::Value::Variable("this".into()),
-                                from: ast::Value::Variable("@this".into()),
-                            },
-                            vec![],
-                        ),
-                        ast::Statement::Instruction(
-                            ast::Instruction::Write {
-                                value: ast::Value::Number(1.),
-                                target: ast::Value::Variable("gpio".into()),
-                                address: ast::Value::Number(25.),
-                            },
-                            vec![],
-                        ),
-                        ast::Statement::Instruction(ast::Instruction::Stop, vec![]),
-                    ]),
-                    links: &[],
-                }
-                .build(&builder),
-            ))),
-        }]);
+        builder.add_buildings([Building::from_processor_builder(
+            &content::blocks::AIR,
+            PackedPoint2 { x: 1, y: 2 },
+            ProcessorBuilder {
+                ipt: 3.,
+                privileged: false,
+                code: Box::new([
+                    ast::Statement::Instruction(
+                        ast::Instruction::Set {
+                            to: ast::Value::Variable("ipt".into()),
+                            from: ast::Value::Variable("@ipt".into()),
+                        },
+                        vec![],
+                    ),
+                    ast::Statement::Instruction(
+                        ast::Instruction::Set {
+                            to: ast::Value::Variable("this".into()),
+                            from: ast::Value::Variable("@this".into()),
+                        },
+                        vec![],
+                    ),
+                    ast::Statement::Instruction(
+                        ast::Instruction::Write {
+                            value: ast::Value::Number(1.),
+                            target: ast::Value::Variable("gpio".into()),
+                            address: ast::Value::Number(25.),
+                        },
+                        vec![],
+                    ),
+                    ast::Statement::Instruction(ast::Instruction::Stop, vec![]),
+                ]),
+                links: &[],
+            },
+            &builder,
+        )]);
         let vm = builder.build_with_globals(Cow::Owned(globals)).unwrap();
 
         vm.do_tick(Duration::ZERO);

@@ -346,7 +346,6 @@ pub(super) struct ProcessorLink {
 pub struct ProcessorBuilder<'a> {
     pub ipt: f64,
     pub privileged: bool,
-    pub position: PackedPoint2,
     pub code: Box<[ast::Statement]>,
     pub links: &'a [ProcessorLinkConfig],
 }
@@ -367,11 +366,10 @@ impl ProcessorBuilder<'_> {
         Ok(ProcessorConfig::read(&mut Cursor::new(data))?)
     }
 
-    pub fn build(self, builder: &LogicVMBuilder) -> Box<Processor> {
+    pub fn build(self, position: PackedPoint2, builder: &LogicVMBuilder) -> Box<Processor> {
         let ProcessorBuilder {
             ipt,
             privileged,
-            position,
             code,
             links,
         } = self;

@@ -4,10 +4,9 @@ use core::cell::RefCell;
 use strum_macros::IntoStaticStr;
 use widestring::U16String;
 
-#[cfg(feature = "std")]
-use super::processor::ProcessorBuilder;
 use super::{
-    LObject, LogicVMBuilder, VMLoadError, VMLoadResult, processor::Processor, variables::LValue,
+    LObject, LogicVMBuilder, Processor, ProcessorBuilder, VMLoadError, VMLoadResult,
+    variables::LValue,
 };
 use crate::types::{
     Object, PackedPoint2,
@@ -45,16 +44,23 @@ pub struct Building {
 }
 
 impl Building {
-    pub fn new(name: &str, position: PackedPoint2, data: BuildingData) -> VMLoadResult<Self> {
-        let block = *content::blocks::FROM_NAME
-            .get(name)
-            .ok_or_else(|| VMLoadError::UnknownBlockType(name.to_string()))?;
-
-        Ok(Self {
+    pub fn new(block: &'static Block, position: PackedPoint2, data: BuildingData) -> Self {
+        Self {
             block,
             position,
             data: Rc::new(RefCell::new(data)),
-        })
+        }
+    }
+
+    pub fn from_name(name: &str, position: PackedPoint2, data: BuildingData) -> VMLoadResult<Self> {
+        Ok(Self::new(Self::get_block(name)?, position, data))
+    }
+
+    fn get_block(name: &str) -> VMLoadResult<&'static Block> {
+        content::blocks::FROM_NAME
+            .get(name)
+            .copied()
+            .ok_or_else(|| VMLoadError::UnknownBlockType(name.to_string()))
     }
 
     pub fn from_config(
@@ -113,7 +119,7 @@ impl Building {
             },
         };
 
-        Self::new(name, position, data)
+        Self::from_name(name, position, data)
     }
 
     #[cfg(feature = "std")]
@@ -130,46 +136,30 @@ impl Building {
             .into_boxed_slice();
 
         let data = match name {
-            MICRO_PROCESSOR => BuildingData::Processor(
-                ProcessorBuilder {
-                    ipt: 2.,
-                    privileged: false,
-                    position,
-                    code,
-                    links: &config.links,
-                }
-                .build(builder),
-            ),
-            LOGIC_PROCESSOR => BuildingData::Processor(
-                ProcessorBuilder {
-                    ipt: 8.,
-                    privileged: false,
-                    position,
-                    code,
-                    links: &config.links,
-                }
-                .build(builder),
-            ),
-            HYPER_PROCESSOR => BuildingData::Processor(
-                ProcessorBuilder {
-                    ipt: 25.,
-                    privileged: false,
-                    position,
-                    code,
-                    links: &config.links,
-                }
-                .build(builder),
-            ),
-            WORLD_PROCESSOR => BuildingData::Processor(
-                ProcessorBuilder {
-                    ipt: 8.,
-                    privileged: true,
-                    position,
-                    code,
-                    links: &config.links,
-                }
-                .build(builder),
-            ),
+            MICRO_PROCESSOR => ProcessorBuilder {
+                ipt: 2.,
+                privileged: false,
+                code,
+                links: &config.links,
+            },
+            LOGIC_PROCESSOR => ProcessorBuilder {
+                ipt: 8.,
+                privileged: false,
+                code,
+                links: &config.links,
+            },
+            HYPER_PROCESSOR => ProcessorBuilder {
+                ipt: 25.,
+                privileged: false,
+                code,
+                links: &config.links,
+            },
+            WORLD_PROCESSOR => ProcessorBuilder {
+                ipt: 8.,
+                privileged: true,
+                code,
+                links: &config.links,
+            },
             _ => {
                 return Err(VMLoadError::BadBlockType {
                     want: "processor".to_string(),
@@ -178,7 +168,25 @@ impl Building {
             }
         };
 
-        Self::new(name, position, data)
+        Ok(Self::from_processor_builder(
+            Self::get_block(name)?,
+            position,
+            data,
+            builder,
+        ))
+    }
+
+    pub fn from_processor_builder(
+        block: &'static Block,
+        position: PackedPoint2,
+        config: ProcessorBuilder,
+        builder: &LogicVMBuilder,
+    ) -> Self {
+        Self::new(
+            block,
+            position,
+            BuildingData::Processor(config.build(position, builder)),
+        )
     }
 
     #[cfg(feature = "std")]
