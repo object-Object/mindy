@@ -1,5 +1,6 @@
 use core::{fmt::Display, ops::Deref};
 
+use itertools::Itertools;
 use serde::Deserialize;
 use widestring::U16Str;
 
@@ -93,6 +94,37 @@ pub struct MultiStr {
 }
 
 impl MultiStr {
+    pub const fn new(s: &str, u16s: &[u16]) -> Self {
+        assert!(s.len() <= MULTISTR_LEN, "MultiStr arguments are too long");
+        assert!(
+            s.len() == u16s.len(),
+            "MultiStr arguments must be the same length"
+        );
+        unsafe { Self::new_unchecked(s, u16s) }
+    }
+
+    const unsafe fn new_unchecked(s: &str, u16s: &[u16]) -> Self {
+        let mut i = 0;
+        let mut string = [0; MULTISTR_LEN];
+        while i < s.len() {
+            string[i] = s.as_bytes()[i];
+            i += 1;
+        }
+
+        i = 0;
+        let mut u16string = [0; MULTISTR_LEN];
+        while i < u16s.len() {
+            u16string[i] = u16s[i];
+            i += 1;
+        }
+
+        Self {
+            string,
+            u16string,
+            len: s.len() as u8,
+        }
+    }
+
     pub fn as_str(&self) -> &str {
         unsafe { str::from_utf8_unchecked(&self.string[0..(self.len as usize)]) }
     }
@@ -100,6 +132,13 @@ impl MultiStr {
     pub fn as_u16str(&self) -> &U16Str {
         U16Str::from_slice(&self.u16string[0..(self.len as usize)])
     }
+}
+
+#[macro_export]
+macro_rules! multistr {
+    ($text:expr) => {
+        $crate::types::content::MultiStr::new($text, widestring::u16str!($text).as_slice())
+    };
 }
 
 impl From<&str> for MultiStr {
@@ -110,24 +149,15 @@ impl From<&str> for MultiStr {
             s.len()
         );
 
-        let mut string = [0; MULTISTR_LEN];
-        for (i, c) in s.bytes().enumerate() {
-            string[i] = c;
-        }
+        let u16s = s.encode_utf16().collect_vec();
+        assert!(
+            s.len() == u16s.len(),
+            "{s} is {} bytes, but takes {} bytes as UTF-16",
+            s.len(),
+            u16s.len()
+        );
 
-        let mut i = 0;
-        let mut u16string = [0; MULTISTR_LEN];
-        for c in s.encode_utf16() {
-            u16string[i] = c;
-            i += 1;
-        }
-        assert!(i == s.len());
-
-        Self {
-            string,
-            u16string,
-            len: s.len() as u8,
-        }
+        unsafe { Self::new_unchecked(s, &u16s) }
     }
 }
 
