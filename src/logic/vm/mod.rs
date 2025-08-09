@@ -264,6 +264,110 @@ pub enum VMLoadError {
     Overlap(PackedPoint2),
 }
 
+#[cfg(all(test, not(feature = "std"), feature = "no_std"))]
+mod tests {
+    use alloc::{borrow::Cow, vec};
+    use core::{cell::RefCell, time::Duration};
+
+    use alloc::{boxed::Box, rc::Rc};
+    use pretty_assertions::assert_eq;
+    use widestring::u16str;
+
+    use crate::{
+        logic::{
+            ast,
+            vm::{Building, BuildingData, LObject, LVar, processor::ProcessorBuilder},
+        },
+        types::{PackedPoint2, content},
+    };
+
+    use super::LogicVMBuilder;
+
+    #[test]
+    fn test_load_vm() {
+        let gpio_data = Rc::new(RefCell::new(BuildingData::Memory(Box::new([0.; 30]))));
+        let gpio_build = Building {
+            block: &content::blocks::AIR,
+            position: PackedPoint2 { x: 1, y: 0 },
+            data: gpio_data.clone(),
+        };
+
+        let mut globals = LVar::create_global_constants();
+        globals.extend([(
+            u16str!("gpio").into(),
+            LVar::Constant(gpio_build.clone().into()),
+        )]);
+
+        let mut builder = LogicVMBuilder::new();
+        builder.add_buildings([Building {
+            block: &content::blocks::AIR,
+            position: PackedPoint2 { x: 1, y: 2 },
+            data: Rc::new(RefCell::new(BuildingData::Processor(
+                ProcessorBuilder {
+                    ipt: 3.,
+                    privileged: false,
+                    position: PackedPoint2 { x: 1, y: 2 },
+                    code: Box::new([
+                        ast::Statement::Instruction(
+                            ast::Instruction::Set {
+                                to: ast::Value::Variable("ipt".into()),
+                                from: ast::Value::Variable("@ipt".into()),
+                            },
+                            vec![],
+                        ),
+                        ast::Statement::Instruction(
+                            ast::Instruction::Set {
+                                to: ast::Value::Variable("this".into()),
+                                from: ast::Value::Variable("@this".into()),
+                            },
+                            vec![],
+                        ),
+                        ast::Statement::Instruction(
+                            ast::Instruction::Write {
+                                value: ast::Value::Number(1.),
+                                target: ast::Value::Variable("gpio".into()),
+                                address: ast::Value::Number(25.),
+                            },
+                            vec![],
+                        ),
+                        ast::Statement::Instruction(ast::Instruction::Stop, vec![]),
+                    ]),
+                    links: &[],
+                }
+                .build(&builder),
+            ))),
+        }]);
+        let vm = builder.build_with_globals(Cow::Owned(globals)).unwrap();
+
+        vm.do_tick(Duration::ZERO);
+
+        match &*vm.building((1, 2).into()).unwrap().data.borrow() {
+            BuildingData::Processor(p) => {
+                assert_eq!(
+                    p.state.variable(u16str!("ipt")).map(|v| v.into_owned()),
+                    Some(3.into())
+                );
+                let this = p.state.variable(u16str!("this")).unwrap().into_owned();
+                assert!(
+                    matches!(
+                        this.obj(),
+                        Some(LObject::Building(Building {
+                            position: PackedPoint2 { x: 1, y: 2 },
+                            ..
+                        }))
+                    ),
+                    "{this:?}"
+                );
+            }
+            other => panic!("expected processor, got {other:?}"),
+        }
+        match &*gpio_data.borrow() {
+            BuildingData::Memory(memory) => assert_eq!(memory[25], 1.),
+            _ => unreachable!(),
+        }
+    }
+}
+
 #[cfg(all(test, feature = "std"))]
 mod tests {
     use std::{format, io::Cursor, prelude::rust_2024::*, thread_local, vec};
