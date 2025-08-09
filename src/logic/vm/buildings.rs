@@ -138,7 +138,7 @@ impl Building {
                     code,
                     links: &config.links,
                 }
-                .build(builder)?,
+                .build(builder),
             ),
             LOGIC_PROCESSOR => BuildingData::Processor(
                 ProcessorBuilder {
@@ -148,7 +148,7 @@ impl Building {
                     code,
                     links: &config.links,
                 }
-                .build(builder)?,
+                .build(builder),
             ),
             HYPER_PROCESSOR => BuildingData::Processor(
                 ProcessorBuilder {
@@ -158,7 +158,7 @@ impl Building {
                     code,
                     links: &config.links,
                 }
-                .build(builder)?,
+                .build(builder),
             ),
             WORLD_PROCESSOR => BuildingData::Processor(
                 ProcessorBuilder {
@@ -168,7 +168,7 @@ impl Building {
                     code,
                     links: &config.links,
                 }
-                .build(builder)?,
+                .build(builder),
             ),
             _ => {
                 return Err(VMLoadError::BadBlockType {

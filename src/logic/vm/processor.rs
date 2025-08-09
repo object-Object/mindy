@@ -367,7 +367,7 @@ impl ProcessorBuilder<'_> {
         Ok(ProcessorConfig::read(&mut Cursor::new(data))?)
     }
 
-    pub fn build(self, builder: &LogicVMBuilder) -> VMLoadResult<Box<Processor>> {
+    pub fn build(self, builder: &LogicVMBuilder) -> Box<Processor> {
         let ProcessorBuilder {
             ipt,
             privileged,
@@ -430,7 +430,7 @@ impl ProcessorBuilder<'_> {
             })
             .collect();
 
-        Ok(Box::new(Processor {
+        Box::new(Processor {
             instructions: instructions.into(),
             state: ProcessorState {
                 enabled,
@@ -449,6 +449,6 @@ impl ProcessorBuilder<'_> {
                 locals: Constants::default(),
                 variables: Variables::default(),
             },
-        }))
+        })
     }
 }
