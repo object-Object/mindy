@@ -13,6 +13,10 @@ jobs:
           - macos-latest
           - ubuntu-latest
           - windows-latest
+        features:
+          - std
+          - no_std
+          - no_std,serde_alloc
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
@@ -22,4 +26,4 @@ jobs:
       - uses: Swatinem/rust-cache@v2
 
       - name: Run tests
-        run: cargo test
+        run: cargo test --no-default-features --features ${{ matrix.features }}
