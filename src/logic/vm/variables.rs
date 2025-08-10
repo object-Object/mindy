@@ -345,6 +345,15 @@ impl LValue {
     }
 
     #[inline(always)]
+    pub fn bool(&self) -> bool {
+        if self.isobj() {
+            self.objval != Some(LObject::Null)
+        } else {
+            self.numval.abs() >= 0.00001
+        }
+    }
+
+    #[inline(always)]
     pub fn obj(&self) -> &Option<LObject> {
         &self.objval
     }

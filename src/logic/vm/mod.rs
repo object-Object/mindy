@@ -1,5 +1,5 @@
 mod buildings;
-mod instructions;
+pub mod instructions;
 mod processor;
 mod variables;
 

@@ -1,15 +1,16 @@
 use alloc::{boxed::Box, rc::Rc, string::ToString};
 use core::cell::RefCell;
+use derivative::Derivative;
 
 use strum_macros::IntoStaticStr;
 use widestring::U16String;
 
 use super::{
-    LObject, LogicVMBuilder, Processor, ProcessorBuilder, VMLoadError, VMLoadResult,
-    variables::LValue,
+    LObject, LVar, LogicVM, LogicVMBuilder, Processor, ProcessorBuilder, ProcessorState,
+    VMLoadError, VMLoadResult, instructions::InstructionResult, variables::LValue,
 };
 use crate::types::{
-    Object, PackedPoint2,
+    LAccess, Object, PackedPoint2,
     content::{self, Block},
 };
 #[cfg(feature = "std")]
@@ -209,12 +210,24 @@ impl PartialEq for Building {
 macro_rules! borrow_data {
     (
         mut $ref:expr,
+        $state:ident : $bind:ident => $expr1:expr,
+        $data:ident => $expr2:expr $(,)?
+    ) => {
+        borrow_data!(
+            @impl
+            mut, (Rc::clone(&$ref).try_borrow_mut()),
+            $bind, let $bind = &$state => $expr1,
+            $data => $expr2
+        )
+    };
+    (
+        mut $ref:expr,
         $state:ident => $expr1:expr,
         $data:ident => $expr2:expr $(,)?
     ) => {
         borrow_data!(
             @impl
-            mut, $ref.try_borrow_mut(),
+            mut, (Rc::clone(&$ref).try_borrow_mut()),
             $state => $expr1,
             $data => $expr2
         )
@@ -226,7 +239,7 @@ macro_rules! borrow_data {
     ) => {
         borrow_data!(
             @impl
-            $ref.try_borrow(),
+            (Rc::clone(&$ref).try_borrow()),
             $bind, let $bind = &$state => $expr1,
             $data => $expr2
         )
@@ -238,7 +251,7 @@ macro_rules! borrow_data {
     ) => {
         borrow_data!(
             @impl
-            $ref.try_borrow(),
+            (Rc::clone(&$ref).try_borrow()),
             $state => $expr1,
             $data => $expr2
         )
@@ -267,7 +280,8 @@ macro_rules! borrow_data {
 
 pub(super) use borrow_data;
 
-#[derive(Debug, IntoStaticStr)]
+#[derive(Derivative, IntoStaticStr)]
+#[derivative(Debug)]
 #[non_exhaustive]
 pub enum BuildingData {
     Processor(Box<Processor>),
@@ -275,7 +289,7 @@ pub enum BuildingData {
     Message(U16String),
     Switch(bool),
     Unknown { senseable_config: Option<LValue> },
-    Custom(Object),
+    Custom(#[derivative(Debug = "ignore")] Box<dyn CustomBuildingData>),
 }
 
 impl BuildingData {
@@ -316,5 +330,66 @@ impl BuildingData {
                 <&str>::from(&*self)
             ),
         }
+    }
+}
+
+impl<T> From<T> for BuildingData
+where
+    T: CustomBuildingData + 'static,
+{
+    fn from(value: T) -> Self {
+        Self::Custom(Box::new(value))
+    }
+}
+
+#[allow(unused_variables)]
+pub trait CustomBuildingData {
+    #[must_use]
+    fn read(
+        &mut self,
+        state: &mut ProcessorState,
+        vm: &LogicVM,
+        address: LValue,
+    ) -> Option<LValue> {
+        None
+    }
+
+    #[must_use]
+    fn write(
+        &mut self,
+        state: &mut ProcessorState,
+        vm: &LogicVM,
+        address: LValue,
+        value: LValue,
+    ) -> InstructionResult {
+        InstructionResult::Ok
+    }
+
+    #[must_use]
+    fn printflush(&mut self, state: &mut ProcessorState, vm: &LogicVM) -> InstructionResult {
+        InstructionResult::Ok
+    }
+
+    #[must_use]
+    fn control(
+        &mut self,
+        state: &mut ProcessorState,
+        vm: &LogicVM,
+        control: LAccess,
+        p1: &LVar,
+        p2: &LVar,
+        p3: &LVar,
+    ) -> InstructionResult {
+        InstructionResult::Ok
+    }
+
+    #[must_use]
+    fn sensor(
+        &mut self,
+        state: &mut ProcessorState,
+        vm: &LogicVM,
+        sensor: LAccess,
+    ) -> Option<LValue> {
+        None
     }
 }

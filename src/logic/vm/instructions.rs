@@ -232,16 +232,14 @@ impl InstructionBuilder {
                 p1,
                 p2,
                 p3,
-            } => {
-                lvar(p2);
-                lvar(p3);
-                Control {
-                    control,
-                    target: lvar(target),
-                    p1: lvar(p1),
-                }
-                .into()
+            } => Control {
+                control,
+                target: lvar(target),
+                p1: lvar(p1),
+                p2: lvar(p2),
+                p3: lvar(p3),
             }
+            .into(),
             ast::Instruction::Sensor {
                 result,
                 target,
@@ -383,13 +381,13 @@ impl Read {
 }
 
 impl SimpleInstructionTrait for Read {
-    fn execute(&self, state: &mut ProcessorState, _: &LogicVM) {
+    fn execute(&self, state: &mut ProcessorState, vm: &LogicVM) {
         let address = self.address.get(state);
         let target = self.target.get(state);
 
         match target.obj() {
             Some(LObject::Building(building)) => borrow_data!(
-                building.data.clone(),
+                mut building.data,
                 state: target_state => {
                     // read variable with name, returning null for constants and undefined
                     // or no-op if the address is not a string
@@ -427,8 +425,14 @@ impl SimpleInstructionTrait for Read {
                             .setnum(state, Self::read_slice(message.as_slice(), &address));
                     }
 
+                    BuildingData::Custom(custom) => {
+                        if let Some(value) = custom.read(state, vm, address.into_owned()) {
+                            self.result.set(state, value);
+                        }
+                    }
+
                     // no-op if the target doesn't support reading
-                    _ => {},
+                    _ => {}
                 },
             ),
 
@@ -451,14 +455,14 @@ pub struct Write {
     pub address: LVar,
 }
 
-impl SimpleInstructionTrait for Write {
-    fn execute(&self, state: &mut ProcessorState, _: &LogicVM) {
+impl InstructionTrait for Write {
+    fn execute(&self, state: &mut ProcessorState, vm: &LogicVM) -> InstructionResult {
         if let Some(LObject::Building(building)) = self.target.get(state).obj() {
             let address = self.address.get(state);
             let value = self.value.get_inner(state, &state.variables);
 
             borrow_data!(
-                mut Rc::clone(&building.data),
+                mut building.data,
                 state => {
                     if let Some(LObject::String(name)) = address.into_owned().obj() {
                         // @counter should never be in state.variables, since globals are checked first
@@ -473,16 +477,24 @@ impl SimpleInstructionTrait for Write {
                         }
                     }
                 },
-                data => {
-                    if let BuildingData::Memory(memory) = data
-                        && let Ok(address) = address.num_usize()
-                        && address < memory.len()
-                    {
-                        memory[address] = value.num();
+                data => match data {
+                    BuildingData::Memory(memory) => {
+                        if let Ok(address) = address.num_usize()
+                            && address < memory.len()
+                        {
+                            memory[address] = value.num();
+                        }
                     }
-                },
+
+                    BuildingData::Custom(custom) => {
+                        return custom.write(state, vm, address.into_owned(), value.into_owned());
+                    }
+
+                    _ => {}
+                }
             );
         }
+        InstructionResult::Ok
     }
 }
 
@@ -595,19 +607,31 @@ pub struct PrintFlush {
     pub target: LVar,
 }
 
-impl SimpleInstructionTrait for PrintFlush {
-    fn execute(&self, state: &mut ProcessorState, _: &LogicVM) {
-        if let Some(LObject::Building(target)) =
+impl InstructionTrait for PrintFlush {
+    fn execute(&self, state: &mut ProcessorState, vm: &LogicVM) -> InstructionResult {
+        let result = if let Some(LObject::Building(target)) =
             self.target.get_inner(state, &state.variables).obj()
-            && let Ok(mut data) = target.data.try_borrow_mut()
-            && let BuildingData::Message(message_buffer) = &mut *data
+            && let Ok(mut data) = target.data.clone().try_borrow_mut()
         {
             if state.printbuffer.len() > MAX_TEXT_BUFFER {
                 state.printbuffer.drain(MAX_TEXT_BUFFER..);
             }
-            core::mem::swap(&mut state.printbuffer, message_buffer);
-        }
+
+            match &mut *data {
+                BuildingData::Message(message_buffer) => {
+                    core::mem::swap(&mut state.printbuffer, message_buffer);
+                    InstructionResult::Ok
+                }
+
+                BuildingData::Custom(custom) => custom.printflush(state, vm),
+
+                _ => InstructionResult::Ok,
+            }
+        } else {
+            InstructionResult::Ok
+        };
         state.printbuffer.clear();
+        result
     }
 }
 
@@ -637,28 +661,40 @@ pub struct Control {
     pub control: LAccess,
     pub target: LVar,
     pub p1: LVar,
+    pub p2: LVar,
+    pub p3: LVar,
 }
 
-impl SimpleInstructionTrait for Control {
-    fn execute(&self, state: &mut ProcessorState, _: &LogicVM) {
-        if self.control == LAccess::Enabled
-            && let Some(LObject::Building(building)) = self.target.get(state).obj()
+impl InstructionTrait for Control {
+    fn execute(&self, state: &mut ProcessorState, vm: &LogicVM) -> InstructionResult {
+        if let Some(LObject::Building(building)) = self.target.get(state).obj()
             && (state.privileged() || state.linked_positions().contains(&building.position))
         {
-            let enabled = self.p1.get(state);
-            if enabled.isnum() {
-                let enabled = enabled.numf() != 0.;
-                borrow_data!(
-                    mut Rc::clone(&building.data),
-                    state => state.set_enabled(enabled),
-                    data => {
-                        if let BuildingData::Switch(value) = data {
-                            *value = enabled;
+            borrow_data!(
+                mut building.data,
+                state => if self.control == LAccess::Enabled {
+                    let enabled = self.p1.get(state);
+                    if enabled.isnum() {
+                        state.set_enabled(enabled.numf() != 0.);
+                    }
+                },
+                data => match data {
+                    BuildingData::Switch(value) if self.control == LAccess::Enabled => {
+                        let enabled = self.p1.get(state);
+                        if enabled.isnum() {
+                            *value = enabled.numf() != 0.;
                         }
-                    },
-                );
-            }
+                    }
+
+                    BuildingData::Custom(custom) => {
+                        return custom.control(state, vm, self.control, &self.p1, &self.p2, &self.p3);
+                    }
+
+                    _ => {}
+                },
+            );
         }
+        InstructionResult::Ok
     }
 }
 
@@ -671,7 +707,7 @@ pub struct Sensor {
 }
 
 impl SimpleInstructionTrait for Sensor {
-    fn execute(&self, state: &mut ProcessorState, _: &LogicVM) {
+    fn execute(&self, state: &mut ProcessorState, vm: &LogicVM) {
         use LAccess::*;
 
         let target = self.target.get(state);
@@ -699,9 +735,9 @@ impl SimpleInstructionTrait for Sensor {
 
         let result = match sensor.obj() {
             // normal sensors
-            Some(LObject::Sensor(sensor)) => match target.obj() {
+            &Some(LObject::Sensor(sensor)) => match target.obj() {
                 // dead
-                Some(LObject::Null) if *sensor == Dead => true.into(),
+                Some(LObject::Null) if sensor == Dead => true.into(),
 
                 // senseable
                 Some(LObject::Content(content)) => match content {
@@ -768,7 +804,7 @@ impl SimpleInstructionTrait for Sensor {
                     PayloadType => setnull!(),
 
                     _ => borrow_data!(
-                        building.data.clone(),
+                        mut building.data,
                         state => match sensor {
                             LAccess::Enabled => state.enabled().into(),
                             _ => setnull!(),
@@ -805,7 +841,16 @@ impl SimpleInstructionTrait for Sensor {
                                 _ => setnull!(),
                             },
 
-                            BuildingData::Custom(_) => setnull!(),
+                            BuildingData::Custom(custom) => {
+                                match custom.sensor(state, vm, sensor) {
+                                    Some(value) => {
+                                        self.result.set(state, value);
+                                        return;
+                                    }
+                                    None if sensor == Enabled => true.into(),
+                                    None => setnull!(),
+                                }
+                            },
 
                             BuildingData::Processor(_) => unreachable!(),
                         },
