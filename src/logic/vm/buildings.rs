@@ -268,12 +268,14 @@ macro_rules! borrow_data {
 pub(super) use borrow_data;
 
 #[derive(Debug, IntoStaticStr)]
+#[non_exhaustive]
 pub enum BuildingData {
     Processor(Box<Processor>),
     Memory(Box<[f64]>),
     Message(U16String),
     Switch(bool),
     Unknown { senseable_config: Option<LValue> },
+    Custom(Object),
 }
 
 impl BuildingData {

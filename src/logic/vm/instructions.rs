@@ -805,6 +805,8 @@ impl SimpleInstructionTrait for Sensor {
                                 _ => setnull!(),
                             },
 
+                            BuildingData::Custom(_) => setnull!(),
+
                             BuildingData::Processor(_) => unreachable!(),
                         },
                     ),
