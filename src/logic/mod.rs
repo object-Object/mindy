@@ -44,6 +44,7 @@ pub fn parse_and_serialize_ast(
                 privileged: false,
                 code: ast.clone().into_boxed_slice(),
                 links: &[],
+                instruction_hook: None,
             },
             &builder,
         ));

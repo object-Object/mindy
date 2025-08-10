@@ -3,6 +3,8 @@ use alloc::{
     string::{String, ToString},
     vec::Vec,
 };
+#[cfg(feature = "std")]
+use std::{format, io::Cursor};
 
 #[cfg(feature = "std")]
 use binrw::io::NoSeek;
@@ -10,6 +12,8 @@ use binrw::prelude::*;
 #[cfg(feature = "std")]
 use flate2::{Compression, read::ZlibDecoder, write::ZlibEncoder};
 
+#[cfg(feature = "std")]
+use super::Object;
 use crate::types::JavaString;
 
 #[binrw]
@@ -39,6 +43,17 @@ impl ProcessorConfig {
         Self {
             code: code.to_string(),
             links: Vec::new(),
+        }
+    }
+
+    #[cfg(feature = "std")]
+    pub fn parse(config: &Object) -> BinResult<Self> {
+        match config {
+            Object::ByteArray { values } => Self::read(&mut Cursor::new(values)),
+            _ => Err(binrw::Error::Custom {
+                pos: 0,
+                err: Box::new(format!("incorrect config type: {config:?}")),
+            }),
         }
     }
 }

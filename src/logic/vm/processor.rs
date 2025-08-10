@@ -7,11 +7,8 @@ use alloc::{
     vec::Vec,
 };
 use core::cell::{Cell, RefCell};
-#[cfg(feature = "std")]
-use std::io::Cursor;
+use derivative::Derivative;
 
-#[cfg(feature = "std")]
-use binrw::BinRead;
 use itertools::Itertools;
 #[allow(unused_imports)]
 use num_traits::float::FloatCore;
@@ -26,7 +23,7 @@ use super::{
     variables::{LVar, Variables},
 };
 #[cfg(feature = "std")]
-use crate::types::{Object, ProcessorConfig};
+use crate::logic::LogicParser;
 use crate::{
     logic::ast,
     types::{PackedPoint2, ProcessorLinkConfig, content},
@@ -36,9 +33,15 @@ use crate::{
 pub(super) const MAX_TEXT_BUFFER: usize = 400;
 const MAX_INSTRUCTION_SCALE: f64 = 5.0;
 
-#[derive(Debug)]
+pub type InstructionHook =
+    dyn FnMut(&Instruction, &mut ProcessorState, &LogicVM) -> Option<InstructionResult>;
+
+#[derive(Derivative)]
+#[derivative(Debug)]
 pub struct Processor {
     instructions: Box<[Instruction]>,
+    #[derivative(Debug = "ignore")]
+    instruction_hook: Option<Box<InstructionHook>>,
     pub state: ProcessorState,
 }
 
@@ -192,9 +195,19 @@ impl Processor {
         }
 
         self.state.counter = counter + 1;
+
         // SAFETY: we checked the upper bound already
         // and processors without instructions are always disabled, so self.instructions cannot be empty here
-        unsafe { self.instructions.get_unchecked(counter) }.execute(&mut self.state, vm)
+        let instruction = unsafe { self.instructions.get_unchecked(counter) };
+
+        // if we have a hook and it returns a result, skip executing the instruction
+        if let Some(hook) = &mut self.instruction_hook
+            && let Some(result) = hook(instruction, &mut self.state, vm)
+        {
+            result
+        } else {
+            instruction.execute(&mut self.state, vm)
+        }
     }
 }
 
@@ -342,28 +355,27 @@ pub(super) struct ProcessorLink {
     pub building: Building,
 }
 
-#[derive(Debug)]
+#[derive(Derivative)]
+#[derivative(Debug)]
 pub struct ProcessorBuilder<'a> {
     pub ipt: f64,
     pub privileged: bool,
     pub code: Box<[ast::Statement]>,
     pub links: &'a [ProcessorLinkConfig],
+    /// If provided, this is called just before this processor executes each instruction.
+    /// The intercepted instruction is skipped if this hook returns `Some`.
+    #[derivative(Debug = "ignore")]
+    pub instruction_hook: Option<Box<InstructionHook>>,
 }
 
 impl ProcessorBuilder<'_> {
     #[cfg(feature = "std")]
-    pub fn parse_config(config: &Object) -> VMLoadResult<ProcessorConfig> {
-        let data = match config {
-            Object::ByteArray { values } => values,
-            _ => {
-                return Err(binrw::Error::Custom {
-                    pos: 0,
-                    err: Box::new(format!("incorrect config type: {config:?}")),
-                }
-                .into());
-            }
-        };
-        Ok(ProcessorConfig::read(&mut Cursor::new(data))?)
+    pub fn parse_code(code: &str) -> VMLoadResult<Box<[ast::Statement]>> {
+        match LogicParser::new().parse(code) {
+            Ok(value) => Ok(value.into_boxed_slice()),
+            // FIXME: hack
+            Err(e) => Err(VMLoadError::BadProcessorCode(e.to_string())),
+        }
     }
 
     pub fn build(self, position: PackedPoint2, builder: &LogicVMBuilder) -> Box<Processor> {
@@ -372,6 +384,7 @@ impl ProcessorBuilder<'_> {
             privileged,
             code,
             links,
+            instruction_hook,
         } = self;
 
         // TODO: this could be more efficient
@@ -430,6 +443,7 @@ impl ProcessorBuilder<'_> {
 
         Box::new(Processor {
             instructions: instructions.into(),
+            instruction_hook,
             state: ProcessorState {
                 enabled,
                 stopped: false,

@@ -331,6 +331,7 @@ mod tests {
                     ast::Statement::Instruction(ast::Instruction::Stop, vec![]),
                 ]),
                 links: &[],
+                instruction_hook: None,
             },
             &builder,
         )]);
@@ -381,7 +382,6 @@ mod tests {
                 HYPER_PROCESSOR, MEMORY_BANK, MEMORY_CELL, MESSAGE, MICRO_PROCESSOR, SWITCH,
                 WORLD_CELL,
             },
-            processor::ProcessorBuilder,
             variables::{Content, LValue, LVar},
         },
         types::{
@@ -393,6 +393,7 @@ mod tests {
 
     use super::{
         buildings::{LOGIC_PROCESSOR, WORLD_PROCESSOR},
+        instructions::{Instruction, InstructionResult},
         processor::Processor,
         *,
     };
@@ -623,6 +624,66 @@ mod tests {
         let processor = take_processor(&mut vm, (0, 0));
         assert_eq!(processor.state.counter, 0);
         assert!(processor.state.stopped());
+    }
+
+    #[test]
+    fn test_instruction_hook() {
+        let hits = Rc::new(Cell::new(0));
+
+        let mut builder = LogicVMBuilder::new();
+        builder.add_building(Building::from_processor_builder(
+            content::blocks::FROM_NAME[HYPER_PROCESSOR],
+            PackedPoint2 { x: 0, y: 0 },
+            ProcessorBuilder {
+                ipt: 25.,
+                privileged: false,
+                code: ProcessorBuilder::parse_code(
+                    "
+                    op add a 1 0
+                    set b 2
+                    op add c 3 0
+                    set d 4
+                    op add e 5 0
+                    ",
+                )
+                .unwrap(),
+                links: &[],
+                instruction_hook: {
+                    let hits = hits.clone();
+                    Some(Box::new(move |instruction, state, _| {
+                        if let Instruction::Set(instructions::Set { to, from, .. }) = instruction {
+                            hits.update(|v| v + 1);
+                            let value = from.get(state).num();
+                            to.set(state, (value * 10.).into());
+                            Some(if value == 4. {
+                                InstructionResult::Yield
+                            } else {
+                                InstructionResult::Ok
+                            })
+                        } else {
+                            None
+                        }
+                    }))
+                },
+            },
+            &builder,
+        ));
+        let mut vm = builder.build().unwrap();
+
+        vm.do_tick(Duration::ZERO);
+
+        let processor = take_processor(&mut vm, (0, 0));
+        assert_variables(
+            &processor,
+            map_iter! {
+                u16str!("a"): 1.into(),
+                u16str!("b"): 20.into(),
+                u16str!("c"): 3.into(),
+                u16str!("d"): 40.into(),
+                u16str!("e"): LValue::NULL,
+            },
+        );
+        assert_eq!(hits.get(), 2);
     }
 
     #[test]
@@ -1414,7 +1475,7 @@ mod tests {
             // replace main processor code
             let tile = schematic.tile_mut(0).unwrap();
             assert_eq!(tile.block, "world-processor");
-            let mut config = ProcessorBuilder::parse_config(&tile.config).unwrap();
+            let mut config = ProcessorConfig::parse(&tile.config).unwrap();
             config.code = code;
             match &mut tile.config {
                 Object::ByteArray { values } => {

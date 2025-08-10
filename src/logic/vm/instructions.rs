@@ -58,7 +58,7 @@ impl<T: SimpleInstructionTrait> InstructionTrait for T {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(super) enum InstructionResult {
+pub enum InstructionResult {
     Ok,
     Yield,
 }
@@ -66,7 +66,8 @@ pub(super) enum InstructionResult {
 #[allow(clippy::enum_variant_names)]
 #[enum_dispatch(InstructionTrait)]
 #[derive(Debug)]
-pub(super) enum Instruction {
+#[non_exhaustive]
+pub enum Instruction {
     InstructionBuilder,
     // input/output
     Read,
@@ -104,7 +105,7 @@ impl Default for Instruction {
 }
 
 #[derive(Debug)]
-pub(super) struct InstructionBuilder {
+pub struct InstructionBuilder {
     pub(super) instruction: ast::Instruction,
     pub(super) labels: Rc<RapidHashMap<String, usize>>,
 }
@@ -359,10 +360,11 @@ impl InstructionTrait for InstructionBuilder {
 // input/output
 
 #[derive(Debug)]
-pub(super) struct Read {
-    result: LVar,
-    target: LVar,
-    address: LVar,
+#[non_exhaustive]
+pub struct Read {
+    pub result: LVar,
+    pub target: LVar,
+    pub address: LVar,
 }
 
 impl Read {
@@ -442,10 +444,11 @@ impl SimpleInstructionTrait for Read {
 }
 
 #[derive(Debug)]
-pub(super) struct Write {
-    value: LVar,
-    target: LVar,
-    address: LVar,
+#[non_exhaustive]
+pub struct Write {
+    pub value: LVar,
+    pub target: LVar,
+    pub address: LVar,
 }
 
 impl SimpleInstructionTrait for Write {
@@ -484,8 +487,9 @@ impl SimpleInstructionTrait for Write {
 }
 
 #[derive(Debug)]
-pub(super) struct Print {
-    value: LVar,
+#[non_exhaustive]
+pub struct Print {
+    pub value: LVar,
 }
 
 impl Print {
@@ -523,8 +527,9 @@ impl SimpleInstructionTrait for Print {
 }
 
 #[derive(Debug)]
-pub(super) struct PrintChar {
-    value: LVar,
+#[non_exhaustive]
+pub struct PrintChar {
+    pub value: LVar,
 }
 
 impl SimpleInstructionTrait for PrintChar {
@@ -542,8 +547,9 @@ impl SimpleInstructionTrait for PrintChar {
 }
 
 #[derive(Debug)]
-pub(super) struct Format {
-    value: LVar,
+#[non_exhaustive]
+pub struct Format {
+    pub value: LVar,
 }
 
 impl SimpleInstructionTrait for Format {
@@ -584,8 +590,9 @@ impl SimpleInstructionTrait for Format {
 // block control
 
 #[derive(Debug)]
-pub(super) struct PrintFlush {
-    target: LVar,
+#[non_exhaustive]
+pub struct PrintFlush {
+    pub target: LVar,
 }
 
 impl SimpleInstructionTrait for PrintFlush {
@@ -605,9 +612,10 @@ impl SimpleInstructionTrait for PrintFlush {
 }
 
 #[derive(Debug)]
-pub(super) struct GetLink {
-    result: LVar,
-    index: LVar,
+#[non_exhaustive]
+pub struct GetLink {
+    pub result: LVar,
+    pub index: LVar,
 }
 
 impl SimpleInstructionTrait for GetLink {
@@ -624,10 +632,11 @@ impl SimpleInstructionTrait for GetLink {
 }
 
 #[derive(Debug)]
-pub(super) struct Control {
-    control: LAccess,
-    target: LVar,
-    p1: LVar,
+#[non_exhaustive]
+pub struct Control {
+    pub control: LAccess,
+    pub target: LVar,
+    pub p1: LVar,
 }
 
 impl SimpleInstructionTrait for Control {
@@ -654,10 +663,11 @@ impl SimpleInstructionTrait for Control {
 }
 
 #[derive(Debug)]
-pub(super) struct Sensor {
-    result: LVar,
-    target: LVar,
-    sensor: LVar,
+#[non_exhaustive]
+pub struct Sensor {
+    pub result: LVar,
+    pub target: LVar,
+    pub sensor: LVar,
 }
 
 impl SimpleInstructionTrait for Sensor {
@@ -831,9 +841,10 @@ impl SimpleInstructionTrait for Sensor {
 // operations
 
 #[derive(Debug)]
-pub(super) struct Set {
-    to: LVar,
-    from: LVar,
+#[non_exhaustive]
+pub struct Set {
+    pub to: LVar,
+    pub from: LVar,
 }
 
 impl SimpleInstructionTrait for Set {
@@ -843,11 +854,12 @@ impl SimpleInstructionTrait for Set {
 }
 
 #[derive(Debug)]
-pub(super) struct Op {
-    op: LogicOp,
-    result: LVar,
-    x: LVar,
-    y: LVar,
+#[non_exhaustive]
+pub struct Op {
+    pub op: LogicOp,
+    pub result: LVar,
+    pub x: LVar,
+    pub y: LVar,
 }
 
 impl SimpleInstructionTrait for Op {
@@ -961,13 +973,14 @@ impl SimpleInstructionTrait for Op {
 }
 
 #[derive(Debug)]
-pub(super) struct Select {
-    result: LVar,
-    op: ConditionOp,
-    x: LVar,
-    y: LVar,
-    if_true: LVar,
-    if_false: LVar,
+#[non_exhaustive]
+pub struct Select {
+    pub result: LVar,
+    pub op: ConditionOp,
+    pub x: LVar,
+    pub y: LVar,
+    pub if_true: LVar,
+    pub if_false: LVar,
 }
 
 impl SimpleInstructionTrait for Select {
@@ -982,10 +995,11 @@ impl SimpleInstructionTrait for Select {
 }
 
 #[derive(Debug)]
-pub(super) struct Lookup {
-    content_type: ContentType,
-    result: LVar,
-    id: LVar,
+#[non_exhaustive]
+pub struct Lookup {
+    pub content_type: ContentType,
+    pub result: LVar,
+    pub id: LVar,
 }
 
 impl SimpleInstructionTrait for Lookup {
@@ -1023,12 +1037,13 @@ impl SimpleInstructionTrait for Lookup {
 }
 
 #[derive(Debug)]
-pub(super) struct PackColor {
-    result: LVar,
-    r: LVar,
-    g: LVar,
-    b: LVar,
-    a: LVar,
+#[non_exhaustive]
+pub struct PackColor {
+    pub result: LVar,
+    pub r: LVar,
+    pub g: LVar,
+    pub b: LVar,
+    pub a: LVar,
 }
 
 impl SimpleInstructionTrait for PackColor {
@@ -1045,12 +1060,13 @@ impl SimpleInstructionTrait for PackColor {
 }
 
 #[derive(Debug)]
-pub(super) struct UnpackColor {
-    r: LVar,
-    g: LVar,
-    b: LVar,
-    a: LVar,
-    value: LVar,
+#[non_exhaustive]
+pub struct UnpackColor {
+    pub r: LVar,
+    pub g: LVar,
+    pub b: LVar,
+    pub a: LVar,
+    pub value: LVar,
 }
 
 impl SimpleInstructionTrait for UnpackColor {
@@ -1069,15 +1085,17 @@ impl SimpleInstructionTrait for UnpackColor {
 // flow control
 
 #[derive(Debug)]
-pub(super) struct Noop;
+#[non_exhaustive]
+pub struct Noop;
 
 impl SimpleInstructionTrait for Noop {
     fn execute(&self, _: &mut ProcessorState, _: &LogicVM) {}
 }
 
 #[derive(Debug)]
-pub(super) struct Wait {
-    value: LVar,
+#[non_exhaustive]
+pub struct Wait {
+    pub value: LVar,
 }
 
 impl InstructionTrait for Wait {
@@ -1093,7 +1111,8 @@ impl InstructionTrait for Wait {
 }
 
 #[derive(Debug)]
-pub(super) struct Stop;
+#[non_exhaustive]
+pub struct Stop;
 
 impl InstructionTrait for Stop {
     fn execute(&self, state: &mut ProcessorState, _: &LogicVM) -> InstructionResult {
@@ -1104,7 +1123,8 @@ impl InstructionTrait for Stop {
 }
 
 #[derive(Debug)]
-pub(super) struct End;
+#[non_exhaustive]
+pub struct End;
 
 impl SimpleInstructionTrait for End {
     fn execute(&self, state: &mut ProcessorState, _: &LogicVM) {
@@ -1113,11 +1133,12 @@ impl SimpleInstructionTrait for End {
 }
 
 #[derive(Debug)]
-pub(super) struct Jump {
-    target: usize,
-    op: ConditionOp,
-    x: LVar,
-    y: LVar,
+#[non_exhaustive]
+pub struct Jump {
+    pub target: usize,
+    pub op: ConditionOp,
+    pub x: LVar,
+    pub y: LVar,
 }
 
 impl Jump {
@@ -1164,11 +1185,12 @@ impl SimpleInstructionTrait for Jump {
 // privileged
 
 #[derive(Debug)]
-pub(super) struct GetBlock {
-    layer: TileLayer,
-    result: LVar,
-    x: LVar,
-    y: LVar,
+#[non_exhaustive]
+pub struct GetBlock {
+    pub layer: TileLayer,
+    pub result: LVar,
+    pub x: LVar,
+    pub y: LVar,
 }
 
 impl SimpleInstructionTrait for GetBlock {
@@ -1190,8 +1212,9 @@ impl SimpleInstructionTrait for GetBlock {
 }
 
 #[derive(Debug)]
-pub(super) struct SetRate {
-    value: LVar,
+#[non_exhaustive]
+pub struct SetRate {
+    pub value: LVar,
 }
 
 impl SimpleInstructionTrait for SetRate {

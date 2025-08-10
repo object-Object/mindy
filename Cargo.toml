@@ -18,6 +18,7 @@ required-features = ["mlogv32"]
 
 [dependencies]
 binrw = { version = "0.15.0", default-features = false, features = ["verbose-backtrace"] }
+derivative = { version = "2.2.0", features = ["use_core"] }
 enum_dispatch = "0.3.13"
 hashbrown = "0.15.5"
 indexmap = { version = "2.10.0", default-features = false }

@@ -13,10 +13,7 @@ use crate::types::{
     content::{self, Block},
 };
 #[cfg(feature = "std")]
-use crate::{
-    logic::LogicParser,
-    types::{ProcessorConfig, schematics::SchematicTile},
-};
+use crate::types::{ProcessorConfig, schematics::SchematicTile};
 
 pub const MICRO_PROCESSOR: &str = "micro-processor";
 pub const LOGIC_PROCESSOR: &str = "logic-processor";
@@ -75,7 +72,7 @@ impl Building {
                 return Self::from_processor_config(
                     name,
                     position,
-                    &ProcessorBuilder::parse_config(config)?,
+                    &ProcessorConfig::parse(config)?,
                     builder,
                 );
                 #[cfg(not(feature = "std"))]
@@ -129,11 +126,7 @@ impl Building {
         config: &ProcessorConfig,
         builder: &LogicVMBuilder,
     ) -> VMLoadResult<Self> {
-        let code = LogicParser::new()
-            .parse(&config.code)
-            // FIXME: hack
-            .map_err(|e| VMLoadError::BadProcessorCode(e.to_string()))?
-            .into_boxed_slice();
+        let code = ProcessorBuilder::parse_code(&config.code)?;
 
         let data = match name {
             MICRO_PROCESSOR => ProcessorBuilder {
@@ -141,24 +134,28 @@ impl Building {
                 privileged: false,
                 code,
                 links: &config.links,
+                instruction_hook: None,
             },
             LOGIC_PROCESSOR => ProcessorBuilder {
                 ipt: 8.,
                 privileged: false,
                 code,
                 links: &config.links,
+                instruction_hook: None,
             },
             HYPER_PROCESSOR => ProcessorBuilder {
                 ipt: 25.,
                 privileged: false,
                 code,
                 links: &config.links,
+                instruction_hook: None,
             },
             WORLD_PROCESSOR => ProcessorBuilder {
                 ipt: 8.,
                 privileged: true,
                 code,
                 links: &config.links,
+                instruction_hook: None,
             },
             _ => {
                 return Err(VMLoadError::BadBlockType {
