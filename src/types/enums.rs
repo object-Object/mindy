@@ -2,17 +2,16 @@
 
 use alloc::{format, vec, vec::Vec};
 use core::hash::Hash;
-use serde::{Deserialize, Serialize};
 
 use binrw::prelude::*;
 use lazy_static::lazy_static;
+use serde::{Deserialize, Serialize};
 use strum::VariantArray;
 use strum_macros::{AsRefStr, IntoStaticStr, VariantArray};
 use widestring::{U16Str, U16String};
 
-use crate::utils::leak_u16string;
-
 use super::colors;
+use crate::utils::leak_u16string;
 
 #[binrw]
 #[brw(big, repr = i8)]

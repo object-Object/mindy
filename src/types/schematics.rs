@@ -201,9 +201,8 @@ mod tests {
 
     use velcro::map_iter_from;
 
-    use crate::types::{ContentID, ContentType};
-
     use super::*;
+    use crate::types::{ContentID, ContentType};
 
     type TestResult = Result<(), Box<dyn Error>>;
 
@@ -359,15 +358,12 @@ mod tests {
         let mut cur = Cursor::new(vec![]);
         schem.write(&mut cur)?;
         cur.set_position(0);
-        assert_eq!(
-            Schematic::read(&mut cur)?,
-            Schematic {
-                tags: map_iter_from! { "labels": "[]" }.collect(),
-                width: 1,
-                height: 1,
-                ..schem
-            }
-        );
+        assert_eq!(Schematic::read(&mut cur)?, Schematic {
+            tags: map_iter_from! { "labels": "[]" }.collect(),
+            width: 1,
+            height: 1,
+            ..schem
+        });
         Ok(())
     }
 
@@ -384,15 +380,12 @@ mod tests {
         let mut cur = Cursor::new(vec![]);
         schem.write(&mut cur)?;
         cur.set_position(0);
-        assert_eq!(
-            Schematic::read(&mut cur)?,
-            Schematic {
-                tags: map_iter_from! { "labels": "[]" }.collect(),
-                width: 1,
-                height: 1,
-                ..schem
-            }
-        );
+        assert_eq!(Schematic::read(&mut cur)?, Schematic {
+            tags: map_iter_from! { "labels": "[]" }.collect(),
+            width: 1,
+            height: 1,
+            ..schem
+        });
         Ok(())
     }
 
@@ -429,15 +422,12 @@ mod tests {
         let mut cur = Cursor::new(vec![]);
         schem.write(&mut cur)?;
         cur.set_position(0);
-        assert_eq!(
-            Schematic::read(&mut cur)?,
-            Schematic {
-                tags: map_iter_from! { "labels": "[]" }.collect(),
-                width: 3,
-                height: 1,
-                ..schem
-            }
-        );
+        assert_eq!(Schematic::read(&mut cur)?, Schematic {
+            tags: map_iter_from! { "labels": "[]" }.collect(),
+            width: 3,
+            height: 1,
+            ..schem
+        });
         Ok(())
     }
 }

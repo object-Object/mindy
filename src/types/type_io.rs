@@ -1,3 +1,5 @@
+#![allow(deprecated)]
+
 use alloc::{boxed::Box, string::String, vec::Vec};
 use core::hash::Hash;
 

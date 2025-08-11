@@ -1,25 +1,32 @@
 #![allow(dead_code)]
 
-use std::borrow::Cow;
-use std::collections::VecDeque;
-use std::io::{Cursor, Read};
-use std::sync::mpsc::{self, Receiver, Sender};
-use std::thread;
-use std::time::Duration;
-use std::{error::Error, fmt::Display, fs::File, path::PathBuf, time::Instant};
+use std::{
+    borrow::Cow,
+    collections::VecDeque,
+    error::Error,
+    fmt::Display,
+    fs::File,
+    io::{Cursor, Read},
+    path::PathBuf,
+    sync::mpsc::{self, Receiver, Sender},
+    thread,
+    time::{Duration, Instant},
+};
 
 use binrw::{BinRead, BinWrite};
 use clap::Parser;
-use cursive::theme::Theme;
-use cursive::view::{Margins, Nameable, Resizable, ScrollStrategy, SizeConstraint};
-use cursive::views::{
-    Checkbox, EditView, LinearLayout, ListView, PaddedView, Panel, ResizedView, ScrollView,
-    SliderView, TextContent, TextView,
+use cursive::{
+    theme::Theme,
+    view::{Margins, Nameable, Resizable, ScrollStrategy, SizeConstraint},
+    views::{
+        Checkbox, EditView, LinearLayout, ListView, PaddedView, Panel, ResizedView, ScrollView,
+        SliderView, TextContent, TextView,
+    },
 };
 use indicatif::ProgressIterator;
 use itertools::Itertools;
 use mindustry_rs::{
-    types::{Object, PackedPoint2, ProcessorConfig, schematics::Schematic},
+    types::{Object, PackedPoint2, ProcessorConfig, Schematic},
     vm::{
         Building, BuildingData, LObject, LValue, LVar, LogicVM, LogicVMBuilder, MEMORY_BANK,
         MESSAGE, MICRO_PROCESSOR, SWITCH, WORLD_PROCESSOR,

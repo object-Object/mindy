@@ -1,18 +1,13 @@
-#![allow(deprecated)]
+#[cfg(feature = "std")]
+pub use self::schematics::*;
+pub use self::{enums::*, java::*, logic::*, math::*, type_io::*};
 
 pub mod colors;
 pub mod content;
-#[cfg(feature = "std")]
-pub mod schematics;
-
 mod enums;
 mod java;
 mod logic;
 mod math;
+#[cfg(feature = "std")]
+mod schematics;
 mod type_io;
-
-pub use enums::*;
-pub use java::*;
-pub use logic::*;
-pub use math::*;
-pub use type_io::*;

@@ -3,7 +3,10 @@
 use alloc::{string::String, vec::Vec};
 
 use super::{ast::*, grammar_util::*};
-use crate::types::{colors::{COLORS, to_double_bits}, ContentType, LAccess};
+use crate::types::{
+    ContentType, LAccess,
+    colors::{COLORS, to_double_bits},
+};
 
 grammar;
 

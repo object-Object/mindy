@@ -1,0 +1,7 @@
+use_field_init_shorthand = true
+
+unstable_features = true
+
+empty_item_single_line = true
+group_imports = "StdExternalCrate"
+imports_granularity = "Crate"

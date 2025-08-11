@@ -1,3 +1,18 @@
+#[cfg(feature = "serde_alloc")]
+use alloc::vec::Vec;
+#[cfg(feature = "serde_alloc")]
+use core::error::Error;
+#[cfg(feature = "std")]
+use std::{boxed::Box, string::ToString};
+
+#[cfg(feature = "std")]
+pub use self::grammar::LogicParser;
+#[cfg(feature = "std")]
+use crate::{
+    types::{PackedPoint2, content},
+    vm::{Building, LogicVMBuilder, ProcessorBuilder},
+};
+
 pub mod ast;
 #[cfg(feature = "std")]
 mod grammar_util;
@@ -8,22 +23,6 @@ lalrpop_util::lalrpop_mod!(
     grammar,
     "/logic/grammar.rs"
 );
-
-#[cfg(feature = "std")]
-pub use grammar::LogicParser;
-
-#[cfg(feature = "serde_alloc")]
-use alloc::vec::Vec;
-#[cfg(feature = "serde_alloc")]
-use core::error::Error;
-#[cfg(feature = "std")]
-use std::{boxed::Box, string::ToString};
-
-#[cfg(feature = "std")]
-use crate::{
-    types::{PackedPoint2, content},
-    vm::{Building, LogicVMBuilder, ProcessorBuilder},
-};
 
 #[cfg(feature = "std")]
 pub fn parse_and_serialize_ast(

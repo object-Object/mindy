@@ -11,10 +11,10 @@ use num_traits::float::FloatCore;
 use widestring::{U16Str, u16str};
 
 use super::{
-    Constants, LogicVM, VMLoadError, VMLoadResult, borrow_data,
+    Constants, LObject, LogicVM, VMLoadError, VMLoadResult, borrow_data,
     buildings::BuildingData,
     processor::{MAX_TEXT_BUFFER, ProcessorState},
-    variables::{Content, LValue, LVar, RAD_DEG},
+    variables::{Content, F64_DEG_RAD, F64_RAD_DEG, LString, LValue, LVar, RAD_DEG},
 };
 use crate::{
     parser::ast::{self, ConditionOp, LogicOp, TileLayer},
@@ -24,10 +24,6 @@ use crate::{
         content,
     },
     utils::{RapidHashMap, u16format},
-    vm::{
-        LObject,
-        variables::{F64_DEG_RAD, F64_RAD_DEG, LString},
-    },
 };
 
 const MAX_IPT: i32 = 1000;

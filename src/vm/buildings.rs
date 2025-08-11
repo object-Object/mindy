@@ -1,7 +1,7 @@
 use alloc::{boxed::Box, rc::Rc, string::ToString};
 use core::cell::RefCell;
-use derivative::Derivative;
 
+use derivative::Derivative;
 use strum_macros::IntoStaticStr;
 use widestring::U16String;
 
@@ -14,7 +14,7 @@ use crate::types::{
     content::{self, Block},
 };
 #[cfg(feature = "std")]
-use crate::types::{ProcessorConfig, schematics::SchematicTile};
+use crate::types::{ProcessorConfig, SchematicTile};
 
 pub const MICRO_PROCESSOR: &str = "micro-processor";
 pub const LOGIC_PROCESSOR: &str = "logic-processor";

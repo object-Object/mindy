@@ -1,12 +1,3 @@
-mod buildings;
-pub mod instructions;
-mod processor;
-mod variables;
-
-pub use buildings::*;
-pub use processor::*;
-pub use variables::*;
-
 use alloc::{borrow::Cow, rc::Rc, string::String, vec::Vec};
 use core::{cell::Cell, time::Duration};
 #[cfg(feature = "std")]
@@ -14,9 +5,15 @@ use std::time::Instant;
 
 use thiserror::Error;
 
+pub use self::{buildings::*, processor::*, variables::*};
 #[cfg(feature = "std")]
-use crate::types::schematics::{Schematic, SchematicTile};
+use crate::types::{Schematic, SchematicTile};
 use crate::{types::PackedPoint2, utils::RapidHashMap};
+
+mod buildings;
+pub mod instructions;
+mod processor;
+mod variables;
 
 const MILLIS_PER_SEC: u64 = 1_000;
 const NANOS_PER_MILLI: u32 = 1_000_000;
@@ -266,20 +263,18 @@ pub enum VMLoadError {
 
 #[cfg(all(test, not(feature = "std"), feature = "no_std"))]
 mod tests {
-    use alloc::{borrow::Cow, vec};
+    use alloc::{borrow::Cow, boxed::Box, rc::Rc, vec};
     use core::{cell::RefCell, time::Duration};
 
-    use alloc::{boxed::Box, rc::Rc};
     use pretty_assertions::assert_eq;
     use widestring::u16str;
 
+    use super::LogicVMBuilder;
     use crate::{
         parser::ast,
         types::{PackedPoint2, content},
         vm::{Building, BuildingData, LObject, LVar, processor::ProcessorBuilder},
     };
-
-    use super::LogicVMBuilder;
 
     #[test]
     fn test_load_vm() {
@@ -374,6 +369,12 @@ mod tests {
     use velcro::{map_iter, map_iter_from};
     use widestring::{U16Str, U16String, u16str};
 
+    use super::{
+        buildings::{LOGIC_PROCESSOR, WORLD_PROCESSOR},
+        instructions::{Instruction, InstructionResult},
+        processor::Processor,
+        *,
+    };
     use crate::{
         types::{
             ContentID, ContentType, Object, PackedPoint2, ProcessorConfig, ProcessorLinkConfig,
@@ -387,13 +388,6 @@ mod tests {
             },
             variables::{Content, LValue, LVar},
         },
-    };
-
-    use super::{
-        buildings::{LOGIC_PROCESSOR, WORLD_PROCESSOR},
-        instructions::{Instruction, InstructionResult},
-        processor::Processor,
-        *,
     };
 
     fn single_processor_vm(name: &str, code: &str) -> LogicVM {
@@ -671,16 +665,13 @@ mod tests {
         vm.do_tick(Duration::ZERO);
 
         let processor = take_processor(&mut vm, (0, 0));
-        assert_variables(
-            &processor,
-            map_iter! {
-                u16str!("a"): 1.into(),
-                u16str!("b"): 20.into(),
-                u16str!("c"): 3.into(),
-                u16str!("d"): 40.into(),
-                u16str!("e"): LValue::NULL,
-            },
-        );
+        assert_variables(&processor, map_iter! {
+            u16str!("a"): 1.into(),
+            u16str!("b"): 20.into(),
+            u16str!("c"): 3.into(),
+            u16str!("d"): 40.into(),
+            u16str!("e"): LValue::NULL,
+        });
         assert_eq!(hits.get(), 2);
     }
 
@@ -750,23 +741,17 @@ mod tests {
         run(&mut vm, 4, true);
 
         let processor = take_processor(&mut vm, (3, 0));
-        assert_variables(
-            &processor,
-            map_iter! {
-                u16str!("link0"): LValue::NULL,
-                u16str!("link3"): LValue::NULL,
-                u16str!("link4"): LValue::NULL,
-                u16str!("link6"): LValue::NULL,
-            },
-        );
-        assert_variables_buildings(
-            &processor,
-            map_iter! {
-                u16str!("link1"): PackedPoint2 { x: 0, y: 0 },
-                u16str!("link2"): PackedPoint2 { x: 1, y: 0 },
-                u16str!("link5"): PackedPoint2 { x: 2, y: 0 },
-            },
-        );
+        assert_variables(&processor, map_iter! {
+            u16str!("link0"): LValue::NULL,
+            u16str!("link3"): LValue::NULL,
+            u16str!("link4"): LValue::NULL,
+            u16str!("link6"): LValue::NULL,
+        });
+        assert_variables_buildings(&processor, map_iter! {
+            u16str!("link1"): PackedPoint2 { x: 0, y: 0 },
+            u16str!("link2"): PackedPoint2 { x: 1, y: 0 },
+            u16str!("link5"): PackedPoint2 { x: 2, y: 0 },
+        });
     }
 
     #[test]
@@ -845,23 +830,17 @@ mod tests {
         let mut vm = builder.build().unwrap();
 
         let processor = take_processor(&mut vm, (5, 0));
-        assert_locals(
-            &processor,
-            map_iter! {
-                u16str!("processor3"): None,
-                u16str!("cell1"): None,
-            },
-        );
-        assert_locals_buildings(
-            &processor,
-            map_iter! {
-                // conflicts should prefer the last building linked
-                u16str!("processor1"): PackedPoint2 { x: 1, y: 0 },
-                u16str!("processor2"): PackedPoint2 { x: 3, y: 0 },
-                u16str!("processor10"): PackedPoint2 { x: 2, y: 0 },
-                u16str!("cellFoo"): PackedPoint2 { x: 4, y: 0 },
-            },
-        );
+        assert_locals(&processor, map_iter! {
+            u16str!("processor3"): None,
+            u16str!("cell1"): None,
+        });
+        assert_locals_buildings(&processor, map_iter! {
+            // conflicts should prefer the last building linked
+            u16str!("processor1"): PackedPoint2 { x: 1, y: 0 },
+            u16str!("processor2"): PackedPoint2 { x: 3, y: 0 },
+            u16str!("processor10"): PackedPoint2 { x: 2, y: 0 },
+            u16str!("cellFoo"): PackedPoint2 { x: 4, y: 0 },
+        });
     }
 
     #[test]
@@ -871,15 +850,12 @@ mod tests {
         let mut vm = LogicVM::from_schematic(&schematic).unwrap();
 
         let processor = take_processor(&mut vm, (0, 0));
-        assert_locals_buildings(
-            &processor,
-            map_iter! {
-                u16str!("cell1"): PackedPoint2 { x: 0, y: 10 },
-                u16str!("cell2"): PackedPoint2 { x: 7, y: 7 },
-                u16str!("cell3"): PackedPoint2 { x: 9, y: 5 },
-                u16str!("bank1"): PackedPoint2 { x: 10, y: 2 },
-            },
-        );
+        assert_locals_buildings(&processor, map_iter! {
+            u16str!("cell1"): PackedPoint2 { x: 0, y: 10 },
+            u16str!("cell2"): PackedPoint2 { x: 7, y: 7 },
+            u16str!("cell3"): PackedPoint2 { x: 9, y: 5 },
+            u16str!("bank1"): PackedPoint2 { x: 10, y: 2 },
+        });
     }
 
     #[test]
@@ -991,24 +967,18 @@ mod tests {
         let mut vm = builder.build().unwrap();
 
         let processor = take_processor(&mut vm, (1, 1));
-        assert_locals(
-            &processor,
-            map_iter! {
-                u16str!("cell2"): None,
-                u16str!("bank1"): None,
-                u16str!("cell4"): None,
-                u16str!("cell5"): None,
-            },
-        );
-        assert_locals_buildings(
-            &processor,
-            map_iter! {
-                u16str!("cell1"): PackedPoint2 { x: 1, y: 11 },
-                u16str!("cell3"): PackedPoint2 { x: 8, y: 8 },
-                u16str!("cell6"): PackedPoint2 { x: 10, y: 6 },
-                u16str!("bank2"): PackedPoint2 { x: 11, y: 3 },
-            },
-        );
+        assert_locals(&processor, map_iter! {
+            u16str!("cell2"): None,
+            u16str!("bank1"): None,
+            u16str!("cell4"): None,
+            u16str!("cell5"): None,
+        });
+        assert_locals_buildings(&processor, map_iter! {
+            u16str!("cell1"): PackedPoint2 { x: 1, y: 11 },
+            u16str!("cell3"): PackedPoint2 { x: 8, y: 8 },
+            u16str!("cell6"): PackedPoint2 { x: 10, y: 6 },
+            u16str!("bank2"): PackedPoint2 { x: 11, y: 3 },
+        });
     }
 
     #[test]
@@ -1182,22 +1152,16 @@ mod tests {
         run(&mut vm, 1, true);
 
         let processor = take_processor(&mut vm, (0, 0));
-        assert_variables(
-            &processor,
-            map_iter! {
-                u16str!("link_-1"): LValue::NULL,
-                u16str!("link_3"): LValue::NULL,
-            },
-        );
-        assert_variables_buildings(
-            &processor,
-            map_iter! {
-                u16str!("link_null"): PackedPoint2 { x: 3, y: 0 },
-                u16str!("link_0"): PackedPoint2 { x: 3, y: 0 },
-                u16str!("link_1"): PackedPoint2 { x: 4, y: 0 },
-                u16str!("link_2"): PackedPoint2 { x: 5, y: 0 },
-            },
-        );
+        assert_variables(&processor, map_iter! {
+            u16str!("link_-1"): LValue::NULL,
+            u16str!("link_3"): LValue::NULL,
+        });
+        assert_variables_buildings(&processor, map_iter! {
+            u16str!("link_null"): PackedPoint2 { x: 3, y: 0 },
+            u16str!("link_0"): PackedPoint2 { x: 3, y: 0 },
+            u16str!("link_1"): PackedPoint2 { x: 4, y: 0 },
+            u16str!("link_2"): PackedPoint2 { x: 5, y: 0 },
+        });
     }
 
     #[test]
@@ -1265,30 +1229,24 @@ mod tests {
         run(&mut vm, 2, true);
 
         let processor = take_processor(&mut vm, (1, 2));
-        assert_variables(
-            &processor,
-            map_iter! {
-                u16str!("floor1"): LValue::from(Content::Block(&content::blocks::STONE)),
-                u16str!("ore1"): LValue::from(Content::Block(&content::blocks::AIR)),
-                u16str!("block1"): LValue::from(Content::Block(content::blocks::FROM_NAME["world-processor"])),
+        assert_variables(&processor, map_iter! {
+            u16str!("floor1"): LValue::from(Content::Block(&content::blocks::STONE)),
+            u16str!("ore1"): LValue::from(Content::Block(&content::blocks::AIR)),
+            u16str!("block1"): LValue::from(Content::Block(content::blocks::FROM_NAME["world-processor"])),
 
-                u16str!("floor2"): LValue::from(Content::Block(&content::blocks::STONE)),
-                u16str!("ore2"): LValue::from(Content::Block(&content::blocks::AIR)),
-                u16str!("block2"): LValue::from(Content::Block(content::blocks::FROM_NAME["switch"])),
+            u16str!("floor2"): LValue::from(Content::Block(&content::blocks::STONE)),
+            u16str!("ore2"): LValue::from(Content::Block(&content::blocks::AIR)),
+            u16str!("block2"): LValue::from(Content::Block(content::blocks::FROM_NAME["switch"])),
 
-                u16str!("floor3"): LValue::NULL,
-                u16str!("ore3"): LValue::NULL,
-                u16str!("block3"): LValue::NULL,
-                u16str!("building3"): LValue::NULL,
-            },
-        );
-        assert_variables_buildings(
-            &processor,
-            map_iter! {
-                u16str!("building1"): PackedPoint2 { x: 1, y: 2 },
-                u16str!("building2"): PackedPoint2 { x: 1, y: 3 },
-            },
-        );
+            u16str!("floor3"): LValue::NULL,
+            u16str!("ore3"): LValue::NULL,
+            u16str!("block3"): LValue::NULL,
+            u16str!("building3"): LValue::NULL,
+        });
+        assert_variables_buildings(&processor, map_iter! {
+            u16str!("building1"): PackedPoint2 { x: 1, y: 2 },
+            u16str!("building2"): PackedPoint2 { x: 1, y: 3 },
+        });
     }
 
     thread_local! {
@@ -1515,13 +1473,10 @@ mod tests {
         run(&mut vm, 1, true);
 
         let processor = take_processor(&mut vm, (0, 0));
-        assert_variables(
-            &processor,
-            map_iter! {
-                u16str!("canary1"): LValue::from(0xdeadbeefu32 as f64),
-                u16str!("canary2"): LValue::NULL,
-            },
-        );
+        assert_variables(&processor, map_iter! {
+            u16str!("canary1"): LValue::from(0xdeadbeefu32 as f64),
+            u16str!("canary2"): LValue::NULL,
+        });
     }
 
     #[test]
@@ -1579,15 +1534,12 @@ mod tests {
         run(&mut vm, 2, true);
 
         let processor = take_processor(&mut vm, (0, 0));
-        assert_variables(
-            &processor,
-            map_iter! {
-                u16str!("got1"): LValue::from(0.),
-                u16str!("got2"): LValue::from(1.),
-                u16str!("got3"): LValue::from(1.),
-                u16str!("got4"): LValue::from(0.),
-            },
-        );
+        assert_variables(&processor, map_iter! {
+            u16str!("got1"): LValue::from(0.),
+            u16str!("got2"): LValue::from(1.),
+            u16str!("got3"): LValue::from(1.),
+            u16str!("got4"): LValue::from(0.),
+        });
     }
 
     #[test]
@@ -1709,41 +1661,35 @@ mod tests {
         run(&mut vm, 2, true);
 
         let processor = take_processor(&mut vm, (2, 0));
-        assert_variables(
-            &processor,
-            map_iter! {
-                u16str!("processor_number"): LValue::from(10.),
-                u16str!("processor_string"): u16str!("abc").into(),
-                u16str!("processor_counter"): LValue::from(3.),
-                u16str!("processor_ipt"): LValue::NULL,
-                u16str!("processor_this"): LValue::NULL,
-                u16str!("processor_undefined"): LValue::NULL,
-                u16str!("processor_0"): u16str!("preserved").into(),
+        assert_variables(&processor, map_iter! {
+            u16str!("processor_number"): LValue::from(10.),
+            u16str!("processor_string"): u16str!("abc").into(),
+            u16str!("processor_counter"): LValue::from(3.),
+            u16str!("processor_ipt"): LValue::NULL,
+            u16str!("processor_this"): LValue::NULL,
+            u16str!("processor_undefined"): LValue::NULL,
+            u16str!("processor_0"): u16str!("preserved").into(),
 
-                u16str!("processor_building_0"): LValue::from(0.),
-                u16str!("processor_building_63"): LValue::from(20.),
+            u16str!("processor_building_0"): LValue::from(0.),
+            u16str!("processor_building_63"): LValue::from(20.),
 
-                u16str!("cell_-1"): LValue::NULL,
-                u16str!("cell_0"): LValue::from(30.),
-                u16str!("cell_str"): LValue::from(40.),
-                u16str!("cell_63"): LValue::from(50.),
-                u16str!("cell_64"): LValue::NULL,
+            u16str!("cell_-1"): LValue::NULL,
+            u16str!("cell_0"): LValue::from(30.),
+            u16str!("cell_str"): LValue::from(40.),
+            u16str!("cell_63"): LValue::from(50.),
+            u16str!("cell_64"): LValue::NULL,
 
-                u16str!("message_-1"): LValue::NULL,
-                u16str!("message_0"): LValue::from(b'd' as f64),
-                u16str!("message_str"): LValue::from(b'e' as f64),
-                u16str!("message_2"): LValue::from(b'f' as f64),
-                u16str!("message_3"): LValue::NULL,
+            u16str!("message_-1"): LValue::NULL,
+            u16str!("message_0"): LValue::from(b'd' as f64),
+            u16str!("message_str"): LValue::from(b'e' as f64),
+            u16str!("message_2"): LValue::from(b'f' as f64),
+            u16str!("message_3"): LValue::NULL,
 
-                u16str!("switch"): u16str!("preserved").into(),
-            },
-        );
-        assert_variables_buildings(
-            &processor,
-            map_iter! {
-                u16str!("processor_building"): PackedPoint2 { x: 0, y: 2 },
-            },
-        );
+            u16str!("switch"): u16str!("preserved").into(),
+        });
+        assert_variables_buildings(&processor, map_iter! {
+            u16str!("processor_building"): PackedPoint2 { x: 0, y: 2 },
+        });
     }
 
     #[test]
@@ -1827,24 +1773,18 @@ mod tests {
 
         let processor = take_processor(&mut vm, (0, 0));
         assert_eq!(processor.state.counter, 4);
-        assert_variables(
-            &processor,
-            map_iter! {
-                u16str!("canary"): Some(LValue::from(0xdeadbeefu32 as f64)),
-                u16str!("var"): Some(LValue::from(10.)),
-                u16str!("jumped"): Some(LValue::from(1.)),
-                u16str!("undefined"): None,
-            },
-        );
+        assert_variables(&processor, map_iter! {
+            u16str!("canary"): Some(LValue::from(0xdeadbeefu32 as f64)),
+            u16str!("var"): Some(LValue::from(10.)),
+            u16str!("jumped"): Some(LValue::from(1.)),
+            u16str!("undefined"): None,
+        });
 
         let processor = take_processor(&mut vm, (2, 0));
-        assert_variables(
-            &processor,
-            map_iter! {
-                u16str!("var"): Some(LValue::from(20.)),
-                u16str!("undefined"): None,
-            },
-        );
+        assert_variables(&processor, map_iter! {
+            u16str!("var"): Some(LValue::from(20.)),
+            u16str!("undefined"): None,
+        });
 
         if let Some(building) = vm.building(PackedPoint2 { x: 0, y: 2 })
             && let BuildingData::Memory(memory) = &mut *building.data.borrow_mut()
@@ -2278,12 +2218,9 @@ mod tests {
         run(&mut vm, 1, true);
 
         let state = take_processor(&mut vm, (0, 0)).state;
-        assert_eq!(
-            state.printbuffer.as_vec(),
-            &[
-                0, 10, 0x41, 0xc0, 0x2665, 0xd799, 0xd800, 0xdfff, 0x8000, 0xffff, 0, 1
-            ]
-        );
+        assert_eq!(state.printbuffer.as_vec(), &[
+            0, 10, 0x41, 0xc0, 0x2665, 0xd799, 0xd800, 0xdfff, 0x8000, 0xffff, 0, 1
+        ]);
     }
 
     #[test]
@@ -2963,30 +2900,26 @@ mod tests {
         vm.do_tick(time);
 
         let processor = take_processor(&mut vm, (0, 0));
-        assert_variables_epsilon(
-            &processor,
-            1e-8,
-            map_iter! {
-                u16str!("tick1"): 0.,
-                u16str!("time1"): 0.,
-                u16str!("second1"): 0.,
-                u16str!("minute1"): 0.,
+        assert_variables_epsilon(&processor, 1e-8, map_iter! {
+            u16str!("tick1"): 0.,
+            u16str!("time1"): 0.,
+            u16str!("second1"): 0.,
+            u16str!("minute1"): 0.,
 
-                u16str!("tick2"): 1. * 60.,
-                u16str!("time2"): 1000.,
-                u16str!("second2"): 1.,
-                u16str!("minute2"): 1. / 60.,
+            u16str!("tick2"): 1. * 60.,
+            u16str!("time2"): 1000.,
+            u16str!("second2"): 1.,
+            u16str!("minute2"): 1. / 60.,
 
-                u16str!("tick3"): 1.001 * 60.,
-                u16str!("time3"): 1001.,
-                u16str!("second3"): 1.001,
-                u16str!("minute3"): 1.001 / 60.,
+            u16str!("tick3"): 1.001 * 60.,
+            u16str!("time3"): 1001.,
+            u16str!("second3"): 1.001,
+            u16str!("minute3"): 1.001 / 60.,
 
-                u16str!("tick4"): 61.001 * 60.,
-                u16str!("time4"): 61001.,
-                u16str!("second4"): 61.001,
-                u16str!("minute4"): 1.001 / 60. + 1.,
-            },
-        );
+            u16str!("tick4"): 61.001 * 60.,
+            u16str!("time4"): 61001.,
+            u16str!("second4"): 61.001,
+            u16str!("minute4"): 1.001 / 60. + 1.,
+        });
     }
 }

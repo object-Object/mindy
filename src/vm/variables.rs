@@ -11,17 +11,16 @@ use strum::VariantArray;
 use thiserror::Error;
 use widestring::{U16Str, U16String};
 
+use super::{
+    Building,
+    processor::{ProcessorLink, ProcessorState},
+};
 use crate::{
     types::{
         ContentID, ContentType, LAccess, Team, colors,
         content::{self, Block, Item, Liquid, Unit},
     },
     utils::{RapidIndexMap, u16format},
-};
-
-use super::{
-    Building,
-    processor::{ProcessorLink, ProcessorState},
 };
 
 #[allow(clippy::approx_constant)]

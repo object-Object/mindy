@@ -7,8 +7,8 @@ use alloc::{
     vec::Vec,
 };
 use core::cell::{Cell, RefCell};
-use derivative::Derivative;
 
+use derivative::Derivative;
 use itertools::Itertools;
 #[allow(unused_imports)]
 use num_traits::float::FloatCore;
