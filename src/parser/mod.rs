@@ -1,7 +1,6 @@
 pub mod ast;
 #[cfg(feature = "std")]
 mod grammar_util;
-pub mod vm;
 
 #[cfg(feature = "std")]
 lalrpop_util::lalrpop_mod!(
@@ -21,9 +20,10 @@ use core::error::Error;
 use std::{boxed::Box, string::ToString};
 
 #[cfg(feature = "std")]
-use crate::types::{PackedPoint2, content};
-#[cfg(feature = "std")]
-use vm::{Building, LogicVMBuilder, ProcessorBuilder};
+use crate::{
+    types::{PackedPoint2, content},
+    vm::{Building, LogicVMBuilder, ProcessorBuilder},
+};
 
 #[cfg(feature = "std")]
 pub fn parse_and_serialize_ast(

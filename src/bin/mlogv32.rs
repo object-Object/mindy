@@ -18,13 +18,12 @@ use cursive::views::{
 };
 use indicatif::ProgressIterator;
 use itertools::Itertools;
-use mindustry_rs::logic::vm::{LObject, LVar};
 use mindustry_rs::{
-    logic::vm::{
-        Building, BuildingData, LValue, LogicVM, LogicVMBuilder, MEMORY_BANK, MESSAGE,
-        MICRO_PROCESSOR, SWITCH, WORLD_PROCESSOR,
-    },
     types::{Object, PackedPoint2, ProcessorConfig, schematics::Schematic},
+    vm::{
+        Building, BuildingData, LObject, LValue, LVar, LogicVM, LogicVMBuilder, MEMORY_BANK,
+        MESSAGE, MICRO_PROCESSOR, SWITCH, WORLD_PROCESSOR,
+    },
 };
 use serde::Deserialize;
 use widestring::{U16String, u16str};

@@ -17,19 +17,17 @@ use super::{
     variables::{Content, LValue, LVar, RAD_DEG},
 };
 use crate::{
-    logic::{
-        ast::{self, ConditionOp, LogicOp, TileLayer},
-        vm::{
-            LObject,
-            variables::{F64_DEG_RAD, F64_RAD_DEG, LString},
-        },
-    },
+    parser::ast::{self, ConditionOp, LogicOp, TileLayer},
     types::{
         ContentType, LAccess, PackedPoint2, Team,
         colors::{self, f32_to_double_bits, f64_from_double_bits},
         content,
     },
     utils::{RapidHashMap, u16format},
+    vm::{
+        LObject,
+        variables::{F64_DEG_RAD, F64_RAD_DEG, LString},
+    },
 };
 
 const MAX_IPT: i32 = 1000;

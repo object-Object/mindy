@@ -3,11 +3,11 @@ use std::{error::Error, time::Instant};
 use clap::Parser;
 use clap_stdin::FileOrStdin;
 use mindustry_rs::{
-    logic::vm::{
+    types::{Object, ProcessorConfig, ProcessorLinkConfig},
+    vm::{
         Building, BuildingData, HYPER_PROCESSOR, LOGIC_PROCESSOR, LogicVMBuilder, MEMORY_BANK,
         MEMORY_CELL, MESSAGE, MICRO_PROCESSOR, WORLD_PROCESSOR,
     },
-    types::{Object, ProcessorConfig, ProcessorLinkConfig},
 };
 use strum_macros::EnumString;
 use widestring::U16String;

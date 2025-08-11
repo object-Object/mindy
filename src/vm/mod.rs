@@ -274,11 +274,9 @@ mod tests {
     use widestring::u16str;
 
     use crate::{
-        logic::{
-            ast,
-            vm::{Building, BuildingData, LObject, LVar, processor::ProcessorBuilder},
-        },
+        parser::ast,
         types::{PackedPoint2, content},
+        vm::{Building, BuildingData, LObject, LVar, processor::ProcessorBuilder},
     };
 
     use super::LogicVMBuilder;
@@ -377,18 +375,18 @@ mod tests {
     use widestring::{U16Str, U16String, u16str};
 
     use crate::{
-        logic::vm::{
+        types::{
+            ContentID, ContentType, Object, PackedPoint2, ProcessorConfig, ProcessorLinkConfig,
+            Team, colors::COLORS, content,
+        },
+        utils::u16format,
+        vm::{
             buildings::{
                 HYPER_PROCESSOR, MEMORY_BANK, MEMORY_CELL, MESSAGE, MICRO_PROCESSOR, SWITCH,
                 WORLD_CELL,
             },
             variables::{Content, LValue, LVar},
         },
-        types::{
-            ContentID, ContentType, Object, PackedPoint2, ProcessorConfig, ProcessorLinkConfig,
-            Team, colors::COLORS, content,
-        },
-        utils::u16format,
     };
 
     use super::{
@@ -868,7 +866,7 @@ mod tests {
 
     #[test]
     fn test_link_max_range() {
-        let data = include_bytes!("../../../tests/logic/vm/test_link_max_range.msch");
+        let data = include_bytes!("../../tests/vm/test_link_max_range.msch");
         let schematic = Schematic::read(&mut Cursor::new(data)).unwrap();
         let mut vm = LogicVM::from_schematic(&schematic).unwrap();
 
@@ -1469,7 +1467,7 @@ mod tests {
                 .join("\n");
             let code = format!("setrate 1000\n{code}\nstop");
 
-            let data = include_bytes!("../../../tests/logic/vm/test_sensor_schematic.msch");
+            let data = include_bytes!("../../tests/vm/test_sensor_schematic.msch");
             let mut schematic = Schematic::read(&mut Cursor::new(data)).unwrap();
 
             // replace main processor code

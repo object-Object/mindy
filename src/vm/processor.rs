@@ -23,9 +23,9 @@ use super::{
     variables::{LVar, Variables},
 };
 #[cfg(feature = "std")]
-use crate::logic::LogicParser;
+use crate::parser::LogicParser;
 use crate::{
-    logic::ast,
+    parser::ast,
     types::{PackedPoint2, ProcessorLinkConfig, content},
     utils::{RapidHashMap, RapidHashSet},
 };
