@@ -21,7 +21,7 @@ mod grammar_util;
 lalrpop_util::lalrpop_mod!(
     #[allow(deprecated)]
     grammar,
-    "/logic/grammar.rs"
+    "/parser/grammar.rs"
 );
 
 #[cfg(feature = "std")]
