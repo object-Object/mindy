@@ -3,8 +3,6 @@ use widestring::U16String;
 
 use super::Content;
 
-pub(super) const SCALE_STEP: f32 = 0.05;
-
 // note: this allows larger values than mindustry does
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum DrawCommand {
@@ -76,6 +74,10 @@ pub enum DrawCommand {
         degrees: i16,
     },
     Reset,
+}
+
+impl DrawCommand {
+    pub const SCALE_STEP: f32 = 0.05;
 }
 
 bitflags! {

@@ -14,7 +14,6 @@ use super::{
     BuildingData, Content, DrawCommand, LObject, LString, LValue, LVar, LogicVM, ProcessorState,
     TextAlignment, VMLoadError, VMLoadResult,
     buildings::borrow_data,
-    draw::SCALE_STEP,
     processor::{MAX_DRAW_BUFFER, MAX_TEXT_BUFFER},
     variables::{Constants, F64_DEG_RAD, F64_RAD_DEG, RAD_DEG},
 };
@@ -612,8 +611,8 @@ impl SimpleInstructionTrait for Draw {
                 y: p2.numi() as i16,
             },
             DrawOp::Scale => DrawCommand::Scale {
-                x: (p1.numf() / SCALE_STEP) as i16,
-                y: (p2.numf() / SCALE_STEP) as i16,
+                x: (p1.numf() / DrawCommand::SCALE_STEP) as i16,
+                y: (p2.numf() / DrawCommand::SCALE_STEP) as i16,
             },
             DrawOp::Rotate => DrawCommand::Rotate {
                 degrees: p1.numi() as i16,
