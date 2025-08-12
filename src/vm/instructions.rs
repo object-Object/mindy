@@ -11,17 +11,18 @@ use num_traits::float::FloatCore;
 use widestring::{U16Str, u16str};
 
 use super::{
-    BuildingData, Content, LObject, LString, LValue, LVar, LogicVM, ProcessorState, VMLoadError,
-    VMLoadResult,
+    BuildingData, Content, DrawCommand, LObject, LString, LValue, LVar, LogicVM, ProcessorState,
+    TextAlignment, VMLoadError, VMLoadResult,
     buildings::borrow_data,
-    processor::MAX_TEXT_BUFFER,
+    draw::SCALE_STEP,
+    processor::{MAX_DRAW_BUFFER, MAX_TEXT_BUFFER},
     variables::{Constants, F64_DEG_RAD, F64_RAD_DEG, RAD_DEG},
 };
 use crate::{
-    parser::ast::{self, ConditionOp, LogicOp, TileLayer},
+    parser::ast::{self, ConditionOp, DrawOp, LogicOp, TileLayer},
     types::{
         ContentType, LAccess, PackedPoint2, Team,
-        colors::{self, f32_to_double_bits, f64_from_double_bits},
+        colors::{self, f32_to_double_bits, f64_from_double_bits, from_double_bits},
         content,
     },
     utils::{RapidHashMap, u16format},
@@ -68,10 +69,12 @@ pub enum Instruction {
     // input/output
     Read,
     Write,
+    Draw,
     Print,
     PrintChar,
     Format,
     // block control
+    DrawFlush,
     PrintFlush,
     GetLink,
     Control,
@@ -192,31 +195,32 @@ impl InstructionBuilder {
             .into(),
             // TODO: implement draw?
             ast::Instruction::Draw {
-                op: _,
+                op,
                 x,
                 y,
                 p1,
                 p2,
                 p3,
                 p4,
-            } => {
-                lvar(x);
-                lvar(y);
-                lvar(p1);
-                lvar(p2);
-                lvar(p3);
-                lvar(p4);
-                Noop.into()
+            } => Draw {
+                op,
+                p1: lvar(x),
+                p2: lvar(y),
+                p3: lvar(p1),
+                p4: lvar(p2),
+                p5: lvar(p3),
+                p6: lvar(p4),
             }
+            .into(),
             ast::Instruction::Print { value } => Print { value: lvar(value) }.into(),
             ast::Instruction::PrintChar { value } => PrintChar { value: lvar(value) }.into(),
             ast::Instruction::Format { value } => Format { value: lvar(value) }.into(),
 
             // block control
-            ast::Instruction::DrawFlush { target } => {
-                lvar(target);
-                Noop.into()
+            ast::Instruction::DrawFlush { target } => DrawFlush {
+                target: lvar(target),
             }
+            .into(),
             ast::Instruction::PrintFlush { target } => PrintFlush {
                 target: lvar(target),
             }
@@ -500,6 +504,128 @@ impl InstructionTrait for Write {
 
 #[derive(Debug)]
 #[non_exhaustive]
+pub struct Draw {
+    pub op: DrawOp,
+    pub p1: LVar,
+    pub p2: LVar,
+    pub p3: LVar,
+    pub p4: LVar,
+    pub p5: LVar,
+    pub p6: LVar,
+}
+
+impl SimpleInstructionTrait for Draw {
+    fn execute(&self, state: &mut ProcessorState, _: &LogicVM) {
+        if state.drawbuffer_len >= MAX_DRAW_BUFFER {
+            return;
+        }
+
+        let p1 = self.p1.get_inner(state, &state.variables);
+        let p2 = self.p2.get_inner(state, &state.variables);
+        let p3 = self.p3.get_inner(state, &state.variables);
+        let p4 = self.p4.get_inner(state, &state.variables);
+        let p5 = self.p5.get_inner(state, &state.variables);
+        let p6 = self.p6.get_inner(state, &state.variables);
+
+        let mut size = 1;
+        state.drawbuffer.push(match self.op {
+            DrawOp::Clear => DrawCommand::Clear {
+                r: p1.numi() as u8,
+                g: p2.numi() as u8,
+                b: p3.numi() as u8,
+            },
+            DrawOp::Color => DrawCommand::Color {
+                r: p1.numi() as u8,
+                g: p2.numi() as u8,
+                b: p3.numi() as u8,
+                a: p4.numi() as u8,
+            },
+            DrawOp::Col => {
+                let (r, g, b, a) = from_double_bits(p1.num());
+                DrawCommand::Color { r, g, b, a }
+            }
+            DrawOp::Stroke => DrawCommand::Stroke {
+                width: p1.numi() as i16,
+            },
+            DrawOp::Line => DrawCommand::Line {
+                x1: p1.numi() as i16,
+                y1: p2.numi() as i16,
+                x2: p3.numi() as i16,
+                y2: p4.numi() as i16,
+            },
+            DrawOp::Rect | DrawOp::LineRect => DrawCommand::Rect {
+                x: p1.numi() as i16,
+                y: p2.numi() as i16,
+                width: p3.numi() as i16,
+                height: p4.numi() as i16,
+                fill: self.op == DrawOp::Rect,
+            },
+            DrawOp::Poly | DrawOp::LinePoly => DrawCommand::Poly {
+                x: p1.numi() as i16,
+                y: p2.numi() as i16,
+                sides: p3.numi() as i16,
+                radius: p4.numi() as i16,
+                rotation: p5.numi() as i16,
+                fill: self.op == DrawOp::Poly,
+            },
+            DrawOp::Triangle => DrawCommand::Triangle {
+                x1: p1.numi() as i16,
+                y1: p2.numi() as i16,
+                x2: p3.numi() as i16,
+                y2: p4.numi() as i16,
+                x3: p5.numi() as i16,
+                y3: p6.numi() as i16,
+            },
+            DrawOp::Image => DrawCommand::Image {
+                x: p1.numi() as i16,
+                y: p2.numi() as i16,
+                image: match p3.obj() {
+                    Some(LObject::Content(content)) => Some(*content),
+                    _ => None,
+                },
+                size: p4.numi() as i16,
+                rotation: p5.numi() as i16,
+            },
+            DrawOp::Print => {
+                if state.printbuffer.is_empty() {
+                    return;
+                }
+
+                // newlines don't count toward the length limit
+                size = state
+                    .printbuffer
+                    .as_slice()
+                    .iter()
+                    .filter(|v| **v != b'\n' as u16)
+                    .count();
+
+                DrawCommand::Print {
+                    x: p1.numi() as i16,
+                    y: p2.numi() as i16,
+                    alignment: TextAlignment::from_bits_truncate(p3.numi() as u8),
+                    // FIXME: lazy
+                    text: core::mem::take(&mut state.printbuffer),
+                }
+            }
+            DrawOp::Translate => DrawCommand::Translate {
+                x: p1.numi() as i16,
+                y: p2.numi() as i16,
+            },
+            DrawOp::Scale => DrawCommand::Scale {
+                x: (p1.numf() / SCALE_STEP) as i16,
+                y: (p2.numf() / SCALE_STEP) as i16,
+            },
+            DrawOp::Rotate => DrawCommand::Rotate {
+                degrees: p1.numi() as i16,
+            },
+            DrawOp::Reset => DrawCommand::Reset,
+        });
+        state.drawbuffer_len += size;
+    }
+}
+
+#[derive(Debug)]
+#[non_exhaustive]
 pub struct Print {
     pub value: LVar,
 }
@@ -600,6 +726,27 @@ impl SimpleInstructionTrait for Format {
 }
 
 // block control
+
+#[derive(Debug)]
+#[non_exhaustive]
+pub struct DrawFlush {
+    pub target: LVar,
+}
+
+impl InstructionTrait for DrawFlush {
+    fn execute(&self, state: &mut ProcessorState, vm: &LogicVM) -> InstructionResult {
+        let result = if let Some(LObject::Building(target)) = self.target.get(state).obj()
+            && let Ok(mut data) = target.data.clone().try_borrow_mut()
+            && let BuildingData::Custom(custom) = &mut *data
+        {
+            custom.drawflush(state, vm)
+        } else {
+            InstructionResult::Ok
+        };
+        state.drawbuffer.clear();
+        result
+    }
+}
 
 #[derive(Debug)]
 #[non_exhaustive]

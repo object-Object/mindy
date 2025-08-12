@@ -366,6 +366,11 @@ pub trait CustomBuildingData {
     }
 
     #[must_use]
+    fn drawflush(&mut self, state: &mut ProcessorState, vm: &LogicVM) -> InstructionResult {
+        InstructionResult::Ok
+    }
+
+    #[must_use]
     fn printflush(&mut self, state: &mut ProcessorState, vm: &LogicVM) -> InstructionResult {
         InstructionResult::Ok
     }

@@ -16,8 +16,8 @@ use replace_with::replace_with_or_default_and_return;
 use widestring::{U16Str, U16String};
 
 use super::{
-    Building, BuildingData, InstructionResult, LValue, LVar, LogicVM, LogicVMBuilder, VMLoadError,
-    VMLoadResult,
+    Building, BuildingData, DrawCommand, InstructionResult, LValue, LVar, LogicVM, LogicVMBuilder,
+    VMLoadError, VMLoadResult,
     instructions::{Instruction, InstructionBuilder, InstructionTrait, Noop},
     variables::{Constants, Variables},
 };
@@ -30,6 +30,7 @@ use crate::{
 };
 
 pub(super) const MAX_TEXT_BUFFER: usize = 400;
+pub(super) const MAX_DRAW_BUFFER: usize = 400;
 const MAX_INSTRUCTION_SCALE: f64 = 5.0;
 
 pub type InstructionHook =
@@ -232,6 +233,8 @@ pub struct ProcessorState {
     // this behaviour is user-visible with printchar and when reading from a message
     // https://users.rust-lang.org/t/why-is-a-char-valid-in-jvm-but-invalid-in-rust/73524
     pub printbuffer: U16String,
+    pub drawbuffer: Vec<DrawCommand>,
+    pub(super) drawbuffer_len: usize,
 
     pub(super) locals: Constants,
     pub(super) variables: Variables,
@@ -446,6 +449,8 @@ impl ProcessorBuilder<'_> {
                 running_processors: builder.vm.running_processors.clone(),
                 time: builder.vm.time.clone(),
                 printbuffer: U16String::new(),
+                drawbuffer: Vec::new(),
+                drawbuffer_len: 0,
                 locals: Constants::default(),
                 variables: Variables::default(),
             },

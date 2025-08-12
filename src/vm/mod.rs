@@ -8,6 +8,7 @@ use thiserror::Error;
 use self::variables::Constants;
 pub use self::{
     buildings::{Building, BuildingData, CustomBuildingData},
+    draw::{DrawCommand, TextAlignment},
     instructions::InstructionResult,
     processor::{InstructionHook, Processor, ProcessorBuilder, ProcessorState},
     variables::{Content, LObject, LString, LValue, LVar},
@@ -17,6 +18,7 @@ use crate::types::{Schematic, SchematicTile};
 use crate::{types::PackedPoint2, utils::RapidHashMap};
 
 pub mod buildings;
+mod draw;
 pub mod instructions;
 mod processor;
 pub mod variables;

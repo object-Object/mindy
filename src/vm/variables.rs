@@ -12,7 +12,7 @@ use thiserror::Error;
 use widestring::{U16Str, U16String};
 
 use super::{
-    Building,
+    Building, TextAlignment,
     processor::{ProcessorLink, ProcessorState},
 };
 use crate::{
@@ -83,6 +83,15 @@ impl LVar {
                 constant(content::liquids::FROM_LOGIC_ID.len()),
             ),
             ("@unitCount", constant(content::units::FROM_LOGIC_ID.len())),
+            ("@center", constant(TextAlignment::CENTER)),
+            ("@top", constant(TextAlignment::TOP)),
+            ("@bottom", constant(TextAlignment::BOTTOM)),
+            ("@left", constant(TextAlignment::LEFT)),
+            ("@right", constant(TextAlignment::RIGHT)),
+            ("@topLeft", constant(TextAlignment::TOP_LEFT)),
+            ("@topRight", constant(TextAlignment::TOP_RIGHT)),
+            ("@bottomLeft", constant(TextAlignment::BOTTOM_LEFT)),
+            ("@bottomRight", constant(TextAlignment::BOTTOM_RIGHT)),
         ]
         .into_iter()
         .map(|(k, v)| (k.into(), v))
@@ -124,8 +133,6 @@ impl LVar {
                     (name, constant(*v))
                 }),
         );
-
-        // skip adding weathers and alignments since they aren't useful in a headless environment
 
         globals.extend(LAccess::VARIANTS.iter().map(|&v| named_constant(v, v)));
 
@@ -404,7 +411,21 @@ where
 impl From<bool> for LValue {
     #[inline]
     fn from(value: bool) -> Self {
-        (if value { 1. } else { 0. }).into()
+        Self {
+            numval: if value { 1. } else { 0. },
+            objval: None,
+        }
+    }
+}
+
+impl From<TextAlignment> for LValue {
+    #[inline]
+    fn from(value: TextAlignment) -> Self {
+        // TextAlignment is a u8, so it must be finite
+        Self {
+            numval: value.bits().into(),
+            objval: None,
+        }
     }
 }
 
@@ -612,7 +633,7 @@ impl Hash for LString {
 }
 
 /// A content value accessible from logic.
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Content {
     Block(&'static Block),
     Item(&'static Item),
