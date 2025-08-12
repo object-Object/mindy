@@ -1,4 +1,4 @@
-use alloc::{borrow::Cow, rc::Rc, string::String, vec::Vec};
+use alloc::{rc::Rc, string::String, vec::Vec};
 use core::{cell::Cell, time::Duration};
 #[cfg(feature = "std")]
 use std::time::Instant;
@@ -188,10 +188,10 @@ impl LogicVMBuilder {
     }
 
     pub fn build(self) -> VMLoadResult<LogicVM> {
-        self.build_with_globals(Cow::Owned(LVar::create_global_constants()))
+        self.build_with_globals(&LVar::create_global_constants())
     }
 
-    pub fn build_with_globals(mut self, globals: Cow<'_, Constants>) -> VMLoadResult<LogicVM> {
+    pub fn build_with_globals(mut self, globals: &Constants) -> VMLoadResult<LogicVM> {
         // sort processors in update order
         // 7 8 9
         // 4 5 6
@@ -227,7 +227,7 @@ impl LogicVMBuilder {
                 .data
                 .borrow_mut()
                 .unwrap_processor_mut()
-                .late_init(&vm, processor, &globals)?;
+                .late_init(&vm, processor, globals)?;
         }
 
         Ok(vm)
@@ -272,7 +272,7 @@ pub enum VMLoadError {
 
 #[cfg(all(test, not(feature = "std"), feature = "no_std"))]
 mod tests {
-    use alloc::{borrow::Cow, boxed::Box, rc::Rc, vec};
+    use alloc::{boxed::Box, rc::Rc, vec};
     use core::{cell::RefCell, time::Duration};
 
     use pretty_assertions::assert_eq;
@@ -336,7 +336,7 @@ mod tests {
             },
             &builder,
         )]);
-        let vm = builder.build_with_globals(Cow::Owned(globals)).unwrap();
+        let vm = builder.build_with_globals(&globals).unwrap();
 
         vm.do_tick(Duration::ZERO);
 
@@ -419,7 +419,7 @@ mod tests {
             )
             .unwrap(),
         );
-        builder.build_with_globals(Cow::Borrowed(globals)).unwrap()
+        builder.build_with_globals(globals).unwrap()
     }
 
     fn run(vm: &mut LogicVM, max_ticks: usize, want: bool) {

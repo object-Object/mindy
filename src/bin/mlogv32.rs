@@ -1,7 +1,6 @@
 #![allow(dead_code)]
 
 use std::{
-    borrow::Cow,
     collections::VecDeque,
     error::Error,
     fmt::Display,
@@ -520,7 +519,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     println!("Finalizing VM...");
 
     let globals = LVar::create_global_constants();
-    let vm = builder.build_with_globals(Cow::Borrowed(&globals))?;
+    let vm = builder.build_with_globals(&globals)?;
 
     let uart_fifo_modulo = meta.uart_fifo_capacity + 1;
 
