@@ -5,6 +5,9 @@ use core::error::Error;
 #[cfg(feature = "std")]
 use std::{boxed::Box, string::ToString};
 
+// reexport for consumers
+pub use lalrpop_util::ParseError;
+
 #[cfg(feature = "std")]
 pub use self::grammar::LogicParser;
 #[cfg(feature = "std")]
