@@ -5,8 +5,11 @@ use clap_stdin::FileOrStdin;
 use mindustry_rs::{
     types::{Object, ProcessorConfig, ProcessorLinkConfig},
     vm::{
-        Building, BuildingData, HYPER_PROCESSOR, LOGIC_PROCESSOR, LogicVMBuilder, MEMORY_BANK,
-        MEMORY_CELL, MESSAGE, MICRO_PROCESSOR, WORLD_PROCESSOR,
+        Building, BuildingData, LogicVMBuilder,
+        buildings::{
+            HYPER_PROCESSOR, LOGIC_PROCESSOR, MEMORY_BANK, MEMORY_CELL, MESSAGE, MICRO_PROCESSOR,
+            WORLD_PROCESSOR,
+        },
     },
 };
 use strum_macros::EnumString;

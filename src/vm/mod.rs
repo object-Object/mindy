@@ -5,15 +5,21 @@ use std::time::Instant;
 
 use thiserror::Error;
 
-pub use self::{buildings::*, processor::*, variables::*};
+use self::variables::Constants;
+pub use self::{
+    buildings::{Building, BuildingData, CustomBuildingData},
+    instructions::InstructionResult,
+    processor::{InstructionHook, Processor, ProcessorBuilder, ProcessorState},
+    variables::{Content, LObject, LString, LValue, LVar},
+};
 #[cfg(feature = "std")]
 use crate::types::{Schematic, SchematicTile};
 use crate::{types::PackedPoint2, utils::RapidHashMap};
 
-mod buildings;
+pub mod buildings;
 pub mod instructions;
 mod processor;
-mod variables;
+pub mod variables;
 
 const MILLIS_PER_SEC: u64 = 1_000;
 const NANOS_PER_MILLI: u32 = 1_000_000;
@@ -47,6 +53,12 @@ impl LogicVM {
     pub fn from_schematic_tiles(tiles: &[SchematicTile]) -> VMLoadResult<Self> {
         let mut builder = LogicVMBuilder::new();
         builder.add_schematic_tiles(tiles)?;
+        builder.build()
+    }
+
+    pub fn from_buildings(buildings: impl IntoIterator<Item = Building>) -> VMLoadResult<Self> {
+        let mut builder = LogicVMBuilder::new();
+        builder.add_buildings(buildings);
         builder.build()
     }
 
@@ -154,10 +166,7 @@ impl LogicVMBuilder {
         };
     }
 
-    pub fn add_buildings<T>(&mut self, buildings: T)
-    where
-        T: IntoIterator<Item = Building>,
-    {
+    pub fn add_buildings(&mut self, buildings: impl IntoIterator<Item = Building>) {
         for building in buildings.into_iter() {
             self.add_building(building);
         }
@@ -269,11 +278,10 @@ mod tests {
     use pretty_assertions::assert_eq;
     use widestring::u16str;
 
-    use super::LogicVMBuilder;
+    use super::*;
     use crate::{
         parser::ast,
         types::{PackedPoint2, content},
-        vm::{Building, BuildingData, LObject, LVar, processor::ProcessorBuilder},
     };
 
     #[test]
@@ -370,9 +378,12 @@ mod tests {
     use widestring::{U16Str, U16String, u16str};
 
     use super::{
-        buildings::{LOGIC_PROCESSOR, WORLD_PROCESSOR},
-        instructions::{Instruction, InstructionResult},
-        processor::Processor,
+        buildings::{
+            HYPER_PROCESSOR, LOGIC_PROCESSOR, MEMORY_BANK, MEMORY_CELL, MESSAGE, MICRO_PROCESSOR,
+            SWITCH, WORLD_CELL, WORLD_PROCESSOR,
+        },
+        instructions::Instruction,
+        variables::Constants,
         *,
     };
     use crate::{
@@ -381,13 +392,6 @@ mod tests {
             Team, colors::COLORS, content,
         },
         utils::u16format,
-        vm::{
-            buildings::{
-                HYPER_PROCESSOR, MEMORY_BANK, MEMORY_CELL, MESSAGE, MICRO_PROCESSOR, SWITCH,
-                WORLD_CELL,
-            },
-            variables::{Content, LValue, LVar},
-        },
     };
 
     fn single_processor_vm(name: &str, code: &str) -> LogicVM {

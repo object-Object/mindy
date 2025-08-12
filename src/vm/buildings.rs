@@ -6,8 +6,8 @@ use strum_macros::IntoStaticStr;
 use widestring::U16String;
 
 use super::{
-    LObject, LVar, LogicVM, LogicVMBuilder, Processor, ProcessorBuilder, ProcessorState,
-    VMLoadError, VMLoadResult, instructions::InstructionResult, variables::LValue,
+    InstructionResult, LObject, LValue, LVar, LogicVM, LogicVMBuilder, Processor, ProcessorBuilder,
+    ProcessorState, VMLoadError, VMLoadResult,
 };
 use crate::types::{
     LAccess, Object, PackedPoint2,
@@ -54,18 +54,11 @@ impl Building {
         Ok(Self::new(Self::get_block(name)?, position, data))
     }
 
-    fn get_block(name: &str) -> VMLoadResult<&'static Block> {
-        content::blocks::FROM_NAME
-            .get(name)
-            .copied()
-            .ok_or_else(|| VMLoadError::UnknownBlockType(name.to_string()))
-    }
-
     pub fn from_config(
         name: &str,
         position: PackedPoint2,
         config: &Object,
-        #[cfg_attr(not(feature = "std"), allow(unused_variables))] builder: &LogicVMBuilder,
+        _builder: &LogicVMBuilder,
     ) -> VMLoadResult<Self> {
         let data = match name {
             MICRO_PROCESSOR | LOGIC_PROCESSOR | HYPER_PROCESSOR | WORLD_PROCESSOR => {
@@ -74,7 +67,7 @@ impl Building {
                     name,
                     position,
                     &ProcessorConfig::parse(config)?,
-                    builder,
+                    _builder,
                 );
                 #[cfg(not(feature = "std"))]
                 panic!("processor config parsing is not supported on no_std");
@@ -198,6 +191,13 @@ impl Building {
         builder: &LogicVMBuilder,
     ) -> VMLoadResult<Self> {
         Self::from_config(name, *position, config, builder)
+    }
+
+    fn get_block(name: &str) -> VMLoadResult<&'static Block> {
+        content::blocks::FROM_NAME
+            .get(name)
+            .copied()
+            .ok_or_else(|| VMLoadError::UnknownBlockType(name.to_string()))
     }
 }
 

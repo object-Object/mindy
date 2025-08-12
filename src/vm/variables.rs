@@ -37,9 +37,11 @@ pub(super) const F64_RAD_DEG: f64 = 57.29577951308232;
 pub type Constants = RapidIndexMap<U16String, LVar>;
 pub type Variables = RapidIndexMap<U16String, LValue>;
 
+/// A reference to a logic variable in a specific processor, or a constant value.
 #[derive(Debug, Clone, PartialEq)]
+#[non_exhaustive]
 pub enum LVar {
-    Variable(usize),
+    Variable(VariableIndex),
     Constant(LValue),
     Counter,
     Ipt,
@@ -174,7 +176,7 @@ impl LVar {
         variables: &'a Variables,
     ) -> Cow<'a, LValue> {
         match self {
-            Self::Variable(i) => Cow::Borrowed(&variables[*i]),
+            Self::Variable(i) => Cow::Borrowed(&variables[i.0]),
             Self::Constant(value) => Cow::Borrowed(value),
             Self::Counter => Cow::Owned(state.counter.into()),
             Self::Ipt => Cow::Owned(state.ipt.into()),
@@ -189,7 +191,7 @@ impl LVar {
     pub fn set(&self, state: &mut ProcessorState, value: LValue) {
         match self {
             Self::Variable(i) => {
-                state.variables[*i] = value;
+                state.variables[i.0] = value;
             }
             Self::Counter => {
                 ProcessorState::try_set_counter(&mut state.counter, &value);
@@ -202,7 +204,7 @@ impl LVar {
     pub fn setnum(&self, state: &mut ProcessorState, value: f64) {
         match self {
             Self::Variable(i) => {
-                let var = &mut state.variables[*i];
+                let var = &mut state.variables[i.0];
                 if LValue::valid(value) {
                     var.numval = value;
                     var.objval = None;
@@ -224,7 +226,7 @@ impl LVar {
     pub unsafe fn setnum_unchecked(&self, state: &mut ProcessorState, value: f64) {
         match self {
             Self::Variable(i) => {
-                let var = &mut state.variables[*i];
+                let var = &mut state.variables[i.0];
                 var.numval = value;
                 var.objval = None;
             }
@@ -239,7 +241,7 @@ impl LVar {
     pub fn setobj(&self, state: &mut ProcessorState, value: LObject) {
         // setting @counter to an object is a no-op
         if let Self::Variable(i) = self {
-            let var = &mut state.variables[*i];
+            let var = &mut state.variables[i.0];
             var.numval = (value != LObject::Null).into();
             var.objval = Some(value);
         }
@@ -252,7 +254,7 @@ impl LVar {
     pub unsafe fn setobj_non_null(&self, state: &mut ProcessorState, value: LObject) {
         // setting @counter to an object is a no-op
         if let Self::Variable(i) = self {
-            let var = &mut state.variables[*i];
+            let var = &mut state.variables[i.0];
             var.numval = 1.;
             var.objval = Some(value);
         }
@@ -284,6 +286,13 @@ where
     (u16format!("@{name}"), constant(value))
 }
 
+/// A reference to a logic variable in a specific processor.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct VariableIndex(pub(super) usize);
+
+/// A value of a logic variable.
+///
+/// Cheap to clone.
 #[derive(Debug, Clone, PartialEq)]
 pub struct LValue {
     numval: f64,
@@ -479,6 +488,9 @@ where
     }
 }
 
+/// A non-numeric logic variable value.
+///
+/// Cheap to clone.
 #[derive(Debug, Clone, PartialEq)]
 pub enum LObject {
     Null,
@@ -543,6 +555,9 @@ where
     }
 }
 
+/// An immutable UTF-16 string, either reference-counted or static.
+///
+/// Cheap to clone.
 #[derive(Debug, Clone)]
 pub enum LString {
     Rc(Rc<U16Str>),
@@ -596,7 +611,8 @@ impl Hash for LString {
     }
 }
 
-#[derive(Debug, Clone, PartialEq)]
+/// A content value accessible from logic.
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub enum Content {
     Block(&'static Block),
     Item(&'static Item),

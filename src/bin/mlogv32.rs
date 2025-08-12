@@ -28,8 +28,8 @@ use itertools::Itertools;
 use mindustry_rs::{
     types::{Object, PackedPoint2, ProcessorConfig, Schematic},
     vm::{
-        Building, BuildingData, LObject, LValue, LVar, LogicVM, LogicVMBuilder, MEMORY_BANK,
-        MESSAGE, MICRO_PROCESSOR, SWITCH, WORLD_PROCESSOR,
+        Building, BuildingData, LObject, LValue, LVar, LogicVM, LogicVMBuilder,
+        buildings::{MEMORY_BANK, MESSAGE, MICRO_PROCESSOR, SWITCH, WORLD_PROCESSOR},
     },
 };
 use serde::Deserialize;
@@ -666,13 +666,13 @@ fn main() -> Result<(), Box<dyn Error>> {
                         VMCommand::SetBreakpoint(Some(value)) => {
                             config
                                 .state
-                                .set_variable(u16str!("BREAKPOINT_ADDRESS"), value.into())?;
+                                .set_variable(u16str!("BREAKPOINT_ADDRESS"), value.into());
                             tui_println!(debug, "Breakpoint set: {value:#010x}");
                         }
                         VMCommand::SetBreakpoint(None) => {
                             config
                                 .state
-                                .set_variable(u16str!("BREAKPOINT_ADDRESS"), LValue::NULL)?;
+                                .set_variable(u16str!("BREAKPOINT_ADDRESS"), LValue::NULL);
                             tui_println!(debug, "Breakpoint cleared.");
                         }
                         VMCommand::PrintVar(name, radix) => {

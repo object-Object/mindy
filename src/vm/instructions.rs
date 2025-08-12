@@ -11,10 +11,11 @@ use num_traits::float::FloatCore;
 use widestring::{U16Str, u16str};
 
 use super::{
-    Constants, LObject, LogicVM, VMLoadError, VMLoadResult, borrow_data,
-    buildings::BuildingData,
-    processor::{MAX_TEXT_BUFFER, ProcessorState},
-    variables::{Content, F64_DEG_RAD, F64_RAD_DEG, LString, LValue, LVar, RAD_DEG},
+    BuildingData, Content, LObject, LString, LValue, LVar, LogicVM, ProcessorState, VMLoadError,
+    VMLoadResult,
+    buildings::borrow_data,
+    processor::MAX_TEXT_BUFFER,
+    variables::{Constants, F64_DEG_RAD, F64_RAD_DEG, RAD_DEG},
 };
 use crate::{
     parser::ast::{self, ConditionOp, LogicOp, TileLayer},
@@ -24,6 +25,7 @@ use crate::{
         content,
     },
     utils::{RapidHashMap, u16format},
+    vm::variables::VariableIndex,
 };
 
 const MAX_IPT: i32 = 1000;
@@ -127,11 +129,15 @@ impl InstructionBuilder {
                     .or_else(|| globals.get(&name))
                     .cloned()
                     // then see if there's already a variable with this name
-                    .or_else(|| variables.get_index_of(&name).map(LVar::Variable))
+                    .or_else(|| {
+                        variables
+                            .get_index_of(&name)
+                            .map(|i| LVar::Variable(VariableIndex(i)))
+                    })
                     // if none of those exist, create a new variable defaulting to null
                     .unwrap_or_else(|| {
                         let (i, _) = variables.insert_full(name, LValue::NULL);
-                        LVar::Variable(i)
+                        LVar::Variable(VariableIndex(i))
                     })
             }
             ast::Value::String(value) => LVar::Constant(value.into()),

@@ -13,14 +13,13 @@ use itertools::Itertools;
 #[allow(unused_imports)]
 use num_traits::float::FloatCore;
 use replace_with::replace_with_or_default_and_return;
-use thiserror::Error;
 use widestring::{U16Str, U16String};
 
 use super::{
-    BuildingData, Constants, LValue, LogicVM, LogicVMBuilder, VMLoadError, VMLoadResult,
-    buildings::Building,
-    instructions::{Instruction, InstructionBuilder, InstructionResult, InstructionTrait, Noop},
-    variables::{LVar, Variables},
+    Building, BuildingData, InstructionResult, LValue, LVar, LogicVM, LogicVMBuilder, VMLoadError,
+    VMLoadResult,
+    instructions::{Instruction, InstructionBuilder, InstructionTrait, Noop},
+    variables::{Constants, Variables},
 };
 #[cfg(feature = "std")]
 use crate::parser::LogicParser;
@@ -211,12 +210,6 @@ impl Processor {
     }
 }
 
-#[derive(Debug, Error)]
-pub enum SetVariableError {
-    #[error("Variable not found.")]
-    NotFound,
-}
-
 #[derive(Debug, Clone)]
 pub struct ProcessorState {
     enabled: bool,
@@ -241,7 +234,7 @@ pub struct ProcessorState {
     pub printbuffer: U16String,
 
     pub(super) locals: Constants,
-    pub variables: Variables,
+    pub(super) variables: Variables,
 }
 
 impl ProcessorState {
@@ -325,26 +318,21 @@ impl ProcessorState {
 
     // these aren't used internally, so don't bother inlining
 
-    /// Checks if a variable or local constant exists.
+    /// Checks if a variable exists in this processor.
     pub fn has_variable(&self, name: &U16Str) -> bool {
         self.variables.contains_key(name) || self.locals.contains_key(name)
     }
 
-    /// Looks up a variable or local constant by name.
+    /// Looks up a variable by name in this processor.
     pub fn variable<'a>(&'a self, name: &U16Str) -> Option<Cow<'a, LValue>> {
-        self.variables
-            .get(name)
-            .map(Cow::Borrowed)
-            .or_else(|| self.locals.get(name).map(|v| v.get(self)))
+        self.variables.get(name).map(Cow::Borrowed)
     }
 
-    pub fn set_variable(&mut self, name: &U16Str, value: LValue) -> Result<(), SetVariableError> {
-        if self.variables.contains_key(name) {
-            self.variables[name] = value;
-            Ok(())
-        } else {
-            Err(SetVariableError::NotFound)
-        }
+    /// Sets the value of an existing variable in this processor.
+    ///
+    /// ***Panics*** if the variable does not exist.
+    pub fn set_variable(&mut self, name: &U16Str, value: LValue) {
+        self.variables[name] = value;
     }
 }
 
