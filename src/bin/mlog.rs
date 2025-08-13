@@ -12,7 +12,7 @@ use mindustry_rs::{
         },
     },
 };
-use strum_macros::EnumString;
+use strum::EnumString;
 use widestring::U16String;
 
 #[derive(Parser)]
@@ -43,7 +43,7 @@ fn time_delta_parser(s: &str) -> Result<f64, String> {
 }
 
 #[allow(clippy::enum_variant_names)]
-#[derive(Debug, Clone, Copy, EnumString, strum_macros::Display)]
+#[derive(Debug, Clone, Copy, EnumString, strum::Display)]
 #[strum(serialize_all = "lowercase")]
 enum ProcessorType {
     Micro,

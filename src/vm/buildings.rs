@@ -2,7 +2,7 @@ use alloc::{boxed::Box, rc::Rc, string::ToString};
 use core::cell::RefCell;
 
 use derivative::Derivative;
-use strum_macros::IntoStaticStr;
+use strum::IntoStaticStr;
 use widestring::U16String;
 
 use super::{

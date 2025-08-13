@@ -6,8 +6,7 @@ use core::hash::Hash;
 use binrw::prelude::*;
 use lazy_static::lazy_static;
 use serde::{Deserialize, Serialize};
-use strum::VariantArray;
-use strum_macros::{AsRefStr, IntoStaticStr, VariantArray};
+use strum::{AsRefStr, IntoStaticStr, VariantArray};
 use widestring::{U16Str, U16String};
 
 use super::colors;
@@ -54,7 +53,7 @@ pub enum ContentType {
     AsRefStr,
     IntoStaticStr,
     VariantArray,
-    strum_macros::Display,
+    strum::Display,
     Deserialize,
     Serialize,
 )]
