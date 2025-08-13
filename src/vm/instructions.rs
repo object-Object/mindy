@@ -743,6 +743,7 @@ impl InstructionTrait for DrawFlush {
             InstructionResult::Ok
         };
         state.drawbuffer.clear();
+        state.drawbuffer_len = 0;
         result
     }
 }

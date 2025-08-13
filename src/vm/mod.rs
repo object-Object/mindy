@@ -2816,35 +2816,135 @@ mod tests {
 
     #[test]
     fn test_draw() {
+        let tests = [
+            ("draw clear 10 20 30", DrawCommand::Clear {
+                r: 10,
+                g: 20,
+                b: 30,
+            }),
+            ("draw color 10 20 30 40", DrawCommand::Color {
+                r: 10,
+                g: 20,
+                b: 30,
+                a: 40,
+            }),
+            ("draw col %[black]", DrawCommand::Color {
+                r: 0,
+                g: 0,
+                b: 0,
+                a: 255,
+            }),
+            ("draw col %[royal]", DrawCommand::Color {
+                r: 0x41,
+                g: 0x69,
+                b: 0xe1,
+                a: 0xff,
+            }),
+            ("draw stroke 5", DrawCommand::Stroke { width: 5 }),
+            ("draw line 10 20 30 40", DrawCommand::Line {
+                x1: 10,
+                y1: 20,
+                x2: 30,
+                y2: 40,
+            }),
+            ("draw rect 10 20 30 40", DrawCommand::Rect {
+                x: 10,
+                y: 20,
+                width: 30,
+                height: 40,
+                fill: true,
+            }),
+            ("draw lineRect 10 20 30 40", DrawCommand::Rect {
+                x: 10,
+                y: 20,
+                width: 30,
+                height: 40,
+                fill: false,
+            }),
+            ("draw poly 10 20 30 40 359", DrawCommand::Poly {
+                x: 10,
+                y: 20,
+                sides: 30,
+                radius: 40,
+                rotation: 359,
+                fill: true,
+            }),
+            ("draw linePoly 10 20 30 40 359", DrawCommand::Poly {
+                x: 10,
+                y: 20,
+                sides: 30,
+                radius: 40,
+                rotation: 359,
+                fill: false,
+            }),
+            ("draw triangle 10 20 30 40 50 60", DrawCommand::Triangle {
+                x1: 10,
+                y1: 20,
+                x2: 30,
+                y2: 40,
+                x3: 50,
+                y3: 60,
+            }),
+            ("draw image 10 20 @copper 30 359", DrawCommand::Image {
+                x: 10,
+                y: 20,
+                image: Some(Content::Item(content::items::FROM_NAME["copper"])),
+                size: 30,
+                rotation: 359,
+            }),
+            ("draw print 10 20 @bottomLeft", DrawCommand::Print {
+                x: 10,
+                y: 20,
+                alignment: TextAlignment::BOTTOM_LEFT,
+                text: u16str!("a\nb").into(),
+            }),
+            ("draw translate 10 20", DrawCommand::Translate {
+                x: 10,
+                y: 20,
+            }),
+            ("draw scale 10 20", DrawCommand::Scale {
+                x: 10 * 20,
+                y: 20 * 20,
+            }),
+            ("draw rotate 359", DrawCommand::Rotate { degrees: 359 }),
+            ("draw reset", DrawCommand::Reset),
+        ];
+
         let mut vm = single_processor_vm(
             HYPER_PROCESSOR,
-            "
-            draw clear 0 0 0
-            draw color 0 0 0 255
-            draw col 0
-            draw stroke 0
-            draw line 0 0 0 255
-            draw rect 0 0 0 255
-            draw lineRect 0 0 0 255
-            draw poly 0 0 0 255 0
-            draw linePoly 0 0 0 255 0
-            draw triangle 0 0 0 255 0 0
-            draw image 0 0 @copper 32 0
-            draw print 0 0 @bottomLeft
-            draw translate 0 0
-            draw scale 0 0
-            draw rotate 0
-            draw reset
+            &format!(
+                r#"
+                print "a\nb"
 
-            draw triangle var1 var2 var3 var4 var5 var6
+                {}
 
-            drawflush display1
-            stop
-            ",
+                wait 0.5
+
+                draw triangle var1 var2 var3 var4 var5 var6
+
+                drawflush display1
+                stop
+                "#,
+                tests.iter().map(|v| v.0).join("\n"),
+            ),
         );
-        run(&mut vm, 1, true);
+
+        vm.do_tick(Duration::ZERO);
+
+        with_processor(&mut vm, (0, 0), |processor| {
+            assert_eq!(processor.state.drawbuffer_len, tests.len() + 1);
+            assert_eq!(
+                processor.state.drawbuffer,
+                tests.into_iter().map(|v| v.1).collect_vec()
+            );
+            assert_eq!(processor.state.printbuffer, U16String::new());
+        });
+
+        vm.do_tick(Duration::from_secs(1));
 
         let processor = take_processor(&mut vm, (0, 0));
+        assert_eq!(processor.state.drawbuffer_len, 0);
+        assert_eq!(processor.state.drawbuffer, vec![]);
         for name in [
             u16str!("var1"),
             u16str!("var2"),
