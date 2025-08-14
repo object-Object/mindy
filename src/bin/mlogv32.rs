@@ -24,7 +24,7 @@ use cursive::{
 };
 use indicatif::ProgressIterator;
 use itertools::Itertools;
-use mindustry_rs::{
+use mindy::{
     types::{Object, PackedPoint2, ProcessorConfig, Schematic},
     vm::{
         Building, BuildingData, LObject, LValue, LVar, LogicVM, LogicVMBuilder,

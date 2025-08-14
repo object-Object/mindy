@@ -2,7 +2,7 @@ use std::{error::Error, time::Instant};
 
 use clap::Parser;
 use clap_stdin::FileOrStdin;
-use mindustry_rs::{
+use mindy::{
     types::{Object, ProcessorConfig, ProcessorLinkConfig},
     vm::{
         Building, BuildingData, LogicVMBuilder,
