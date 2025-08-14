@@ -295,6 +295,7 @@ impl Processor {
     /// # Safety
     ///
     /// Calling this method on a processor with no instructions is undefined behavior.
+    #[inline(always)]
     pub unsafe fn step(&mut self, vm: &LogicVM) -> InstructionResult {
         let mut counter = self.state.counter;
         if counter >= self.instructions.len() {
