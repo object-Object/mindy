@@ -9,7 +9,6 @@ use alloc::{
 use core::cell::{Cell, RefCell};
 
 use derivative::Derivative;
-use itertools::Itertools;
 #[allow(unused_imports)]
 use num_traits::float::FloatCore;
 use replace_with::replace_with_or_default_and_return;
@@ -90,14 +89,14 @@ impl Processor {
             // finally, get the link name
 
             // link name prefix, eg "processor"
-            let split = other.block.name.split('-').collect_vec();
-            let name_prefix = if split.len() >= 2
-                && (split[split.len() - 1] == "large"
-                    || split[split.len() - 1].parse::<f64>().is_ok())
+            let mut parts = other.block.name.rsplit('-');
+            let last_part = parts.next().unwrap_or("");
+            let name_prefix = if let Some(second_last_part) = parts.next()
+                && (last_part == "large" || last_part.parse::<f64>().is_ok())
             {
-                split[split.len() - 2]
+                second_last_part
             } else {
-                split[split.len() - 1]
+                last_part
             };
 
             // link indices that are already in use for this prefix
@@ -177,7 +176,7 @@ impl Processor {
 
         // set_initial_config assumes the processor is disabled and increments running_processors if it becomes enabled
         // so decrement running_processors if the processor is currently enabled to avoid double-counting
-        let prev_running_processors = Cell::get(&*vm.running_processors);
+        let prev_running_processors = vm.running_processors.get();
         if self.state.enabled {
             vm.running_processors.update(|n| n - 1);
         }
