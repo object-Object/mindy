@@ -7,5 +7,8 @@
 
     // "rust-analyzer.cargo.noDefaultFeatures": true,
     // "rust-analyzer.cargo.features": ["no_std", "serde_alloc"]
-    "rust-analyzer.cargo.features": "all"
+    "rust-analyzer.cargo.features": "all",
+
+    "eslint.workingDirectories": ["mindy-website/www"],
+    "prettier.prettierPath": "mindy-website/www/node_modules/prettier"
 }

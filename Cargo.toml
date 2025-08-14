@@ -2,7 +2,7 @@
 name = "mindy"
 version = "0.1.0"
 edition = "2024"
-rust-version = "1.88"
+rust-version.workspace = true
 
 [[bin]]
 name = "mlog"
@@ -140,3 +140,11 @@ strip = false
 [profile.bench]
 debug = true
 strip = false
+
+[workspace]
+members = [
+    "mindy-website",
+]
+
+[workspace.package]
+rust-version = "1.88"
