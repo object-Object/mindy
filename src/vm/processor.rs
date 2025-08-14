@@ -279,7 +279,8 @@ impl Processor {
         // casting to usize truncates the fractional part
         // so this is equivalent to `while self.state.accumulator >= 1.`
         for i in 0..(self.state.accumulator as usize) {
-            if let InstructionResult::Yield = self.step(vm) {
+            // SAFETY: self.state.enabled is always false if self.instructions is empty
+            if let InstructionResult::Yield = unsafe { self.step(vm) } {
                 self.state.accumulator -= (i + 1) as f64;
                 return;
             }
@@ -289,8 +290,12 @@ impl Processor {
         self.state.accumulator = self.state.accumulator.fract();
     }
 
-    /// Do not call if the processor is disabled.
-    fn step(&mut self, vm: &LogicVM) -> InstructionResult {
+    /// Executes a single instruction.
+    ///
+    /// # Safety
+    ///
+    /// Calling this method on a processor with no instructions is undefined behavior.
+    pub unsafe fn step(&mut self, vm: &LogicVM) -> InstructionResult {
         let mut counter = self.state.counter;
         if counter >= self.instructions.len() {
             counter = 0;
