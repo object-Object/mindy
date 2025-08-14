@@ -39,14 +39,14 @@ pub type InstructionHook =
 #[derive(Derivative)]
 #[derivative(Debug)]
 pub struct Processor {
-    instructions: Box<[Instruction]>,
+    instructions: Vec<Instruction>,
     #[derivative(Debug = "ignore")]
     instruction_hook: Option<Box<InstructionHook>>,
     pub state: ProcessorState,
 }
 
 impl Processor {
-    pub fn late_init(
+    pub(super) fn late_init(
         &mut self,
         vm: &LogicVM,
         building: &Building,
@@ -58,8 +58,7 @@ impl Processor {
         // ie. if a custom link name is specified for a building that would be built after this processor
         let mut taken_names = RapidHashMap::default();
 
-        let mut links = core::mem::take(&mut self.state.links).into_vec();
-        links.retain_mut(|link| {
+        self.state.links.retain_mut(|link| {
             // resolve the actual building at the link position
             // before this, link.building is just air
 
@@ -126,7 +125,6 @@ impl Processor {
             }
             false // should never happen
         });
-        self.state.links = links.into();
 
         self.state
             .linked_positions
@@ -160,7 +158,112 @@ impl Processor {
         Ok(())
     }
 
-    pub fn do_tick(&mut self, vm: &LogicVM, time: f64, delta: f64) {
+    /// Overwrites the code (and optionally the links) of this processor, resetting most internal state.
+    ///
+    /// If an error occurs, all changes will be rolled back.
+    pub fn set_config<T>(
+        &mut self,
+        code: T,
+        links: Option<&[ProcessorLinkConfig]>,
+        vm: &LogicVM,
+        building: &Building,
+        globals: &Constants,
+    ) -> VMLoadResult<()>
+    where
+        T: IntoIterator<Item = ast::Statement>,
+        for<'a> &'a T: IntoIterator<Item = &'a ast::Statement>,
+    {
+        let prev_instructions = core::mem::take(&mut self.instructions);
+
+        // set_initial_config assumes the processor is disabled and increments running_processors if it becomes enabled
+        // so decrement running_processors if the processor is currently enabled to avoid double-counting
+        let prev_running_processors = Cell::get(&*vm.running_processors);
+        if self.state.enabled {
+            vm.running_processors.update(|n| n - 1);
+        }
+
+        // this preserves any previous setrate calls, which matches Mindustry's behaviour
+        let new_state = ProcessorState::new(self.state.privileged, self.state.ipt, vm);
+        let prev_state = core::mem::replace(&mut self.state, new_state);
+
+        self.set_initial_config(code, links, vm, building.position);
+
+        // if the initialization fails, roll back the changes
+        let result = self.late_init(vm, building, globals);
+        if result.is_err() {
+            let _ = core::mem::replace(&mut self.instructions, prev_instructions);
+            vm.running_processors.set(prev_running_processors);
+            let _ = core::mem::replace(&mut self.state, prev_state);
+        }
+        result
+    }
+
+    /// Overwrites the code/links of this processor **without** fully initializing them. Assumes the processor is currently in its default state.
+    fn set_initial_config<T>(
+        &mut self,
+        code: T,
+        links: Option<&[ProcessorLinkConfig]>,
+        vm: &LogicVM,
+        position: PackedPoint2,
+    ) where
+        T: IntoIterator<Item = ast::Statement>,
+        for<'a> &'a T: IntoIterator<Item = &'a ast::Statement>,
+    {
+        let labels = {
+            let mut labels = RapidHashMap::default();
+            for statement in (&code).into_iter() {
+                match statement {
+                    ast::Statement::Label(label) => {
+                        labels.insert(label.clone(), self.state.num_instructions);
+                    }
+                    ast::Statement::Instruction(_, _) => {
+                        self.state.num_instructions += 1;
+                    }
+                }
+            }
+            Rc::new(labels)
+        };
+
+        self.instructions.reserve_exact(self.state.num_instructions);
+        for statement in code.into_iter() {
+            if let ast::Statement::Instruction(instruction, _) = statement {
+                self.instructions.push(
+                    InstructionBuilder {
+                        instruction,
+                        labels: labels.clone(),
+                    }
+                    .into(),
+                );
+            }
+        }
+
+        self.state.enabled = !self.instructions.is_empty();
+        if self.state.enabled {
+            vm.running_processors.update(|n| n + 1);
+        }
+
+        let fake_data = Rc::new(RefCell::new(BuildingData::Unknown {
+            senseable_config: None,
+        }));
+
+        if let Some(links) = links {
+            self.state
+                .links
+                .extend(links.iter().map(|link| ProcessorLink {
+                    name: link.name.to_string(),
+                    building: Building {
+                        block: &content::blocks::AIR,
+                        position: PackedPoint2 {
+                            x: position.x + link.x,
+                            y: position.y + link.y,
+                        },
+                        data: fake_data.clone(),
+                    },
+                }));
+        }
+    }
+
+    pub(super) fn do_tick(&mut self, vm: &LogicVM, time: f64, delta: f64) {
         if !self.state.enabled {
             return;
         }
@@ -220,7 +323,7 @@ pub struct ProcessorState {
 
     privileged: bool,
     num_instructions: usize,
-    links: Box<[ProcessorLink]>,
+    links: Vec<ProcessorLink>,
     linked_positions: RapidHashSet<PackedPoint2>,
 
     pub counter: usize,
@@ -241,6 +344,32 @@ pub struct ProcessorState {
 }
 
 impl ProcessorState {
+    fn new(privileged: bool, ipt: f64, vm: &LogicVM) -> Self {
+        Self {
+            enabled: false,
+            stopped: false,
+            wait_end_time: -1.,
+
+            privileged,
+            num_instructions: 0,
+            links: Vec::new(),
+            linked_positions: RapidHashSet::default(),
+
+            counter: 0,
+            accumulator: 0.,
+            ipt,
+
+            running_processors: vm.running_processors.clone(),
+            time: vm.time.clone(),
+            printbuffer: U16String::new(),
+            drawbuffer: Vec::new(),
+            drawbuffer_len: 0,
+
+            locals: Constants::default(),
+            variables: Variables::default(),
+        }
+    }
+
     #[inline(always)]
     pub fn enabled(&self) -> bool {
         self.enabled
@@ -378,82 +507,14 @@ impl ProcessorBuilder<'_> {
             instruction_hook,
         } = self;
 
-        // TODO: this could be more efficient
-        let mut num_instructions = 0;
-        let labels = {
-            let mut labels = RapidHashMap::default();
-            for statement in &code {
-                match statement {
-                    ast::Statement::Label(label) => {
-                        labels.insert(label.clone(), num_instructions);
-                    }
-                    ast::Statement::Instruction(_, _) => {
-                        num_instructions += 1;
-                    }
-                }
-            }
-            Rc::new(labels)
+        let mut processor = Processor {
+            instructions: Vec::new(),
+            instruction_hook,
+            state: ProcessorState::new(privileged, ipt, &builder.vm),
         };
 
-        let mut instructions: Vec<Instruction> = Vec::with_capacity(num_instructions);
-        for statement in code.into_iter() {
-            if let ast::Statement::Instruction(instruction, _) = statement {
-                instructions.push(
-                    InstructionBuilder {
-                        instruction,
-                        labels: labels.clone(),
-                    }
-                    .into(),
-                );
-            }
-        }
+        processor.set_initial_config(code, Some(links), &builder.vm, position);
 
-        let enabled = !instructions.is_empty();
-        if enabled {
-            builder.vm.running_processors.update(|n| n + 1);
-        }
-
-        let fake_data = Rc::new(RefCell::new(BuildingData::Unknown {
-            senseable_config: None,
-        }));
-
-        let links = links
-            .iter()
-            .map(|link| ProcessorLink {
-                name: link.name.to_string(),
-                building: Building {
-                    block: &content::blocks::AIR,
-                    position: PackedPoint2 {
-                        x: position.x + link.x,
-                        y: position.y + link.y,
-                    },
-                    data: fake_data.clone(),
-                },
-            })
-            .collect();
-
-        Box::new(Processor {
-            instructions: instructions.into(),
-            instruction_hook,
-            state: ProcessorState {
-                enabled,
-                stopped: false,
-                wait_end_time: -1.,
-                privileged,
-                num_instructions,
-                links,
-                linked_positions: RapidHashSet::default(),
-                counter: 0,
-                accumulator: 0.,
-                ipt,
-                running_processors: builder.vm.running_processors.clone(),
-                time: builder.vm.time.clone(),
-                printbuffer: U16String::new(),
-                drawbuffer: Vec::new(),
-                drawbuffer_len: 0,
-                locals: Constants::default(),
-                variables: Variables::default(),
-            },
-        })
+        Box::new(processor)
     }
 }
