@@ -262,7 +262,7 @@ impl Processor {
         }
     }
 
-    pub(super) fn do_tick(&mut self, vm: &LogicVM, time: f64, delta: f64) {
+    pub fn do_tick(&mut self, vm: &LogicVM, time: f64, delta: f64) {
         if !self.state.enabled {
             return;
         }
