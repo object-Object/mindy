@@ -1,0 +1,2 @@
+- `logic.bdf`: `otf2bdf -p 12 -c m -o logic.bdf logic.ttf`
+- `logic.ttf`: https://github.com/Anuken/Mindustry/blob/65a50a97423431640e636463dde97f6f88a2b0c8/core/assets/fonts/logic.ttf

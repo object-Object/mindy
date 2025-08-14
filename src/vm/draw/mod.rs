@@ -3,6 +3,9 @@ use widestring::U16String;
 
 use super::Content;
 
+#[cfg(feature = "embedded_graphics")]
+pub mod embedded;
+
 // note: this allows larger values than mindustry does
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum DrawCommand {

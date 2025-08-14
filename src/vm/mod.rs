@@ -5,6 +5,8 @@ use std::time::Instant;
 
 use thiserror::Error;
 
+#[cfg(feature = "embedded_graphics")]
+pub use self::draw::embedded::{EmbeddedDisplayData, EmbeddedDisplayInitError};
 use self::variables::Constants;
 pub use self::{
     buildings::{Building, BuildingData, CustomBuildingData},

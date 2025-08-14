@@ -34,6 +34,9 @@ strum = { version = "0.27.2", default-features = false, features = ["derive"] }
 thiserror = { version = "2.0.12", default-features = false }
 widestring = { version = "1.2.0", default-features = false, features = ["alloc"] }
 
+# embedded_graphics
+embedded-graphics = { version = "0.8.1", optional = true }
+
 # no_std
 libm = { version = "0.2.11", optional = true }
 serde-json-core = { version = "0.6.0", optional = true }
@@ -61,6 +64,7 @@ indicatif = { version = "0.18.0", optional = true }
 bitflags = "2.9.1"
 
 [build-dependencies]
+eg-font-converter = { git = "https://github.com/embedded-graphics/bdf", optional = true }
 lalrpop = { version = "0.22.2", optional = true }
 
 [dev-dependencies]
@@ -70,6 +74,10 @@ velcro = "0.5.4"
 
 [features]
 default = ["std"]
+embedded_graphics = [
+    "dep:eg-font-converter",
+    "dep:embedded-graphics",
+]
 no_std = [
     "dep:libm",
     "dep:serde-json-core",
