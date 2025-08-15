@@ -1,0 +1,4 @@
+.display > canvas {
+  display: block;
+  padding: rem(8px);
+}

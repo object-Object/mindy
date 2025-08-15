@@ -159,8 +159,28 @@ impl Processor {
 
     /// Overwrites the code (and optionally the links) of this processor, resetting most internal state.
     ///
+    /// This method is meant to be used for moving a processor from one VM to another. If you want to modify the code/links of a processor while it's still in a VM, use [`Self::update_config`] instead.
+    pub fn reset_config<T>(
+        mut self,
+        code: T,
+        links: Option<&[ProcessorLinkConfig]>,
+        builder: &LogicVMBuilder,
+        position: PackedPoint2,
+    ) -> Self
+    where
+        T: IntoIterator<Item = ast::Statement>,
+        for<'a> &'a T: IntoIterator<Item = &'a ast::Statement>,
+    {
+        self.instructions.clear();
+        self.state = ProcessorState::new(self.state.privileged, self.state.ipt, &builder.vm);
+        self.set_initial_config(code, links, &builder.vm, position);
+        self
+    }
+
+    /// Overwrites the code (and optionally the links) of this processor in-place, resetting most internal state.
+    ///
     /// If an error occurs, all changes will be rolled back.
-    pub fn set_config<T>(
+    pub fn update_config<T>(
         &mut self,
         code: T,
         links: Option<&[ProcessorLinkConfig]>,

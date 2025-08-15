@@ -85,12 +85,12 @@ fn main() -> Result<(), Box<dyn Error>> {
         Building::from_config(MEMORY_CELL, (4, 0).into(), &Object::Null, &builder)?,
         Building::from_config(MEMORY_BANK, (5, 0).into(), &Object::Null, &builder)?,
     ]);
-    let vm = builder.build()?;
+    let mut vm = builder.build()?;
 
-    let processor = vm.building((0, 0).into()).unwrap();
+    let processor = vm.building((0, 0).into()).unwrap().clone();
     assert_eq!(processor.block.name.as_str(), cli.processor.name());
 
-    let message = vm.building((3, 0).into()).unwrap();
+    let message = vm.building((3, 0).into()).unwrap().clone();
     assert_eq!(message.block.name.as_str(), MESSAGE);
 
     let start = Instant::now();

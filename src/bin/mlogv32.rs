@@ -128,12 +128,12 @@ impl From<MetaPoint2> for PackedPoint2 {
     }
 }
 
-fn get_building<'a>(vm: &'a LogicVM, position: MetaPoint2, name: &str) -> &'a Building {
+fn get_building(vm: &LogicVM, position: MetaPoint2, name: &str) -> Building {
     let Some(building) = vm.building(position.into()) else {
         panic!("{name} not found at {position}");
     };
     assert_eq!(building.block.name.as_str(), name);
-    building
+    building.clone()
 }
 
 macro_rules! tui_println {
@@ -519,7 +519,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     println!("Finalizing VM...");
 
     let globals = LVar::create_global_constants();
-    let vm = builder.build_with_globals(&globals)?;
+    let mut vm = builder.build_with_globals(&globals)?;
 
     let uart_fifo_modulo = meta.uart_fifo_capacity + 1;
 

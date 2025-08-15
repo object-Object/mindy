@@ -1,12 +1,14 @@
 {
-    "tabWidth": 2,
+    "tabWidth": 4,
     "overrides": [
         {
-            "files": ["*.json"],
+            "files": ["*.html"],
             "options": {
-                "tabWidth": 4
+                "tabWidth": 2
             }
         }
     ],
+    "importOrder": ["mindy-website", "^[./]"],
+    "importOrderSeparation": true,
     "plugins": ["@trivago/prettier-plugin-sort-imports"]
 }

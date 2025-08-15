@@ -1,3 +1,4 @@
+use alloc::boxed::Box;
 use core::{
     error::Error,
     fmt::{Debug, Display},
@@ -20,12 +21,14 @@ use crate::{
     },
 };
 
+type OnFlush<T> = Box<dyn FnMut(&mut T) -> InstructionResult>;
+
 pub struct EmbeddedDisplayData<T>
 where
     T: DrawTarget,
 {
     display: T,
-    yield_on_flush: bool,
+    on_flush: Option<OnFlush<T>>,
     size: Size,
     line_style: PrimitiveStyle<T::Color>,
     fill_style: PrimitiveStyle<T::Color>,
@@ -39,11 +42,17 @@ where
     T: DrawTarget,
     T::Color: From<Rgb888>,
 {
-    pub fn new(mut display: T, yield_on_flush: bool) -> Result<Self, EmbeddedDisplayInitError<T>> {
+    pub fn new(
+        mut display: T,
+        mut on_flush: Option<OnFlush<T>>,
+    ) -> Result<Self, EmbeddedDisplayInitError<T>> {
         // https://github.com/Anuken/Mindustry/blob/65a50a97423431640e636463dde97f6f88a2b0c8/core/src/mindustry/graphics/Pal.java#L35
         if let Err(error) = display.clear(Rgb888::new(0x56, 0x56, 0x66).into()) {
             // give back ownership of the display if init fails
             return Err(EmbeddedDisplayInitError { display, error });
+        }
+        if let Some(on_flush) = &mut on_flush {
+            on_flush(&mut display);
         }
 
         let color = Rgb888::WHITE.into();
@@ -51,7 +60,7 @@ where
         Ok(Self {
             size: display.bounding_box().size,
             display,
-            yield_on_flush,
+            on_flush,
             line_style: PrimitiveStyleBuilder::new()
                 .stroke_color(color)
                 .stroke_width(1)
@@ -214,8 +223,8 @@ where
 
         self.operations += 1;
 
-        if self.yield_on_flush {
-            InstructionResult::Yield
+        if let Some(on_flush) = &mut self.on_flush {
+            on_flush(&mut self.display)
         } else {
             InstructionResult::Ok
         }

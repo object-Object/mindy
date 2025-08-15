@@ -8,25 +8,29 @@ import globals from "globals";
 import tseslint from "typescript-eslint";
 
 export default tseslint.config([
-  globalIgnores(["dist"]),
-  {
-    files: ["**/*.{ts,tsx}"],
-    extends: [
-      js.configs.recommended,
-      ...tseslint.configs.recommendedTypeChecked,
-      ...tseslint.configs.stylisticTypeChecked,
-      reactHooks.configs["recommended-latest"],
-      reactRefresh.configs.vite,
-      reactX.configs["recommended-typescript"],
-      reactDom.configs.recommended,
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ["./tsconfig.node.json", "./tsconfig.app.json"],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      ecmaVersion: 2020,
-      globals: globals.browser,
+    globalIgnores(["dist"]),
+    {
+        files: ["**/*.{ts,tsx}"],
+        extends: [
+            js.configs.recommended,
+            ...tseslint.configs.recommendedTypeChecked,
+            ...tseslint.configs.stylisticTypeChecked,
+            reactHooks.configs["recommended-latest"],
+            reactRefresh.configs.vite,
+            reactX.configs["recommended-typescript"],
+            reactDom.configs.recommended,
+        ],
+        rules: {
+            "no-unused-vars": "warn",
+            "@typescript-eslint/no-unused-vars": "warn",
+        },
+        languageOptions: {
+            parserOptions: {
+                project: ["./tsconfig.node.json", "./tsconfig.app.json"],
+                tsconfigRootDir: import.meta.dirname,
+            },
+            ecmaVersion: 2020,
+            globals: globals.browser,
+        },
     },
-  },
 ]);

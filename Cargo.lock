@@ -727,6 +727,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "embedded-graphics-web-simulator"
+version = "0.4.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "568af92e5e6f45f7fe4456c5751d150428e2f6291a9845fa90f6ddc314a9463f"
+dependencies = [
+ "embedded-graphics",
+ "js-sys",
+ "wasm-bindgen",
+ "web-sys",
+]
+
+[[package]]
 name = "embedded-io"
 version = "0.4.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1231,6 +1243,7 @@ dependencies = [
  "strum",
  "thiserror",
  "velcro",
+ "wasm-bindgen",
  "widestring",
 ]
 
@@ -1239,9 +1252,13 @@ name = "mindy-website"
 version = "0.0.0"
 dependencies = [
  "console_error_panic_hook",
+ "embedded-graphics",
+ "embedded-graphics-web-simulator",
  "getrandom",
+ "js-sys",
  "mindy",
  "wasm-bindgen",
+ "web-sys",
  "wee_alloc",
 ]
 
@@ -2138,6 +2155,16 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "1a05d73b933a847d6cccdda8f838a22ff101ad9bf93e33684f39c1f5f0eece3d"
 dependencies = [
  "unicode-ident",
+]
+
+[[package]]
+name = "web-sys"
+version = "0.3.77"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "33b6dd2ef9186f1f2072e409e99cd22a975331a6b3591b12c764e0e55c60d5d2"
+dependencies = [
+ "js-sys",
+ "wasm-bindgen",
 ]
 
 [[package]]

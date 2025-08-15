@@ -75,14 +75,14 @@ impl LogicVM {
     /// Run the simulation until all processors halt, or until a number of ticks are finished.
     /// Returns true if all processors halted, or false if the tick limit was reached.
     #[cfg(feature = "std")]
-    pub fn run(&self, max_ticks: Option<usize>) -> bool {
+    pub fn run(&mut self, max_ticks: Option<usize>) -> bool {
         self.run_with_delta(max_ticks, 1.0)
     }
 
     /// Run the simulation until all processors halt, or until a number of ticks are finished.
     /// Returns true if all processors halted, or false if the tick limit was reached.
     #[cfg(feature = "std")]
-    pub fn run_with_delta(&self, max_ticks: Option<usize>, delta: f64) -> bool {
+    pub fn run_with_delta(&mut self, max_ticks: Option<usize>, delta: f64) -> bool {
         let start = Instant::now();
         let mut tick = 0;
 
@@ -107,7 +107,7 @@ impl LogicVM {
     /// Execute one tick of the simulation with a delta of `1.0`.
     ///
     /// `time` is the time elapsed since the *start* of the simulation.
-    pub fn do_tick(&self, time: Duration) {
+    pub fn do_tick(&mut self, time: Duration) {
         self.do_tick_with_delta(time, 1.0);
     }
 
@@ -116,8 +116,7 @@ impl LogicVM {
     /// `time` is the time elapsed since the *start* of the simulation.
     ///
     /// `delta` is the simulated time delta, eg. `1.0` corresponds to 60 fps.
-    pub fn do_tick_with_delta(&self, time: Duration, delta: f64) {
-        // never move time backwards
+    pub fn do_tick_with_delta(&mut self, time: Duration, delta: f64) {
         let time = duration_millis_f64(time);
         self.time.set(time);
 
