@@ -1,8 +1,6 @@
 use core::{fmt::Display, hash::Hash, num::TryFromIntError};
 
 use binrw::prelude::*;
-#[cfg(feature = "wasm")]
-use wasm_bindgen::prelude::*;
 
 #[binrw]
 #[brw(big)]
@@ -41,16 +39,13 @@ impl Display for Point2 {
 
 #[binrw]
 #[brw(big)]
-#[cfg_attr(feature = "wasm", wasm_bindgen)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct PackedPoint2 {
     pub x: i16,
     pub y: i16,
 }
 
-#[cfg_attr(feature = "wasm", wasm_bindgen)]
 impl PackedPoint2 {
-    #[cfg_attr(feature = "wasm", wasm_bindgen(constructor))]
     pub fn new(x: i16, y: i16) -> Self {
         Self { x, y }
     }

@@ -15,8 +15,8 @@ use replace_with::replace_with_or_default_and_return;
 use widestring::{U16Str, U16String};
 
 use super::{
-    Building, BuildingData, DrawCommand, InstructionResult, LValue, LVar, LogicVM, LogicVMBuilder,
-    VMLoadError, VMLoadResult,
+    Building, BuildingData, DrawCommand, InstructionResult, LValue, LVar, LogicVM, VMLoadError,
+    VMLoadResult,
     instructions::{Instruction, InstructionBuilder, InstructionTrait, Noop},
     variables::{Constants, Variables},
 };
@@ -132,7 +132,7 @@ impl Processor {
         // now that we know which links are valid, set up the per-processor constants
         LVar::create_local_constants(&mut self.state.locals, building, &self.state.links);
 
-        // finally, finish parsing the instructions
+        // finish parsing the instructions
         // this must only be done after the link variables have been added
         for instruction in self.instructions.iter_mut() {
             // at this point, all instructions should be InstructionBuilders
@@ -154,6 +154,11 @@ impl Processor {
             )?;
         }
 
+        // finally, now that we know everything has succeeded, tell the VM if this processor is running
+        if self.state.enabled {
+            vm.running_processors.update(|n| n + 1);
+        }
+
         Ok(())
     }
 
@@ -164,7 +169,7 @@ impl Processor {
         mut self,
         code: T,
         links: Option<&[ProcessorLinkConfig]>,
-        builder: &LogicVMBuilder,
+        vm: impl AsRef<LogicVM>,
         position: PackedPoint2,
     ) -> Self
     where
@@ -172,8 +177,8 @@ impl Processor {
         for<'a> &'a T: IntoIterator<Item = &'a ast::Statement>,
     {
         self.instructions.clear();
-        self.state = ProcessorState::new(self.state.privileged, self.state.ipt, &builder.vm);
-        self.set_initial_config(code, links, &builder.vm, position);
+        self.state = ProcessorState::new(self.state.privileged, self.state.ipt, vm.as_ref());
+        self.set_initial_config(code, links, position);
         self
     }
 
@@ -194,7 +199,7 @@ impl Processor {
     {
         let prev_instructions = core::mem::take(&mut self.instructions);
 
-        // set_initial_config assumes the processor is disabled and increments running_processors if it becomes enabled
+        // late_init assumes the processor is disabled and increments running_processors if it becomes enabled
         // so decrement running_processors if the processor is currently enabled to avoid double-counting
         let prev_running_processors = vm.running_processors.get();
         if self.state.enabled {
@@ -205,7 +210,8 @@ impl Processor {
         let new_state = ProcessorState::new(self.state.privileged, self.state.ipt, vm);
         let prev_state = core::mem::replace(&mut self.state, new_state);
 
-        self.set_initial_config(code, links, vm, building.position);
+        // this assumes self.state is newly initialized
+        self.set_initial_config(code, links, building.position);
 
         // if the initialization fails, roll back the changes
         let result = self.late_init(vm, building, globals);
@@ -222,7 +228,6 @@ impl Processor {
         &mut self,
         code: T,
         links: Option<&[ProcessorLinkConfig]>,
-        vm: &LogicVM,
         position: PackedPoint2,
     ) where
         T: IntoIterator<Item = ast::Statement>,
@@ -257,9 +262,6 @@ impl Processor {
         }
 
         self.state.enabled = !self.instructions.is_empty();
-        if self.state.enabled {
-            vm.running_processors.update(|n| n + 1);
-        }
 
         let fake_data = Rc::new(RefCell::new(BuildingData::Unknown {
             senseable_config: None,
@@ -441,7 +443,7 @@ impl ProcessorState {
     }
 
     #[inline(always)]
-    pub(super) fn links(&self) -> &[ProcessorLink] {
+    pub fn links(&self) -> &[ProcessorLink] {
         &self.links
     }
 
@@ -495,7 +497,8 @@ impl ProcessorState {
 
 /// A representation of a link from this processor to a building.
 #[derive(Debug, Clone)]
-pub(super) struct ProcessorLink {
+#[non_exhaustive]
+pub struct ProcessorLink {
     pub name: String,
     pub building: Building,
 }
@@ -523,7 +526,7 @@ impl ProcessorBuilder<'_> {
         }
     }
 
-    pub fn build(self, position: PackedPoint2, builder: &LogicVMBuilder) -> Box<Processor> {
+    pub fn build(self, position: PackedPoint2, vm: impl AsRef<LogicVM>) -> Box<Processor> {
         let ProcessorBuilder {
             ipt,
             privileged,
@@ -535,10 +538,10 @@ impl ProcessorBuilder<'_> {
         let mut processor = Processor {
             instructions: Vec::new(),
             instruction_hook,
-            state: ProcessorState::new(privileged, ipt, &builder.vm),
+            state: ProcessorState::new(privileged, ipt, vm.as_ref()),
         };
 
-        processor.set_initial_config(code, Some(links), &builder.vm, position);
+        processor.set_initial_config(code, Some(links), position);
 
         Box::new(processor)
     }

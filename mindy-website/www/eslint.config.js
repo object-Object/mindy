@@ -21,8 +21,16 @@ export default tseslint.config([
             reactDom.configs.recommended,
         ],
         rules: {
-            "no-unused-vars": "warn",
-            "@typescript-eslint/no-unused-vars": "warn",
+            "no-unused-vars": "off",
+            "@typescript-eslint/no-unused-vars": [
+                "warn",
+                {
+                    argsIgnorePattern: "^_[^_].*$|^_$",
+                    varsIgnorePattern: "^_[^_].*$|^_$",
+                    caughtErrorsIgnorePattern: "^_[^_].*$|^_$",
+                },
+            ],
+            "@typescript-eslint/consistent-type-definitions": "off",
         },
         languageOptions: {
             parserOptions: {

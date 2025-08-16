@@ -2,12 +2,13 @@ use alloc::{boxed::Box, rc::Rc, string::ToString};
 use core::cell::RefCell;
 
 use derivative::Derivative;
+use itertools::Itertools;
 use strum::IntoStaticStr;
 use widestring::U16String;
 
 use super::{
-    InstructionResult, LObject, LValue, LVar, LogicVM, LogicVMBuilder, Processor, ProcessorBuilder,
-    ProcessorState, VMLoadError, VMLoadResult,
+    InstructionResult, LObject, LValue, LVar, LogicVM, Processor, ProcessorBuilder, ProcessorState,
+    VMLoadError, VMLoadResult,
 };
 use crate::types::{
     LAccess, Object, PackedPoint2,
@@ -58,7 +59,7 @@ impl Building {
         name: &str,
         position: PackedPoint2,
         config: &Object,
-        _builder: &LogicVMBuilder,
+        _vm: impl AsRef<LogicVM>,
     ) -> VMLoadResult<Self> {
         let data = match name {
             MICRO_PROCESSOR | LOGIC_PROCESSOR | HYPER_PROCESSOR | WORLD_PROCESSOR => {
@@ -67,7 +68,7 @@ impl Building {
                     name,
                     position,
                     &ProcessorConfig::parse(config)?,
-                    _builder,
+                    _vm,
                 );
                 #[cfg(not(feature = "std"))]
                 panic!("processor config parsing is not supported on no_std");
@@ -118,7 +119,7 @@ impl Building {
         name: &str,
         position: PackedPoint2,
         config: &ProcessorConfig,
-        builder: &LogicVMBuilder,
+        vm: impl AsRef<LogicVM>,
     ) -> VMLoadResult<Self> {
         let code = ProcessorBuilder::parse_code(&config.code)?;
 
@@ -163,7 +164,7 @@ impl Building {
             Self::get_block(name)?,
             position,
             data,
-            builder,
+            vm,
         ))
     }
 
@@ -171,12 +172,12 @@ impl Building {
         block: &'static Block,
         position: PackedPoint2,
         config: ProcessorBuilder,
-        builder: &LogicVMBuilder,
+        vm: impl AsRef<LogicVM>,
     ) -> Self {
         Self::new(
             block,
             position,
-            BuildingData::Processor(config.build(position, builder)),
+            BuildingData::Processor(config.build(position, vm)),
         )
     }
 
@@ -188,9 +189,24 @@ impl Building {
             config,
             ..
         }: &SchematicTile,
-        builder: &LogicVMBuilder,
+        vm: impl AsRef<LogicVM>,
     ) -> VMLoadResult<Self> {
-        Self::from_config(name, *position, config, builder)
+        Self::from_config(name, *position, config, vm)
+    }
+
+    /// Returns an iterator over all of the points contained within this building.
+    ///
+    /// For example, a building with size 2 would return an iterator yielding the following items:
+    /// - `(x, y)`
+    /// - `(x, y + 1)`
+    /// - `(x + 1, y)`
+    /// - `(x + 1, y + 1)`
+    pub fn iter_positions(&self) -> impl Iterator<Item = PackedPoint2> + use<> {
+        let PackedPoint2 { x, y } = self.position;
+        let size = self.block.size;
+        (x..x + size)
+            .cartesian_product(y..y + size)
+            .map(PackedPoint2::from)
     }
 
     fn get_block(name: &str) -> VMLoadResult<&'static Block> {

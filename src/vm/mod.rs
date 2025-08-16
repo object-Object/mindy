@@ -38,7 +38,10 @@ pub struct LogicVM {
 }
 
 impl LogicVM {
-    fn new() -> Self {
+    /// Creates a new, empty VM.
+    ///
+    /// This is usually not the method you want. See [`Self::from_buildings`], [`LogicVMBuilder`], etc.
+    pub fn new() -> Self {
         Self {
             buildings: Vec::new(),
             buildings_map: RapidHashMap::default(),
@@ -70,6 +73,55 @@ impl LogicVM {
         self.buildings_map
             .get(&position)
             .map(|&i| &self.buildings[i])
+    }
+
+    /// Add a new building to a running VM.
+    ///
+    /// Processors added using this method will be appended to the end of the update order, shifting all non-processor buildings to the right. To add processors in load order more efficiently, use a [`LogicVMBuilder`].
+    pub fn add_building(&mut self, building: Building, globals: &Constants) -> VMLoadResult<()> {
+        // check for overlaps first, so that we don't mutate the VM until we know we can do it successfully
+        for position in building.iter_positions() {
+            if self.buildings_map.contains_key(&position) {
+                return Err(VMLoadError::Overlap(position));
+            }
+        }
+
+        // if it's a processor, run late_init before inserting
+        let is_processor = match &mut *building.data.borrow_mut() {
+            BuildingData::Processor(processor) => {
+                processor.late_init(self, &building, globals)?;
+                true
+            }
+            _ => false,
+        };
+
+        // do this here because building is moved into self.buildings
+        let all_positions = building.iter_positions();
+
+        // insert the new building into self.buildings
+        let index = if is_processor {
+            // shift all non-processor indices right by one
+            for building in self.buildings.iter().skip(self.total_processors) {
+                for position in building.iter_positions() {
+                    *self.buildings_map.get_mut(&position).unwrap() += 1;
+                }
+            }
+
+            // shift the actual non-processor buildings right by one
+            self.buildings.insert(self.total_processors, building);
+            self.total_processors += 1;
+            self.total_processors
+        } else {
+            self.buildings.push(building);
+            self.buildings.len()
+        } - 1;
+
+        // finally, insert all of the position lookups
+        for position in all_positions {
+            self.buildings_map.insert(position, index);
+        }
+
+        Ok(())
     }
 
     /// Run the simulation until all processors halt, or until a number of ticks are finished.
@@ -146,6 +198,18 @@ impl LogicVM {
     }
 }
 
+impl Default for LogicVM {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl AsRef<LogicVM> for LogicVM {
+    fn as_ref(&self) -> &LogicVM {
+        self
+    }
+}
+
 pub struct LogicVMBuilder {
     vm: LogicVM,
     processors: Vec<Building>,
@@ -177,7 +241,7 @@ impl LogicVMBuilder {
 
     #[cfg(feature = "std")]
     pub fn add_schematic_tile(&mut self, tile: &SchematicTile) -> VMLoadResult<()> {
-        let building = Building::from_schematic_tile(tile, self)?;
+        let building = Building::from_schematic_tile(tile, &*self)?;
         self.add_building(building);
         Ok(())
     }
@@ -188,6 +252,10 @@ impl LogicVMBuilder {
             self.add_schematic_tile(tile)?;
         }
         Ok(())
+    }
+
+    pub fn vm(&self) -> &LogicVM {
+        &self.vm
     }
 
     pub fn build(self) -> VMLoadResult<LogicVM> {
@@ -211,17 +279,11 @@ impl LogicVMBuilder {
         vm.buildings.extend(self.other_buildings.drain(0..));
 
         for (i, building) in vm.buildings.iter().enumerate() {
-            let position = building.position;
-            let size = building.block.size;
-
-            for x in position.x..position.x + size {
-                for y in position.y..position.y + size {
-                    let position = PackedPoint2 { x, y };
-                    if vm.buildings_map.contains_key(&position) {
-                        return Err(VMLoadError::Overlap(position));
-                    }
-                    vm.buildings_map.insert(position, i);
+            for position in building.iter_positions() {
+                if vm.buildings_map.contains_key(&position) {
+                    return Err(VMLoadError::Overlap(position));
                 }
+                vm.buildings_map.insert(position, i);
             }
         }
 
@@ -240,6 +302,12 @@ impl LogicVMBuilder {
 impl Default for LogicVMBuilder {
     fn default() -> Self {
         Self::new()
+    }
+}
+
+impl AsRef<LogicVM> for LogicVMBuilder {
+    fn as_ref(&self) -> &LogicVM {
+        &self.vm
     }
 }
 
@@ -339,7 +407,7 @@ mod tests {
             },
             &builder,
         )]);
-        let vm = builder.build_with_globals(&globals).unwrap();
+        let mut vm = builder.build_with_globals(&globals).unwrap();
 
         vm.do_tick(Duration::ZERO);
 

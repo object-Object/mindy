@@ -1,17 +1,17 @@
 #![allow(clippy::boxed_local)]
 
-use std::time::Duration;
+use std::{collections::HashMap, time::Duration};
 
 use embedded_graphics::pixelcolor::Rgb888;
 use embedded_graphics_web_simulator::{
     display::WebSimulatorDisplay, output_settings::OutputSettings,
 };
+use js_sys::JsString;
 use mindy::{
     parser::LogicParser,
     types::{PackedPoint2, ProcessorConfig, ProcessorLinkConfig, content},
     vm::{
         Building, BuildingData, EmbeddedDisplayData, InstructionResult, LVar, LogicVM,
-        LogicVMBuilder,
         buildings::{HYPER_PROCESSOR, LOGIC_PROCESSOR, MICRO_PROCESSOR, WORLD_PROCESSOR},
         variables::Constants,
     },
@@ -37,6 +37,18 @@ pub fn init() {
 }
 
 #[wasm_bindgen]
+pub fn pack_point(x: i16, y: i16) -> u32 {
+    ((y as u32) << 16) | (x as u32)
+}
+
+fn unpack_point(position: u32) -> PackedPoint2 {
+    PackedPoint2 {
+        x: position as i16,
+        y: (position >> 16) as i16,
+    }
+}
+
+#[wasm_bindgen]
 pub struct WebLogicVM {
     vm: LogicVM,
     globals: Constants,
@@ -44,33 +56,16 @@ pub struct WebLogicVM {
     prev_timestamp: Option<f64>,
 }
 
+#[wasm_bindgen]
 impl WebLogicVM {
-    fn new(vm: LogicVM, globals: Constants) -> Self {
+    #[wasm_bindgen(constructor)]
+    pub fn new() -> Self {
         Self {
-            vm,
-            globals,
+            vm: LogicVM::new(),
+            globals: LVar::create_global_constants(),
             logic_parser: LogicParser::new(),
             prev_timestamp: None,
         }
-    }
-}
-
-#[wasm_bindgen]
-impl WebLogicVM {
-    pub fn do_tick(&mut self, timestamp: f64) {
-        // convert to seconds
-        let timestamp = timestamp / 1000.;
-
-        // nominal 60 ticks per second
-        let delta = match self.prev_timestamp {
-            Some(prev_timestamp) => (timestamp - prev_timestamp) * 60.,
-            None => 1.,
-        }
-        .min(MAX_DELTA);
-
-        self.prev_timestamp = Some(timestamp);
-        self.vm
-            .do_tick_with_delta(Duration::from_secs_f64(timestamp), delta);
     }
 
     #[wasm_bindgen(getter)]
@@ -78,14 +73,73 @@ impl WebLogicVM {
         self.vm.time().as_secs_f64()
     }
 
+    pub fn add_processor(
+        &mut self,
+        position: u32,
+        kind: ProcessorKind,
+        code: String,
+    ) -> Result<(), String> {
+        let position = unpack_point(position);
+        self.vm
+            .add_building(
+                Building::from_processor_config(
+                    kind.name(),
+                    position,
+                    &ProcessorConfig {
+                        code,
+                        links: vec![],
+                    },
+                    &self.vm,
+                )
+                .map_err(|e| e.to_string())?,
+                &self.globals,
+            )
+            .map_err(|e| e.to_string())
+    }
+
+    pub fn add_display(
+        &mut self,
+        position: u32,
+        width: u32,
+        height: u32,
+        parent: &Element,
+    ) -> Result<(), String> {
+        let display = WebSimulatorDisplay::<Rgb888>::new(
+            (width, height),
+            &OutputSettings::default(),
+            Some(parent),
+        );
+
+        let display_data = EmbeddedDisplayData::new(
+            display,
+            Some(Box::new(|display| {
+                display.flush().expect("failed to flush display");
+                InstructionResult::Ok
+            })),
+        )
+        .expect("failed to initialize display");
+
+        self.vm
+            .add_building(
+                Building::new(
+                    content::blocks::FROM_NAME["tile-logic-display"],
+                    unpack_point(position),
+                    display_data.into(),
+                ),
+                &self.globals,
+            )
+            .map_err(|e| e.to_string())
+    }
+
     pub fn set_processor_config(
         &mut self,
-        position: PackedPoint2,
+        position: u32,
         code: &str,
-        links: Option<Box<[PackedPoint2]>>,
-    ) -> Result<(), String> {
+        links: Box<[u32]>,
+    ) -> Result<LinkNames, String> {
         let ast = self.logic_parser.parse(code).map_err(|e| e.to_string())?;
 
+        let position = unpack_point(position);
         let building = self
             .vm
             .building(position)
@@ -101,88 +155,60 @@ impl WebLogicVM {
         processor
             .update_config(
                 ast,
-                links
-                    .map(|v| {
-                        v.iter()
-                            .map(|p| {
-                                ProcessorLinkConfig::unnamed(p.x - position.x, p.y - position.y)
-                            })
-                            .collect::<Vec<_>>()
-                    })
-                    .as_deref(),
+                Some(
+                    &links
+                        .iter()
+                        .map(|p| {
+                            let p = unpack_point(*p);
+                            ProcessorLinkConfig::unnamed(p.x - position.x, p.y - position.y)
+                        })
+                        .collect::<Vec<_>>(),
+                ),
                 &self.vm,
                 building,
                 &self.globals,
             )
-            .map_err(|e| e.to_string())
+            .map_err(|e| e.to_string())?;
+
+        Ok(LinkNames(
+            processor
+                .state
+                .links()
+                .iter()
+                .map(|l| {
+                    (
+                        pack_point(l.building.position.x, l.building.position.y),
+                        l.name.clone(),
+                    )
+                })
+                .collect(),
+        ))
     }
-}
 
-#[wasm_bindgen]
-pub struct WebLogicVMBuilder {
-    builder: LogicVMBuilder,
-}
+    pub fn building_name(&self, position: u32) -> Option<JsString> {
+        self.vm
+            .building(unpack_point(position))
+            .map(|b| JsString::from_char_code(b.block.name.as_u16str().as_slice()))
+    }
 
-#[wasm_bindgen]
-impl WebLogicVMBuilder {
-    #[wasm_bindgen(constructor)]
-    pub fn new() -> Self {
-        Self {
-            builder: LogicVMBuilder::new(),
+    pub fn do_tick(&mut self, timestamp: f64) {
+        // convert to seconds
+        let timestamp = timestamp / 1000.;
+
+        // nominal 60 ticks per second
+        let delta = match self.prev_timestamp {
+            Some(prev_timestamp) => (timestamp - prev_timestamp) * 60.,
+            None => 1.,
         }
-    }
+        .min(MAX_DELTA);
 
-    pub fn add_processor(&mut self, position: PackedPoint2, kind: ProcessorKind) {
-        self.builder.add_building(
-            Building::from_processor_config(
-                kind.name(),
-                position,
-                &ProcessorConfig::default(),
-                &self.builder,
-            )
-            .expect("failed to create processor"),
-        );
-    }
-
-    pub fn add_display(
-        &mut self,
-        position: PackedPoint2,
-        width: u32,
-        height: u32,
-        parent: &Element,
-    ) {
-        let display = WebSimulatorDisplay::<Rgb888>::new(
-            (width, height),
-            &OutputSettings::default(),
-            Some(parent),
-        );
-
-        let display_data = EmbeddedDisplayData::new(
-            display,
-            Some(Box::new(|display| {
-                display.flush().expect("failed to flush display");
-                InstructionResult::Yield
-            })),
-        )
-        .expect("failed to initialize display");
-
-        self.builder.add_building(Building::new(
-            content::blocks::FROM_NAME["tile-logic-display"],
-            position,
-            display_data.into(),
-        ));
-    }
-
-    pub fn build(self) -> Result<WebLogicVM, String> {
-        let globals = LVar::create_global_constants();
-        match self.builder.build_with_globals(&globals) {
-            Ok(vm) => Ok(WebLogicVM::new(vm, globals)),
-            Err(e) => Err(e.to_string()),
-        }
+        self.prev_timestamp = Some(timestamp);
+        self.vm
+            .do_tick_with_delta(Duration::from_secs_f64(timestamp), delta);
     }
 }
 
-impl Default for WebLogicVMBuilder {
+impl Default for WebLogicVM {
     fn default() -> Self {
         Self::new()
     }
@@ -204,5 +230,16 @@ impl ProcessorKind {
             Self::Hyper => HYPER_PROCESSOR,
             Self::World => WORLD_PROCESSOR,
         }
+    }
+}
+
+#[wasm_bindgen]
+pub struct LinkNames(HashMap<u32, String>);
+
+#[wasm_bindgen]
+impl LinkNames {
+    #[wasm_bindgen(indexing_getter)]
+    pub fn get(&self, position: u32) -> Option<String> {
+        self.0.get(&position).cloned()
     }
 }
