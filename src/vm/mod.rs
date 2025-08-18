@@ -124,6 +124,60 @@ impl LogicVM {
         Ok(())
     }
 
+    /// Remove a building from a running VM.
+    ///
+    /// ***IMPORTANT:*** This method violates the assumption that buildings are never removed from a LogicVM. The caller must keep track of all processors linked to this building and use [`Processor::update_config`] to remove those links manually - the VM will not (and cannot) do this for you. This also means that "ghost cells" are possible - processors may retain references to the removed building.
+    pub fn remove_building(&mut self, position: PackedPoint2) -> Option<Building> {
+        let &index = self.buildings_map.get(&position)?;
+
+        // possible cases:
+        // index < self.total_processors: processor
+        // index + 1 == self.total_processors: *last* processor
+        // index >= self.total_processors: not processor
+        let building = if index + 1 < self.total_processors {
+            // this building is a processor with at least one more processor after it in the update order
+            // so we need to shift all subsequent buildings left by one
+            // otherwise, either the update order would change or a non-processor would be moved into the processor section
+
+            // update buildings_map for all subsequent buildings
+            // eg. if we're removing the 0th building, start at index 1
+            for building in self.buildings.iter().skip(index + 1) {
+                for position in building.iter_positions() {
+                    *self.buildings_map.get_mut(&position).unwrap() -= 1;
+                }
+            }
+
+            self.buildings.remove(index)
+        } else {
+            // this building is either not a processor, or it's the very last processor in the update order
+            // in both cases, we can safely use swap_remove
+
+            // if this is not the last building, update buildings_map for the building we're swapping into its place
+            if let Some(building) = self.buildings.last() {
+                for position in building.iter_positions() {
+                    self.buildings_map.insert(position, index);
+                }
+            }
+
+            self.buildings.swap_remove(index)
+        };
+
+        // if the building is a processor, decrement total_processors and (maybe) running_processors
+        if index < self.total_processors {
+            self.total_processors -= 1;
+            if building.data.borrow().unwrap_processor().state.enabled() {
+                self.running_processors.update(|n| n - 1);
+            }
+        }
+
+        // remove the building from buildings_map
+        for position in building.iter_positions() {
+            self.buildings_map.remove(&position);
+        }
+
+        Some(building)
+    }
+
     /// Run the simulation until all processors halt, or until a number of ticks are finished.
     /// Returns true if all processors halted, or false if the tick limit was reached.
     #[cfg(feature = "std")]
