@@ -29,3 +29,47 @@ jobs:
 
       - name: Run tests
         run: cargo test --no-default-features --features ${{ matrix.features }}
+  
+  build-pages:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: true
+
+      - uses: Swatinem/rust-cache@v2
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: lts/*
+          cache: yarn
+
+      - name: Install dependencies
+        working-directory: mindy-website/www
+        run: yarn install --frozen-lockfile
+
+      - name: Build
+        working-directory: mindy-website/www
+        run: yarn build
+
+      - name: Upload site artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: mindy-website/www/dist/
+
+  deploy-pages:
+    needs: build-pages
+    runs-on: ubuntu-latest
+    concurrency:
+      group: pages
+      cancel-in-progress: false
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deploy.outputs.page_url }}
+    steps:
+      - name: Deploy to GitHub Pages
+        id: deploy
+        uses: actions/deploy-pages@v4
