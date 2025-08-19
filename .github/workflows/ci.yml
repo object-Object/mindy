@@ -45,6 +45,10 @@ jobs:
           cache: yarn
           cache-dependency-path: mindy-website/www/yarn.lock
 
+      - name: Install wasm-pack
+        working-directory: mindy-website/www
+        run: yarn global add wasm-pack
+
       - name: Build WASM module
         working-directory: mindy-website/www
         run: yarn wasm-build-only
