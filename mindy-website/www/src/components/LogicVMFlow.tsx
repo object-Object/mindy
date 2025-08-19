@@ -116,9 +116,32 @@ export default function LogicVMFlow() {
     );
 
     const onConnect = useCallback(
-        (params: Edge | Connection) =>
-            setEdges((edgesSnapshot) => addEdge(params, edgesSnapshot)),
-        [setEdges],
+        (params: Edge | Connection) => {
+            // https://github.com/xyflow/xyflow/blob/a75087e8d3a6ea0731f5bd2331027dc89edce85c/packages/system/src/utils/edges/general.ts#L91
+            const existingEdge = reactFlow
+                .getNodeConnections({
+                    type: "source",
+                    nodeId: params.source,
+                    handleId: params.sourceHandle,
+                })
+                .find(
+                    (edge) =>
+                        edge.target === params.target &&
+                        (edge.targetHandle === params.targetHandle ||
+                            (!edge.targetHandle && !params.targetHandle)),
+                );
+            if (existingEdge != null) {
+                // toggle on double connect, for better mobile support
+                setEdges((edgesSnapshot) =>
+                    edgesSnapshot.filter(
+                        (edge) => edge.id !== existingEdge.edgeId,
+                    ),
+                );
+            } else {
+                setEdges((edgesSnapshot) => addEdge(params, edgesSnapshot));
+            }
+        },
+        [setEdges, reactFlow],
     );
 
     useEffect(() => {
