@@ -69,7 +69,7 @@ export default function ProcessorNode(props: NodeProps<ProcessorNodeType>) {
                     value={editCode}
                     resize="both"
                     autosize
-                    maxRows={32}
+                    maxRows={16}
                     size="xs"
                     onChange={(e) => setEditCode(e.currentTarget.value)}
                     error={error}
