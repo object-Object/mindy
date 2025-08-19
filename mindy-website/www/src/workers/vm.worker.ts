@@ -16,9 +16,9 @@ void init().then(() => {
     onmessage = ({ data: request }: MessageEvent<VMWorkerRequest>) => {
         switch (request.type) {
             case "addDisplay": {
-                const { position, width, height, canvas } = request;
+                const { position, kind, width, height, canvas } = request;
 
-                vm.add_display(position, width, height, canvas);
+                vm.add_display(position, kind, width, height, canvas);
                 postMessage({
                     type: "buildingAdded",
                     position,
@@ -31,7 +31,7 @@ void init().then(() => {
             case "addProcessor": {
                 const { position, kind } = request;
 
-                vm.add_processor(position, kind, "");
+                vm.add_processor(position, kind);
                 postMessage({
                     type: "buildingAdded",
                     position,

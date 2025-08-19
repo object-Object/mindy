@@ -78,3 +78,23 @@ export function getEdgeParams(source: InternalNode, target: InternalNode) {
 export function packPoint(x: number, y: number): number {
     return ((y & 0xffff) << 16) | (x & 0xffff);
 }
+
+export function createNode<N, D>(
+    node: N & { data: D & { position: { x: number; y: number } } },
+): N & {
+    id: string;
+    data: D & { position: number };
+} {
+    const {
+        position: { x, y },
+    } = node.data;
+    const position = packPoint(x, y);
+    return {
+        ...node,
+        id: position.toString(),
+        data: {
+            ...node.data,
+            position,
+        },
+    };
+}

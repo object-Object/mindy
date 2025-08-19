@@ -1,4 +1,4 @@
-import { Card, Flex, Group, Text } from "@mantine/core";
+import { Card, Divider, Flex, Group, Text } from "@mantine/core";
 import {
     Handle,
     Position,
@@ -45,25 +45,28 @@ export default function BuildingNode({
             )}
             <Card className={classes.node} withBorder radius="md">
                 <Card.Section withBorder>
-                    <Group justify="space-between" align="stretch" gap="xs">
+                    <Group justify="flex-start" align="stretch" gap={0}>
                         <Text px="sm" py={6} fw={500} ff="monospace">
                             {name ?? "unknown-building"}
                         </Text>
                         {linkSource && (
-                            <Flex
-                                px="xs"
-                                justify="center"
-                                align="center"
-                                pos="relative"
-                            >
-                                <Handle
-                                    className={classes.sourceHandle}
-                                    position={Position.Right}
-                                    type="source"
-                                    isConnectableEnd={false}
-                                />
-                                <TbPlugConnected />
-                            </Flex>
+                            <>
+                                <Divider orientation="vertical" ml="auto" />
+                                <Flex
+                                    px="sm"
+                                    justify="center"
+                                    align="center"
+                                    pos="relative"
+                                >
+                                    <Handle
+                                        className={classes.sourceHandle}
+                                        position={Position.Right}
+                                        type="source"
+                                        isConnectableEnd={false}
+                                    />
+                                    <TbPlugConnected />
+                                </Flex>
+                            </>
                         )}
                     </Group>
                 </Card.Section>

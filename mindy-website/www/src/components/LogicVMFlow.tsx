@@ -13,10 +13,11 @@ import {
 } from "@xyflow/react";
 import { useCallback, useEffect } from "react";
 
-import { ProcessorKind } from "mindy-website";
+import { DisplayKind, ProcessorKind } from "mindy-website";
 
 import { useLogicVM } from "../hooks";
-import { packPoint } from "../utils";
+import { createNode } from "../utils";
+import AddBuildingMenu from "./AddBuildingMenu";
 import BuildingLinkConnectionLine from "./BuildingLinkConnectionLine";
 import BuildingLinkEdge from "./BuildingLinkEdge";
 import DisplayNode, { type DisplayNodeType } from "./nodes/DisplayNode";
@@ -38,33 +39,13 @@ const defaultEdgeOptions: Partial<Edge> = {
     markerEnd: { type: MarkerType.Arrow },
 };
 
-function createNode<N, D>(
-    node: N & { position: { x: number; y: number }; data: D },
-): N & {
-    id: string;
-    position: { x: number; y: number };
-    data: D & { position: number };
-} {
-    const {
-        position: { x, y },
-    } = node;
-    const position = packPoint(x, y);
-    return {
-        ...node,
-        id: position.toString(),
-        position: { x: x * 400, y: y * 400 },
-        data: {
-            ...node.data,
-            position,
-        },
-    };
-}
-
 const defaultNodes: LogicVMNode[] = [
     createNode({
         type: "display",
-        position: { x: 1, y: 0 },
+        position: { x: 400, y: 0 },
         data: {
+            position: { x: 0, y: 0 },
+            kind: DisplayKind.Tiled,
             displayWidth: 256,
             displayHeight: 256,
         },
@@ -74,6 +55,7 @@ const defaultNodes: LogicVMNode[] = [
         type: "processor",
         position: { x: 0, y: 0 },
         data: {
+            position: { x: 1, y: 0 },
             kind: ProcessorKind.World,
             defaultCode: `
 sensor x display1 @displayWidth
@@ -108,13 +90,6 @@ export default function LogicVMFlow() {
         useNodesState<LogicVMNode>(defaultNodes);
 
     const [edges, setEdges, onEdgesChange] = useEdgesState<Edge>(defaultEdges);
-
-    // abort deletions that would remove nodes
-    const onBeforeDelete = useCallback(
-        // eslint-disable-next-line @typescript-eslint/require-await
-        async ({ nodes }: { nodes: LogicVMNode[] }) => nodes.length === 0,
-        [],
-    );
 
     const onConnect = useCallback(
         (params: Edge | Connection) => {
@@ -208,13 +183,15 @@ export default function LogicVMFlow() {
             defaultEdgeOptions={defaultEdgeOptions}
             onNodesChange={onNodesChange}
             onEdgesChange={onEdgesChange}
-            onBeforeDelete={onBeforeDelete}
             onConnect={onConnect}
             connectionLineComponent={BuildingLinkConnectionLine}
+            proOptions={{ hideAttribution: true }}
+            nodeOrigin={[0.5, 0.5]}
             fitView
         >
             <Background variant={BackgroundVariant.Dots} />
             <Controls />
+            <AddBuildingMenu />
         </ReactFlow>
     );
 }

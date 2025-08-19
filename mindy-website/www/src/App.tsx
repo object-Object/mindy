@@ -47,6 +47,20 @@ export default function App() {
                                 >
                                     Source
                                 </Text>
+                                <Text size="sm" c="dimmed" px={6}>
+                                    •
+                                </Text>
+                                <Text
+                                    size="sm"
+                                    c="dimmed"
+                                    td="underline"
+                                    component="a"
+                                    href="https://reactflow.dev/"
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                >
+                                    React Flow
+                                </Text>
                             </Flex>
                         </AppShell.Footer>
                     </AppShell>

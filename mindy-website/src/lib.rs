@@ -97,22 +97,14 @@ impl WebLogicVM {
         self.vm.time().as_secs_f64()
     }
 
-    pub fn add_processor(
-        &mut self,
-        position: u32,
-        kind: ProcessorKind,
-        code: String,
-    ) -> Result<(), String> {
+    pub fn add_processor(&mut self, position: u32, kind: ProcessorKind) -> Result<(), String> {
         let position = unpack_point(position);
         self.vm
             .add_building(
                 Building::from_processor_config(
                     kind.name(),
                     position,
-                    &ProcessorConfig {
-                        code,
-                        links: vec![],
-                    },
+                    &ProcessorConfig::default(),
                     &self.vm,
                 )
                 .map_err(|e| e.to_string())?,
@@ -124,6 +116,7 @@ impl WebLogicVM {
     pub fn add_display(
         &mut self,
         position: u32,
+        kind: DisplayKind,
         width: u32,
         height: u32,
         canvas: &OffscreenCanvas,
@@ -146,7 +139,7 @@ impl WebLogicVM {
         self.vm
             .add_building(
                 Building::new(
-                    content::blocks::FROM_NAME["tile-logic-display"],
+                    content::blocks::FROM_NAME[kind.name()],
                     unpack_point(position),
                     display_data.into(),
                 ),
@@ -271,6 +264,23 @@ impl ProcessorKind {
             Self::Logic => LOGIC_PROCESSOR,
             Self::Hyper => HYPER_PROCESSOR,
             Self::World => WORLD_PROCESSOR,
+        }
+    }
+}
+
+#[wasm_bindgen]
+pub enum DisplayKind {
+    Logic,
+    Large,
+    Tiled,
+}
+
+impl DisplayKind {
+    fn name(&self) -> &str {
+        match self {
+            Self::Logic => "logic-display",
+            Self::Large => "large-logic-display",
+            Self::Tiled => "tile-logic-display",
         }
     }
 }

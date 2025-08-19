@@ -2,11 +2,14 @@ import { Box, Card } from "@mantine/core";
 import type { Node, NodeProps } from "@xyflow/react";
 import { useEffect, useRef } from "react";
 
+import type { DisplayKind } from "mindy-website";
+
 import { useLogicVM } from "../../hooks";
 import BuildingNode, { type BuildingNodeData } from "./BuildingNode";
 import classes from "./DisplayNode.module.css";
 
 type DisplayNodeData = BuildingNodeData & {
+    kind: DisplayKind;
     displayWidth: number;
     displayHeight: number;
 };
@@ -15,7 +18,7 @@ export type DisplayNodeType = Node<DisplayNodeData, "display">;
 
 export default function DisplayNode(props: NodeProps<DisplayNodeType>) {
     const {
-        data: { position, displayWidth, displayHeight },
+        data: { position, kind, displayWidth, displayHeight },
     } = props;
 
     const vm = useLogicVM();
@@ -31,6 +34,7 @@ export default function DisplayNode(props: NodeProps<DisplayNodeType>) {
             {
                 type: "addDisplay",
                 position,
+                kind,
                 width: displayWidth,
                 height: displayHeight,
                 canvas: offscreenCanvas,
@@ -41,7 +45,7 @@ export default function DisplayNode(props: NodeProps<DisplayNodeType>) {
         return () => {
             vm.postMessage({ type: "removeBuilding", position });
         };
-    }, [vm, position, displayWidth, displayHeight]);
+    }, [vm, position, kind, displayWidth, displayHeight]);
 
     return (
         <BuildingNode {...props}>

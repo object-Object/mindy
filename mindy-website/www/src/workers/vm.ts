@@ -1,11 +1,12 @@
 // this is a separate file because otherwise firefox loads the worker twice
-import type { ProcessorKind } from "mindy-website";
+import type { DisplayKind, ProcessorKind } from "mindy-website";
 
 // main thread -> worker
 
 interface AddDisplayRequest {
     type: "addDisplay";
     position: number;
+    kind: DisplayKind;
     width: number;
     height: number;
     canvas: OffscreenCanvas;
