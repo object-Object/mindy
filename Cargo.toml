@@ -76,7 +76,7 @@ pretty_assertions = "1.4.1"
 velcro = "0.5.4"
 
 [features]
-default = ["std"]
+default = ["enforce_processor_range", "std"]
 embedded_graphics = [
     "dep:eg-font-converter",
     "dep:embedded-graphics",
@@ -86,6 +86,7 @@ no_std = [
     "dep:serde-json-core",
     "lazy_static/spin_no_std",
 ]
+enforce_processor_range = []
 serde_alloc = [
     "serde/alloc",
 ]

@@ -68,22 +68,25 @@ impl Processor {
 
             // check range
 
-            let self_size = (building.block.size as f64) / 2.;
-            let other_size = (other.block.size as f64) / 2.;
+            #[cfg(feature = "enforce_processor_range")]
+            {
+                let self_size = (building.block.size as f64) / 2.;
+                let other_size = (other.block.size as f64) / 2.;
 
-            let here = (
-                building.position.x as f64 + self_size,
-                building.position.y as f64 + self_size,
-            );
-            let there = (
-                other.position.x as f64 + other_size,
-                other.position.y as f64 + other_size,
-            );
+                let here = (
+                    building.position.x as f64 + self_size,
+                    building.position.y as f64 + self_size,
+                );
+                let there = (
+                    other.position.x as f64 + other_size,
+                    other.position.y as f64 + other_size,
+                );
 
-            let dist_sq = (here.0 - there.0).powi(2) + (here.1 - there.1).powi(2);
-            let range = building.block.range + other_size;
-            if dist_sq > range * range {
-                return false;
+                let dist_sq = (here.0 - there.0).powi(2) + (here.1 - there.1).powi(2);
+                let range = building.block.range + other_size;
+                if dist_sq > range * range {
+                    return false;
+                }
             }
 
             // finally, get the link name
