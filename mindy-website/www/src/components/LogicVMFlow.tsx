@@ -9,16 +9,19 @@ import {
     BackgroundVariant,
     Controls,
     MarkerType,
+    useReactFlow,
 } from "@xyflow/react";
-import { useCallback } from "react";
+import { useCallback, useEffect } from "react";
 
-import { pack_point, ProcessorKind, type WebLogicVM } from "mindy-website";
+import { ProcessorKind } from "mindy-website";
 
+import { useLogicVM } from "../hooks";
+import { packPoint } from "../utils";
 import BuildingLinkEdge from "./BuildingLinkEdge";
 import DisplayNode, { type DisplayNodeType } from "./nodes/DisplayNode";
 import ProcessorNode, { type ProcessorNodeType } from "./nodes/ProcessorNode";
 
-export type CustomNodeType = ProcessorNodeType | DisplayNodeType;
+export type LogicVMNode = DisplayNodeType | ProcessorNodeType;
 
 const nodeTypes = {
     processor: ProcessorNode,
@@ -32,52 +35,83 @@ const edgeTypes = {
 const defaultEdgeOptions: Partial<Edge> = {
     type: "buildinglink",
     markerEnd: { type: MarkerType.Arrow },
-    // TODO: figure out how to calculate edge labels
-    selectable: false,
 };
 
-interface VMFlowProps {
-    vm: WebLogicVM;
+function createNode<N, D>(
+    node: N & { position: { x: number; y: number }; data: D },
+): N & {
+    id: string;
+    position: { x: number; y: number };
+    data: D & { position: number };
+} {
+    const {
+        position: { x, y },
+    } = node;
+    const position = packPoint(x, y);
+    return {
+        ...node,
+        id: position.toString(),
+        position: { x: x * 400, y: y * 400 },
+        data: {
+            ...node.data,
+            position,
+        },
+    };
 }
 
-export default function LogicVMFlow({ vm }: VMFlowProps) {
-    const [nodes, _setNodes, onNodesChange] = useNodesState<CustomNodeType>([
-        {
-            id: "processor",
-            type: "processor",
-            position: { x: 0, y: 0 },
-            data: {
-                vm,
-                position: pack_point(0, 0),
-                kind: ProcessorKind.World,
-            },
+const defaultNodes: LogicVMNode[] = [
+    createNode({
+        type: "display",
+        position: { x: 1, y: 0 },
+        data: {
+            displayWidth: 256,
+            displayHeight: 256,
         },
-        {
-            id: "display",
-            type: "display",
-            position: { x: 400, y: 0 },
-            data: {
-                vm,
-                position: pack_point(1, 0),
-                displayWidth: 256,
-                displayHeight: 256,
-            },
-        },
-    ]);
+    }),
+    // put the processor last to ensure the linked buildings exist
+    createNode({
+        type: "processor",
+        position: { x: 0, y: 0 },
+        data: {
+            kind: ProcessorKind.World,
+            defaultCode: `
+sensor x display1 @displayWidth
+op div x x 2
+sensor y display1 @displayHeight
+op div y y 2
 
-    const [edges, setEdges, onEdgesChange] = useEdgesState<Edge>([
-        {
-            id: "processor-display",
-            source: "processor",
-            target: "display",
-            label: "display1",
+print "Hello, world!"
+draw print x y @center
+drawflush display1
+
+stop
+            `.trim(),
         },
-    ]);
+    }),
+];
+
+const defaultEdges: Edge[] = [
+    {
+        id: "processor-display",
+        source: defaultNodes[1].id,
+        target: defaultNodes[0].id,
+    },
+];
+
+export default function LogicVMFlow() {
+    const vm = useLogicVM();
+
+    const reactFlow = useReactFlow<LogicVMNode>();
+
+    const [nodes, _setNodes, onNodesChange] =
+        useNodesState<LogicVMNode>(defaultNodes);
+
+    const [edges, setEdges, onEdgesChange] = useEdgesState<Edge>(defaultEdges);
 
     // abort deletions that would remove nodes
     const onBeforeDelete = useCallback(
         // eslint-disable-next-line @typescript-eslint/require-await
-        async ({ nodes }: { nodes: CustomNodeType[] }) => nodes.length === 0,
+        async ({ nodes }: { nodes: LogicVMNode[] }) => nodes.length === 0,
         [],
     );
 
@@ -86,6 +120,60 @@ export default function LogicVMFlow({ vm }: VMFlowProps) {
             setEdges((edgesSnapshot) => addEdge(params, edgesSnapshot)),
         [setEdges],
     );
+
+    useEffect(() => {
+        vm.onmessage = ({ data: response }) => {
+            if (response.type === "ready") return;
+
+            const node = reactFlow.getNode(response.position.toString());
+            if (node == null) {
+                console.warn(
+                    `Got response for unknown node at position ${response.position}`,
+                );
+                return;
+            }
+
+            switch (response.type) {
+                case "buildingAdded": {
+                    reactFlow.updateNodeData(node.id, { name: response.name });
+                    break;
+                }
+
+                case "processorCodeSet": {
+                    if (node.type !== "processor") {
+                        console.warn(
+                            `Got processorCodeSet response for non-processor node ${node.type} at position ${node.data.position}`,
+                        );
+                        return;
+                    }
+
+                    reactFlow.updateNodeData(node.id, {
+                        error: response.error,
+                    });
+
+                    if (response.links != null) {
+                        const connections = reactFlow.getNodeConnections({
+                            type: "source",
+                            nodeId: node.id,
+                        });
+
+                        // TODO: is this order reliable?
+                        response.links.forEach((label, i) => {
+                            reactFlow.updateEdge(connections[i].edgeId, {
+                                label,
+                            });
+                        });
+                    }
+
+                    break;
+                }
+            }
+        };
+
+        return () => {
+            vm.onmessage = null;
+        };
+    }, [vm, reactFlow]);
 
     return (
         <ReactFlow

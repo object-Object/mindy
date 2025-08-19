@@ -9,7 +9,7 @@ crate-type = ["cdylib"]
 [dependencies]
 console_error_panic_hook = "0.1.7"
 embedded-graphics = "0.8.1"
-embedded-graphics-web-simulator = "0.4.0"
+embedded-graphics-web-simulator = { version = "0.4.0", git = "https://github.com/object-Object/embedded-graphics-web-simulator", branch = "offscreen_canvas" }
 getrandom = { version = "0.3.3", features = ["wasm_js"] }
 js-sys = "0.3.77"
 mindy = { path = "..", features = ["embedded_graphics", "wasm"] }
@@ -20,5 +20,6 @@ wee_alloc = "0.4.5"
 version = "0.3"
 features = [
     "console",
-    "Element",
+    "Performance",
+    "WorkerGlobalScope",
 ]

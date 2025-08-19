@@ -1,22 +1,34 @@
 import { Card, Flex, Group, Text } from "@mantine/core";
-import { Handle, Position, useConnection, type NodeProps } from "@xyflow/react";
+import {
+    Handle,
+    Position,
+    useConnection,
+    type Node,
+    type NodeProps,
+} from "@xyflow/react";
 import { type ReactNode } from "react";
 import { TbPlugConnected } from "react-icons/tb";
 
 import classes from "./BuildingNode.module.css";
 
-export interface BuildingNodeProps {
+export type BuildingNodeData = {
     name?: string;
+    position: number;
+};
+
+type BuildingNodeType = Node<BuildingNodeData>;
+
+interface BuildingNodeProps extends NodeProps<BuildingNodeType> {
     linkSource?: boolean;
     children: ReactNode;
 }
 
 export default function BuildingNode({
     id,
-    name,
-    children,
+    data: { name },
     linkSource = false,
-}: BuildingNodeProps & NodeProps) {
+    children,
+}: BuildingNodeProps) {
     const connection = useConnection();
 
     const canConnect = !connection.inProgress || connection.fromNode.id !== id;

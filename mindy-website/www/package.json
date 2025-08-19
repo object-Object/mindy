@@ -5,10 +5,11 @@
     "type": "module",
     "scripts": {
         "dev": "vite",
-        "build": "tsc -b && vite build",
+        "build": "tsc -b && yarn wasm-build && vite build",
         "lint": "eslint .",
         "preview": "vite preview",
-        "wasm": "wasm-pack build .. --dev && yarn upgrade mindy-website"
+        "wasm": "wasm-pack build .. --target web --dev && yarn upgrade mindy-website",
+        "wasm-build": "wasm-pack build .. --target web --release && yarn upgrade mindy-website"
     },
     "dependencies": {
         "@mantine/core": "^8.2.4",
@@ -37,7 +38,6 @@
         "prettier": "^3.6.2",
         "typescript": "~5.8.3",
         "typescript-eslint": "^8.39.1",
-        "vite": "^7.1.2",
-        "vite-plugin-wasm": "^3.5.0"
+        "vite": "^7.1.2"
     }
 }

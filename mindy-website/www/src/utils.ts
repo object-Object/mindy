@@ -74,3 +74,7 @@ export function getEdgeParams(source: InternalNode, target: InternalNode) {
         targetPos,
     };
 }
+
+export function packPoint(x: number, y: number): number {
+    return ((y & 0xffff) << 16) | (x & 0xffff);
+}

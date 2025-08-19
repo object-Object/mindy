@@ -17,7 +17,7 @@ use mindy::{
     },
 };
 use wasm_bindgen::prelude::*;
-use web_sys::Element;
+use web_sys::{OffscreenCanvas, Performance, WorkerGlobalScope};
 
 #[global_allocator]
 static ALLOC: wee_alloc::WeeAlloc = wee_alloc::WeeAlloc::INIT;
@@ -32,12 +32,11 @@ macro_rules! log {
 }
 
 #[wasm_bindgen]
-pub fn init() {
+pub fn init_logging() {
     console_error_panic_hook::set_once();
 }
 
-#[wasm_bindgen]
-pub fn pack_point(x: i16, y: i16) -> u32 {
+fn pack_point(x: i16, y: i16) -> u32 {
     ((y as u32) << 16) | (x as u32)
 }
 
@@ -48,23 +47,48 @@ fn unpack_point(position: u32) -> PackedPoint2 {
     }
 }
 
+fn fps_to_delta(fps: f64) -> f64 {
+    // nominal 60 fps
+    // 60 / 60 -> 1
+    // 60 / 120 -> 0.5
+    // 60 / 30 -> 2
+    (60. / fps).min(MAX_DELTA)
+}
+
+fn delta_to_time(delta: f64) -> f64 {
+    // 60 ticks per second
+    delta / 60.
+}
+
 #[wasm_bindgen]
 pub struct WebLogicVM {
     vm: LogicVM,
     globals: Constants,
     logic_parser: LogicParser,
-    prev_timestamp: Option<f64>,
+    performance: Performance,
+    delta: f64,
+    tick_secs: f64,
+    next_tick_end: f64,
 }
 
 #[wasm_bindgen]
 impl WebLogicVM {
     #[wasm_bindgen(constructor)]
-    pub fn new() -> Self {
+    pub fn new(target_fps: f64) -> Self {
+        let delta = fps_to_delta(target_fps);
+        let tick_secs = delta_to_time(delta);
         Self {
             vm: LogicVM::new(),
             globals: LVar::create_global_constants(),
             logic_parser: LogicParser::new(),
-            prev_timestamp: None,
+            performance: js_sys::global()
+                .dyn_into::<WorkerGlobalScope>()
+                .expect("failed to cast global to WorkerGlobalScope")
+                .performance()
+                .expect("failed to get performance object"),
+            delta,
+            tick_secs,
+            next_tick_end: 0.,
         }
     }
 
@@ -102,12 +126,12 @@ impl WebLogicVM {
         position: u32,
         width: u32,
         height: u32,
-        parent: &Element,
+        canvas: &OffscreenCanvas,
     ) -> Result<(), String> {
-        let display = WebSimulatorDisplay::<Rgb888>::new(
+        let display = WebSimulatorDisplay::<Rgb888, _>::from_offscreen_canvas(
             (width, height),
             &OutputSettings::default(),
-            Some(parent),
+            canvas,
         );
 
         let display_data = EmbeddedDisplayData::new(
@@ -185,32 +209,50 @@ impl WebLogicVM {
         ))
     }
 
+    pub fn remove_building(&mut self, position: u32) {
+        self.vm.remove_building(unpack_point(position));
+    }
+
     pub fn building_name(&self, position: u32) -> Option<JsString> {
         self.vm
             .building(unpack_point(position))
             .map(|b| JsString::from_char_code(b.block.name.as_u16str().as_slice()))
     }
 
-    pub fn do_tick(&mut self, timestamp: f64) {
-        // convert to seconds
-        let timestamp = timestamp / 1000.;
-
-        // nominal 60 ticks per second
-        let delta = match self.prev_timestamp {
-            Some(prev_timestamp) => (timestamp - prev_timestamp) * 60.,
-            None => 1.,
+    pub fn processor_links(&self, position: u32) -> Option<Vec<JsString>> {
+        if let Some(building) = self.vm.building(unpack_point(position))
+            && let BuildingData::Processor(processor) = &*building.data.borrow()
+        {
+            Some(
+                processor
+                    .state
+                    .links()
+                    .iter()
+                    .map(|l| JsString::from(l.name.as_str()))
+                    .collect(),
+            )
+        } else {
+            None
         }
-        .min(MAX_DELTA);
-
-        self.prev_timestamp = Some(timestamp);
-        self.vm
-            .do_tick_with_delta(Duration::from_secs_f64(timestamp), delta);
     }
-}
 
-impl Default for WebLogicVM {
-    fn default() -> Self {
-        Self::new()
+    pub fn set_target_fps(&mut self, target_fps: f64) {
+        self.delta = fps_to_delta(target_fps);
+        self.tick_secs = delta_to_time(self.delta);
+        self.next_tick_end = 0.;
+    }
+
+    pub fn do_tick(&mut self) {
+        let mut time;
+        loop {
+            time = self.performance.now() / 1000.;
+            self.vm
+                .do_tick_with_delta(Duration::from_secs_f64(time), self.delta);
+            if time >= self.next_tick_end {
+                break;
+            }
+        }
+        self.next_tick_end = time + self.tick_secs;
     }
 }
 

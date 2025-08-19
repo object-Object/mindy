@@ -31,6 +31,7 @@ export default tseslint.config([
                 },
             ],
             "@typescript-eslint/consistent-type-definitions": "off",
+            "@typescript-eslint/switch-exhaustiveness-check": "warn",
         },
         languageOptions: {
             parserOptions: {

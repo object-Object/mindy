@@ -10,4 +10,5 @@
 
 .input :global(.mantine-Textarea-input) {
     font-family: monospace;
+    min-width: 16rem;
 }

@@ -5,76 +5,72 @@ import {
     type Node,
     type NodeProps,
 } from "@xyflow/react";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 import { FaXmark, FaCheck } from "react-icons/fa6";
 
-import { ProcessorKind, WebLogicVM } from "mindy-website";
+import { ProcessorKind } from "mindy-website";
 
-import type { CustomNodeType } from "../LogicVMFlow";
-import BuildingNode from "./BuildingNode";
+import { useLogicVM } from "../../hooks";
+import type { LogicVMNode } from "../LogicVMFlow";
+import BuildingNode, { type BuildingNodeData } from "./BuildingNode";
 import classes from "./ProcessorNode.module.css";
 
-type ProcessorNodeData = {
-    vm: WebLogicVM;
-    position: number;
+type ProcessorNodeData = BuildingNodeData & {
     kind: ProcessorKind;
     defaultCode?: string;
+    error?: string;
 };
+
 export type ProcessorNodeType = Node<ProcessorNodeData, "processor">;
 
 export default function ProcessorNode(props: NodeProps<ProcessorNodeType>) {
     const {
-        data: { vm, position, kind, defaultCode = "" },
+        data: { position, kind, defaultCode = "", error },
     } = props;
 
-    const positionRef = useRef<number>(null);
+    const vm = useLogicVM();
 
-    const [name, setName] = useState<string>();
     const [code, setCode] = useState(defaultCode);
     const [editCode, setEditCode] = useState(defaultCode);
-    const [error, setError] = useState<string>();
 
     const connections = useNodeConnections({ handleType: "source" });
-    const reactFlow = useReactFlow<CustomNodeType>();
+    const reactFlow = useReactFlow<LogicVMNode>();
 
     useEffect(() => {
-        if (position !== positionRef.current) {
-            vm.add_processor(position, kind, defaultCode);
+        vm.postMessage({
+            type: "addProcessor",
+            position,
+            kind,
+        });
 
-            setName(vm.building_name(position));
-
-            positionRef.current = position;
-        }
-    }, [vm, position, kind, defaultCode]);
+        return () => {
+            vm.postMessage({ type: "removeBuilding", position });
+        };
+    }, [vm, position, kind]);
 
     useEffect(() => {
-        try {
-            vm.set_processor_config(
-                position,
-                code,
-                new Uint32Array(
-                    connections
-                        .map(
-                            (value) =>
-                                reactFlow.getNode(value.target)?.data.position,
-                        )
-                        .filter((value) => value != null),
-                ),
-            );
-
-            setError(undefined);
-        } catch (e: unknown) {
-            setError(String(e));
-        }
+        const links = connections.flatMap((value) => {
+            const position = reactFlow.getNode(value.target)?.data.position;
+            return position != null ? [position] : [];
+        });
+        vm.postMessage({
+            type: "setProcessorCode",
+            position,
+            code,
+            links: new Uint32Array(links),
+        });
     }, [vm, position, code, connections, reactFlow]);
 
     return (
-        <BuildingNode name={name} linkSource {...props}>
+        <BuildingNode linkSource {...props}>
             <Card.Section p="xs">
                 <Textarea
                     className={`${classes.input} nodrag nopan nowheel`}
                     value={editCode}
                     resize="both"
+                    autosize
+                    maxRows={32}
+                    size="xs"
                     onChange={(e) => setEditCode(e.currentTarget.value)}
                     error={error}
                     errorProps={{
