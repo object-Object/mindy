@@ -55,7 +55,21 @@ export default function App() {
                                     c="dimmed"
                                     td="underline"
                                     component="a"
-                                    href="https://reactflow.dev/"
+                                    href="https://github.com/Anuken/Mindustry"
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                >
+                                    Mindustry
+                                </Text>
+                                <Text size="sm" c="dimmed" px={6}>
+                                    •
+                                </Text>
+                                <Text
+                                    size="sm"
+                                    c="dimmed"
+                                    td="underline"
+                                    component="a"
+                                    href="https://reactflow.dev"
                                     target="_blank"
                                     rel="noopener noreferrer"
                                 >
