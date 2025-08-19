@@ -57,7 +57,7 @@ interface BuildingAddedResponse {
 interface ProcessorCodeSetResponse {
     type: "processorCodeSet";
     position: number;
-    links?: string[];
+    links?: Map<number, string>;
     error?: string;
 }
 

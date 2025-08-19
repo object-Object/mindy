@@ -156,12 +156,17 @@ export default function LogicVMFlow() {
                             nodeId: node.id,
                         });
 
-                        // TODO: is this order reliable?
-                        response.links.forEach((label, i) => {
-                            reactFlow.updateEdge(connections[i].edgeId, {
-                                label,
-                            });
-                        });
+                        // FIXME: assumes no links are removed by the VM
+                        for (const connection of connections) {
+                            const target = reactFlow.getNode(connection.target);
+                            if (target != null) {
+                                reactFlow.updateEdge(connection.edgeId, {
+                                    label: response.links.get(
+                                        target.data.position,
+                                    ),
+                                });
+                            }
+                        }
                     }
 
                     break;

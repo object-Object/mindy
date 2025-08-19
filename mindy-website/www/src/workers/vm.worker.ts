@@ -45,15 +45,16 @@ void init().then(() => {
                 const { position, code, links } = request;
 
                 let error = undefined;
+                let linkNames = undefined;
                 try {
-                    vm.set_processor_config(position, code, links);
+                    linkNames = vm.set_processor_config(position, code, links);
                 } catch (e: unknown) {
                     error = String(e);
                 }
                 postMessage({
                     type: "processorCodeSet",
                     position,
-                    links: vm.processor_links(position),
+                    links: linkNames,
                     error,
                 });
 

@@ -1,6 +1,6 @@
 #![allow(clippy::boxed_local)]
 
-use std::{collections::HashMap, time::Duration};
+use std::time::Duration;
 
 use embedded_graphics::pixelcolor::Rgb888;
 use embedded_graphics_web_simulator::{
@@ -36,8 +36,8 @@ pub fn init_logging() {
     console_error_panic_hook::set_once();
 }
 
-fn pack_point(x: i16, y: i16) -> u32 {
-    ((y as u32) << 16) | (x as u32)
+fn pack_point(position: PackedPoint2) -> u32 {
+    ((position.y as u32) << 16) | (position.x as u32)
 }
 
 fn unpack_point(position: u32) -> PackedPoint2 {
@@ -153,7 +153,7 @@ impl WebLogicVM {
         position: u32,
         code: &str,
         links: Box<[u32]>,
-    ) -> Result<LinkNames, String> {
+    ) -> Result<js_sys::Map, String> {
         let ast = self.logic_parser.parse(code).map_err(|e| e.to_string())?;
 
         let position = unpack_point(position);
@@ -187,19 +187,14 @@ impl WebLogicVM {
             )
             .map_err(|e| e.to_string())?;
 
-        Ok(LinkNames(
-            processor
-                .state
-                .links()
-                .iter()
-                .map(|l| {
-                    (
-                        pack_point(l.building.position.x, l.building.position.y),
-                        l.name.clone(),
-                    )
-                })
-                .collect(),
-        ))
+        let names = js_sys::Map::new();
+        for link in processor.state.links() {
+            names.set(
+                &pack_point(link.building.position).into(),
+                &link.name.clone().into(),
+            );
+        }
+        Ok(names)
     }
 
     pub fn remove_building(&mut self, position: u32) {
@@ -210,23 +205,6 @@ impl WebLogicVM {
         self.vm
             .building(unpack_point(position))
             .map(|b| JsString::from_char_code(b.block.name.as_u16str().as_slice()))
-    }
-
-    pub fn processor_links(&self, position: u32) -> Option<Vec<JsString>> {
-        if let Some(building) = self.vm.building(unpack_point(position))
-            && let BuildingData::Processor(processor) = &*building.data.borrow()
-        {
-            Some(
-                processor
-                    .state
-                    .links()
-                    .iter()
-                    .map(|l| JsString::from(l.name.as_str()))
-                    .collect(),
-            )
-        } else {
-            None
-        }
     }
 
     pub fn set_target_fps(&mut self, target_fps: f64) {
@@ -282,16 +260,5 @@ impl DisplayKind {
             Self::Large => "large-logic-display",
             Self::Tiled => "tile-logic-display",
         }
-    }
-}
-
-#[wasm_bindgen]
-pub struct LinkNames(HashMap<u32, String>);
-
-#[wasm_bindgen]
-impl LinkNames {
-    #[wasm_bindgen(indexing_getter)]
-    pub fn get(&self, position: u32) -> Option<String> {
-        self.0.get(&position).cloned()
     }
 }
