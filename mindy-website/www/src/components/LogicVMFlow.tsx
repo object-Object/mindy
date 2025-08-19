@@ -17,6 +17,7 @@ import { ProcessorKind } from "mindy-website";
 
 import { useLogicVM } from "../hooks";
 import { packPoint } from "../utils";
+import BuildingLinkConnectionLine from "./BuildingLinkConnectionLine";
 import BuildingLinkEdge from "./BuildingLinkEdge";
 import DisplayNode, { type DisplayNodeType } from "./nodes/DisplayNode";
 import ProcessorNode, { type ProcessorNodeType } from "./nodes/ProcessorNode";
@@ -209,6 +210,7 @@ export default function LogicVMFlow() {
             onEdgesChange={onEdgesChange}
             onBeforeDelete={onBeforeDelete}
             onConnect={onConnect}
+            connectionLineComponent={BuildingLinkConnectionLine}
             fitView
         >
             <Background variant={BackgroundVariant.Dots} />
