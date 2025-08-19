@@ -45,13 +45,17 @@ jobs:
           cache: yarn
           cache-dependency-path: mindy-website/www/yarn.lock
 
-      - name: Install dependencies
+      - name: Build WASM module
+        working-directory: mindy-website/www
+        run: yarn wasm-build-only
+
+      - name: Install JS dependencies
         working-directory: mindy-website/www
         run: yarn install --frozen-lockfile
 
-      - name: Build
+      - name: Build website
         working-directory: mindy-website/www
-        run: yarn build
+        run: yarn build-only
 
       - name: Upload site artifact
         uses: actions/upload-pages-artifact@v3

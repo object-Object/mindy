@@ -5,11 +5,13 @@
     "type": "module",
     "scripts": {
         "dev": "vite",
-        "build": "tsc -b && yarn wasm-build && vite build",
+        "build": "yarn wasm-build && yarn build-only",
+        "build-only": "tsc -b && vite build",
         "lint": "eslint .",
         "preview": "vite preview",
         "wasm": "wasm-pack build .. --target web --dev && yarn upgrade mindy-website",
-        "wasm-build": "wasm-pack build .. --target web --release && yarn upgrade mindy-website"
+        "wasm-build": "yarm wasm-build-only && yarn upgrade mindy-website",
+        "wasm-build-only": "wasm-pack build .. --target web --release"
     },
     "dependencies": {
         "@mantine/core": "^8.2.4",
