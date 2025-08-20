@@ -54,25 +54,51 @@ interface BuildingAddedResponse {
     name?: string;
 }
 
-interface ProcessorCodeSetResponse {
-    type: "processorCodeSet";
+export interface BuildingUpdateMap {
+    processor: { links?: Map<number, string>; error?: string };
+}
+
+interface BuildingUpdatedResponse<K extends keyof BuildingUpdateMap> {
+    type: "buildingUpdated";
     position: number;
-    links?: Map<number, string>;
-    error?: string;
+    buildingType: K;
+    update: BuildingUpdateMap[K];
 }
 
 export type VMWorkerResponse =
     | ReadyResponse
     | BuildingAddedResponse
-    | ProcessorCodeSetResponse;
+    | BuildingUpdatedResponse<keyof BuildingUpdateMap>;
 
 // worker
 
-export interface VMWorkerType
-    extends Omit<Worker, "onmessage" | "postMessage"> {
+interface VMWorkerEventMap extends WorkerEventMap {
+    message: MessageEvent<VMWorkerResponse>;
+    messageerror: MessageEvent<VMWorkerResponse>;
+}
+
+export interface VMWorkerType extends Worker {
     onmessage:
-        | ((this: VMWorkerType, ev: MessageEvent<VMWorkerResponse>) => void)
+        | ((this: VMWorkerType, ev: MessageEvent<VMWorkerResponse>) => unknown)
+        | null;
+    onmessageerror:
+        | ((this: VMWorkerType, ev: MessageEvent<VMWorkerResponse>) => unknown)
         | null;
 
-    postMessage(message: VMWorkerRequest, transfer?: Transferable[]): void;
+    postMessage(message: VMWorkerRequest, transfer: Transferable[]): void;
+    postMessage(
+        message: VMWorkerRequest,
+        options?: StructuredSerializeOptions,
+    ): void;
+
+    addEventListener<K extends keyof VMWorkerEventMap>(
+        type: K,
+        listener: (this: VMWorkerType, ev: VMWorkerEventMap[K]) => unknown,
+        options?: boolean | AddEventListenerOptions,
+    ): void;
+    addEventListener(
+        type: string,
+        listener: EventListenerOrEventListenerObject,
+        options?: boolean | AddEventListenerOptions,
+    ): void;
 }

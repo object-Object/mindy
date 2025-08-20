@@ -5,12 +5,13 @@ import {
     type Node,
     type NodeProps,
 } from "@xyflow/react";
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { FaXmark, FaCheck } from "react-icons/fa6";
 
 import { ProcessorKind } from "mindy-website";
 
 import { useLogicVM } from "../../hooks";
+import type { BuildingUpdateMap } from "../../workers/vm";
 import type { LogicVMNode } from "../LogicVMFlow";
 import BuildingNode, { type BuildingNodeData } from "./BuildingNode";
 import classes from "./ProcessorNode.module.css";
@@ -18,24 +19,25 @@ import classes from "./ProcessorNode.module.css";
 type ProcessorNodeData = BuildingNodeData & {
     kind: ProcessorKind;
     defaultCode?: string;
-    error?: string;
 };
 
 export type ProcessorNodeType = Node<ProcessorNodeData, "processor">;
 
 export default function ProcessorNode(props: NodeProps<ProcessorNodeType>) {
     const {
-        data: { position, kind, defaultCode = "", error },
+        data: { position, kind, defaultCode = "" },
     } = props;
 
     const vm = useLogicVM();
 
     const [code, setCode] = useState(defaultCode);
     const [editCode, setEditCode] = useState(defaultCode);
+    const [error, setError] = useState<string>();
 
     const connections = useNodeConnections({ handleType: "source" });
     const reactFlow = useReactFlow<LogicVMNode>();
 
+    // add processor to VM
     useEffect(() => {
         vm.postMessage({
             type: "addProcessor",
@@ -48,6 +50,7 @@ export default function ProcessorNode(props: NodeProps<ProcessorNodeType>) {
         };
     }, [vm, position, kind]);
 
+    // notify VM about changes to code/links
     useEffect(() => {
         const links = connections.flatMap((value) => {
             const position = reactFlow.getNode(value.target)?.data.position;
@@ -61,8 +64,33 @@ export default function ProcessorNode(props: NodeProps<ProcessorNodeType>) {
         });
     }, [vm, position, code, connections, reactFlow]);
 
+    // receive responses to code/link changes
+    const onUpdate = useCallback(
+        ({ links, error }: BuildingUpdateMap["processor"]) => {
+            setError(error);
+
+            if (links != null) {
+                // FIXME: assumes no links are removed by the VM
+                for (const connection of connections) {
+                    const target = reactFlow.getNode(connection.target);
+                    if (target != null) {
+                        reactFlow.updateEdge(connection.edgeId, {
+                            label: links.get(target.data.position),
+                        });
+                    }
+                }
+            }
+        },
+        [reactFlow, connections],
+    );
+
     return (
-        <BuildingNode linkSource {...props}>
+        <BuildingNode
+            linkSource
+            buildingType="processor"
+            onUpdate={onUpdate}
+            {...props}
+        >
             <Card.Section p="xs">
                 <Textarea
                     className={`${classes.input} nodrag nopan nowheel`}

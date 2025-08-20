@@ -6,30 +6,66 @@ import {
     type Node,
     type NodeProps,
 } from "@xyflow/react";
-import { type ReactNode } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import { TbPlugConnected } from "react-icons/tb";
 
+import { useLogicVM } from "../../hooks";
+import type { BuildingUpdateMap, VMWorkerResponse } from "../../workers/vm";
 import classes from "./BuildingNode.module.css";
 
 export type BuildingNodeData = {
-    name?: string;
     position: number;
 };
 
 type BuildingNodeType = Node<BuildingNodeData>;
 
-interface BuildingNodeProps extends NodeProps<BuildingNodeType> {
+interface BuildingNodeProps<K extends keyof BuildingUpdateMap>
+    extends NodeProps<BuildingNodeType> {
     linkSource?: boolean;
+    buildingType?: K;
+    onUpdate?: (update: BuildingUpdateMap[K]) => void;
     children: ReactNode;
 }
 
-export default function BuildingNode({
+export default function BuildingNode<K extends keyof BuildingUpdateMap>({
     id,
-    data: { name },
+    data: { position },
     linkSource = false,
+    buildingType,
+    onUpdate,
     children,
-}: BuildingNodeProps) {
+}: BuildingNodeProps<K>) {
+    const vm = useLogicVM();
     const connection = useConnection();
+
+    const [name, setName] = useState<string>();
+
+    useEffect(() => {
+        const listener = ({ data }: MessageEvent<VMWorkerResponse>) => {
+            if (data.type === "ready" || data.position !== position) return;
+
+            switch (data.type) {
+                case "buildingAdded": {
+                    setName(data.name);
+                    break;
+                }
+
+                case "buildingUpdated": {
+                    if (data.buildingType === buildingType) {
+                        onUpdate?.(
+                            data.update as BuildingUpdateMap[typeof buildingType],
+                        );
+                    }
+                    break;
+                }
+            }
+        };
+
+        vm.addEventListener("message", listener);
+        return () => {
+            vm.removeEventListener("message", listener);
+        };
+    }, [vm, buildingType, position, onUpdate]);
 
     const canConnect = !connection.inProgress || connection.fromNode.id !== id;
 

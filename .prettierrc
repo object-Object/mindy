@@ -1,5 +1,6 @@
 {
     "tabWidth": 4,
+    "experimentalOperatorPosition": "start",
     "overrides": [
         {
             "files": ["*.html"],

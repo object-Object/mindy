@@ -102,9 +102,9 @@ export default function LogicVMFlow() {
                 })
                 .find(
                     (edge) =>
-                        edge.target === params.target &&
-                        (edge.targetHandle === params.targetHandle ||
-                            (!edge.targetHandle && !params.targetHandle)),
+                        edge.target === params.target
+                        && (edge.targetHandle === params.targetHandle
+                            || (!edge.targetHandle && !params.targetHandle)),
                 );
             if (existingEdge != null) {
                 // toggle on double connect, for better mobile support
@@ -121,61 +121,20 @@ export default function LogicVMFlow() {
     );
 
     useEffect(() => {
-        vm.onmessage = ({ data: response }) => {
-            if (response.type === "ready") return;
-
-            const node = reactFlow.getNode(response.position.toString());
-            if (node == null) {
-                console.warn(
-                    `Got response for unknown node at position ${response.position}`,
-                );
-                return;
-            }
-
-            switch (response.type) {
-                case "buildingAdded": {
-                    reactFlow.updateNodeData(node.id, { name: response.name });
-                    break;
-                }
-
-                case "processorCodeSet": {
-                    if (node.type !== "processor") {
-                        console.warn(
-                            `Got processorCodeSet response for non-processor node ${node.type} at position ${node.data.position}`,
-                        );
-                        return;
-                    }
-
-                    reactFlow.updateNodeData(node.id, {
-                        error: response.error,
-                    });
-
-                    if (response.links != null) {
-                        const connections = reactFlow.getNodeConnections({
-                            type: "source",
-                            nodeId: node.id,
-                        });
-
-                        // FIXME: assumes no links are removed by the VM
-                        for (const connection of connections) {
-                            const target = reactFlow.getNode(connection.target);
-                            if (target != null) {
-                                reactFlow.updateEdge(connection.edgeId, {
-                                    label: response.links.get(
-                                        target.data.position,
-                                    ),
-                                });
-                            }
-                        }
-                    }
-
-                    break;
-                }
-            }
+        vm.onmessage = ({ data }) => {
+            console.debug("Got response:", data);
+        };
+        vm.onmessageerror = (event) => {
+            console.error("Failed to deserialize message from VM:", event);
+        };
+        vm.onerror = (event) => {
+            console.error("Got error from VM:", event);
         };
 
         return () => {
             vm.onmessage = null;
+            vm.onmessageerror = null;
+            vm.onerror = null;
         };
     }, [vm, reactFlow]);
 

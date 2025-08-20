@@ -14,6 +14,8 @@ void init().then(() => {
     const vm = new WebLogicVM(60);
 
     onmessage = ({ data: request }: MessageEvent<VMWorkerRequest>) => {
+        console.debug("Got request:", request);
+
         switch (request.type) {
             case "addDisplay": {
                 const { position, kind, width, height, canvas } = request;
@@ -52,10 +54,13 @@ void init().then(() => {
                     error = String(e);
                 }
                 postMessage({
-                    type: "processorCodeSet",
+                    type: "buildingUpdated",
                     position,
-                    links: linkNames,
-                    error,
+                    buildingType: "processor",
+                    update: {
+                        links: linkNames,
+                        error,
+                    },
                 });
 
                 break;
@@ -71,6 +76,12 @@ void init().then(() => {
                 break;
             }
         }
+    };
+    onmessageerror = (event) => {
+        console.error("Failed to deserialize message from main thread:", event);
+    };
+    onerror = (event) => {
+        console.error("Got error from main thread:", event);
     };
 
     // tell the main thread that we're ready to receive requests
