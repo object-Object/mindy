@@ -16,7 +16,7 @@ import { useCallback, useEffect } from "react";
 import { DisplayKind, ProcessorKind } from "mindy-website";
 
 import { useLogicVM } from "../hooks";
-import { createNode } from "../utils";
+import { createNode, setMonotonicNodeCount } from "../utils";
 import AddBuildingMenu from "./AddBuildingMenu";
 import BuildingLinkConnectionLine from "./edges/BuildingLinkConnectionLine";
 import BuildingLinkEdge from "./edges/BuildingLinkEdge";
@@ -91,6 +91,8 @@ const defaultEdges: Edge[] = [
         target: defaultNodes[0].id,
     },
 ];
+
+setMonotonicNodeCount(defaultNodes.length);
 
 export default function LogicVMFlow() {
     const vm = useLogicVM();

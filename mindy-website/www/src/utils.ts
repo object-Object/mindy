@@ -98,3 +98,17 @@ export function createNode<N, D>(
         },
     };
 }
+
+let monotonicNodeCount = 0;
+
+export function getMonotonicNodeCount() {
+    return monotonicNodeCount;
+}
+
+export function setMonotonicNodeCount(n: number) {
+    monotonicNodeCount = Math.max(n, monotonicNodeCount);
+}
+
+export function incrementMonotonicNodeCount() {
+    setMonotonicNodeCount(monotonicNodeCount + 1);
+}

@@ -11,7 +11,11 @@ import {
     ProcessorKind,
 } from "mindy-website";
 
-import { createNode } from "../utils";
+import {
+    createNode,
+    getMonotonicNodeCount,
+    incrementMonotonicNodeCount,
+} from "../utils";
 import type { LogicVMNode } from "./LogicVMFlow";
 
 export default function AddBuildingMenu() {
@@ -39,7 +43,7 @@ export default function AddBuildingMenu() {
         // calculate a position such that all nodes of a given size are at the same y position without overlapping
         const buildingPosition = {
             // leave enough room to the left assuming all nodes are in the same row as this one
-            x: reactFlow.getNodes().length * node.size,
+            x: getMonotonicNodeCount() * node.size,
             // the sum of the first n natural numbers is n*(n+1)/2
             // for a given size, we need to leave room below for all sizes < size
             // so y should be the sum of all sizes < size
@@ -47,6 +51,8 @@ export default function AddBuildingMenu() {
             //       = (size - 1) * size / 2
             y: ((node.size - 1) * node.size) / 2,
         };
+
+        incrementMonotonicNodeCount();
 
         return [
             createNode({
