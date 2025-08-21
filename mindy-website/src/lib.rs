@@ -11,7 +11,8 @@ use mindy::{
     parser::LogicParser,
     types::{LAccess, Object, ProcessorConfig, ProcessorLinkConfig, content},
     vm::{
-        Building, BuildingData, EmbeddedDisplayData, InstructionResult, LVar, LogicVM,
+        Building, BuildingData, Content, EmbeddedDisplayData, InstructionResult, LValue, LVar,
+        LogicVM,
         buildings::{MESSAGE, SWITCH},
         variables::Constants,
     },
@@ -154,6 +155,19 @@ impl WebLogicVM {
             .map_err(|e| e.to_string())
     }
 
+    pub fn add_sorter(&mut self, position: u32) -> Result<(), String> {
+        self.vm
+            .add_building(
+                Building::new(
+                    content::blocks::FROM_NAME["sorter"],
+                    unpack_point(position),
+                    WebSorterData::new(self.on_building_change.clone()).into(),
+                ),
+                &self.globals,
+            )
+            .map_err(|e| e.to_string())
+    }
+
     pub fn add_switch(&mut self, position: u32) -> Result<(), String> {
         self.vm
             .add_building(
@@ -233,6 +247,47 @@ impl WebLogicVM {
             );
         }
         Ok(names)
+    }
+
+    pub fn set_sorter_config(
+        &mut self,
+        position: u32,
+        logic_id: Option<i32>,
+    ) -> Result<(), String> {
+        let position = unpack_point(position);
+
+        let item = match logic_id {
+            Some(logic_id) => Content::Item(
+                *content::items::FROM_LOGIC_ID
+                    .get(&logic_id)
+                    .ok_or_else(|| format!("invalid logic id: {logic_id}"))?,
+            )
+            .into(),
+            None => LValue::NULL,
+        };
+
+        let building = self
+            .vm
+            .building(position)
+            .ok_or_else(|| format!("building does not exist: {position}"))?;
+
+        let BuildingData::Custom(custom) = &mut *building.data.borrow_mut() else {
+            return Err(format!(
+                "expected switch at {position} but got {}",
+                building.block.name
+            ));
+        };
+
+        let _ = custom.control(
+            building,
+            &self.vm,
+            LAccess::Config,
+            Cow::Owned(item),
+            Default::default(),
+            Default::default(),
+        );
+
+        Ok(())
     }
 
     pub fn set_switch_enabled(&mut self, position: u32, value: bool) -> Result<(), String> {

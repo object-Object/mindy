@@ -29,6 +29,11 @@ interface AddProcessorRequest {
     kind: ProcessorKind;
 }
 
+interface AddSorterRequest {
+    type: "addSorter";
+    position: number;
+}
+
 interface AddSwitchRequest {
     type: "addSwitch";
     position: number;
@@ -45,6 +50,12 @@ interface SetProcessorCodeRequest {
     position: number;
     code: string;
     links: Uint32Array;
+}
+
+interface SetSorterConfigRequest {
+    type: "setSorterConfig";
+    position: number;
+    logicId: number | null;
 }
 
 interface SetSwitchEnabledRequest {
@@ -68,9 +79,11 @@ export type VMWorkerRequest =
     | AddMemoryRequest
     | AddMessageRequest
     | AddProcessorRequest
+    | AddSorterRequest
     | AddSwitchRequest
     | SetMessageTextRequest
     | SetProcessorCodeRequest
+    | SetSorterConfigRequest
     | SetSwitchEnabledRequest
     | RemoveBuildingRequest
     | SetTargetFPSRequest;
@@ -90,6 +103,7 @@ interface BuildingAddedResponse {
 export interface BuildingUpdateMap {
     message: string;
     processor: { links?: Map<number, string>; error?: string };
+    sorter: number | null;
     switch: boolean;
 }
 

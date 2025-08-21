@@ -88,6 +88,19 @@ void init().then(() => {
                 break;
             }
 
+            case "addSorter": {
+                const { position } = request;
+
+                vm.add_sorter(position);
+                postMessage({
+                    type: "buildingAdded",
+                    position,
+                    name: vm.building_name(position),
+                });
+
+                break;
+            }
+
             case "addSwitch": {
                 const { position } = request;
 
@@ -127,6 +140,12 @@ void init().then(() => {
                     },
                 });
 
+                break;
+            }
+
+            case "setSorterConfig": {
+                const { position, logicId } = request;
+                vm.set_sorter_config(position, logicId);
                 break;
             }
 

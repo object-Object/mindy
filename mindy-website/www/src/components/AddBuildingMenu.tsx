@@ -234,6 +234,20 @@ export default function AddBuildingMenu() {
                             onClick={() =>
                                 reactFlow.addNodes(
                                     createBuildingNode({
+                                        type: "sorter",
+                                        size: 1,
+                                        data: {},
+                                    }),
+                                )
+                            }
+                        >
+                            Sorter
+                        </Menu.Item>
+
+                        <Menu.Item
+                            onClick={() =>
+                                reactFlow.addNodes(
+                                    createBuildingNode({
                                         type: "switch",
                                         size: 1,
                                         data: {},

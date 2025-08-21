@@ -24,6 +24,7 @@ import DisplayNode, { type DisplayNodeType } from "./nodes/DisplayNode";
 import MemoryNode, { type MemoryNodeType } from "./nodes/MemoryNode";
 import MessageNode, { type MessageNodeType } from "./nodes/MessageNode";
 import ProcessorNode, { type ProcessorNodeType } from "./nodes/ProcessorNode";
+import SorterNode, { type SorterNodeType } from "./nodes/SorterNode";
 import SwitchNode, { type SwitchNodeType } from "./nodes/SwitchNode";
 
 export type LogicVMNode =
@@ -31,6 +32,7 @@ export type LogicVMNode =
     | MemoryNodeType
     | MessageNodeType
     | ProcessorNodeType
+    | SorterNodeType
     | SwitchNodeType;
 
 const nodeTypes = {
@@ -38,6 +40,7 @@ const nodeTypes = {
     memory: MemoryNode,
     message: MessageNode,
     processor: ProcessorNode,
+    sorter: SorterNode,
     switch: SwitchNode,
 };
 
