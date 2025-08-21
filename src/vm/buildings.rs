@@ -1,4 +1,4 @@
-use alloc::{boxed::Box, rc::Rc, string::ToString};
+use alloc::{borrow::Cow, boxed::Box, rc::Rc, string::ToString, vec::Vec};
 use core::cell::RefCell;
 
 use derivative::Derivative;
@@ -7,7 +7,7 @@ use strum::IntoStaticStr;
 use widestring::U16String;
 
 use super::{
-    InstructionResult, LObject, LValue, LVar, LogicVM, Processor, ProcessorBuilder, ProcessorState,
+    DrawCommand, InstructionResult, LObject, LValue, LogicVM, Processor, ProcessorBuilder,
     VMLoadError, VMLoadResult,
 };
 use crate::types::{
@@ -363,9 +363,9 @@ pub trait CustomBuildingData {
     #[must_use]
     fn read(
         &mut self,
-        state: &mut ProcessorState,
+        building: &Building,
         vm: &LogicVM,
-        address: LValue,
+        address: Cow<'_, LValue>,
     ) -> Option<LValue> {
         None
     }
@@ -373,44 +373,49 @@ pub trait CustomBuildingData {
     #[must_use]
     fn write(
         &mut self,
-        state: &mut ProcessorState,
+        building: &Building,
         vm: &LogicVM,
-        address: LValue,
-        value: LValue,
+        address: Cow<'_, LValue>,
+        value: Cow<'_, LValue>,
     ) -> InstructionResult {
         InstructionResult::Ok
     }
 
     #[must_use]
-    fn drawflush(&mut self, state: &mut ProcessorState, vm: &LogicVM) -> InstructionResult {
+    fn drawflush(
+        &mut self,
+        building: &Building,
+        vm: &LogicVM,
+        drawbuffer: Vec<DrawCommand>,
+    ) -> InstructionResult {
         InstructionResult::Ok
     }
 
     #[must_use]
-    fn printflush(&mut self, state: &mut ProcessorState, vm: &LogicVM) -> InstructionResult {
+    fn printflush(
+        &mut self,
+        building: &Building,
+        vm: &LogicVM,
+        printbuffer: U16String,
+    ) -> InstructionResult {
         InstructionResult::Ok
     }
 
     #[must_use]
     fn control(
         &mut self,
-        state: &mut ProcessorState,
+        building: &Building,
         vm: &LogicVM,
         control: LAccess,
-        p1: &LVar,
-        p2: &LVar,
-        p3: &LVar,
+        p1: Cow<'_, LValue>,
+        p2: Cow<'_, LValue>,
+        p3: Cow<'_, LValue>,
     ) -> InstructionResult {
         InstructionResult::Ok
     }
 
     #[must_use]
-    fn sensor(
-        &mut self,
-        state: &mut ProcessorState,
-        vm: &LogicVM,
-        sensor: LAccess,
-    ) -> Option<LValue> {
+    fn sensor(&mut self, building: &Building, vm: &LogicVM, sensor: LAccess) -> Option<LValue> {
         None
     }
 }

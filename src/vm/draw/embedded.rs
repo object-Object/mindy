@@ -1,4 +1,4 @@
-use alloc::boxed::Box;
+use alloc::{boxed::Box, vec::Vec};
 use core::{
     error::Error,
     fmt::{Debug, Display},
@@ -16,7 +16,7 @@ use embedded_graphics::{
 use crate::{
     types::LAccess,
     vm::{
-        CustomBuildingData, DrawCommand, InstructionResult, LValue, LogicVM, ProcessorState,
+        Building, CustomBuildingData, DrawCommand, InstructionResult, LValue, LogicVM,
         TextAlignment,
     },
 };
@@ -216,8 +216,13 @@ where
     T::Color: From<Rgb888>,
     T::Error: Debug,
 {
-    fn drawflush(&mut self, state: &mut ProcessorState, _: &LogicVM) -> InstructionResult {
-        for command in &state.drawbuffer {
+    fn drawflush(
+        &mut self,
+        _: &Building,
+        _: &LogicVM,
+        drawbuffer: Vec<DrawCommand>,
+    ) -> InstructionResult {
+        for command in &drawbuffer {
             self.draw_command(command).unwrap();
         }
 
@@ -230,7 +235,7 @@ where
         }
     }
 
-    fn sensor(&mut self, _: &mut ProcessorState, _: &LogicVM, sensor: LAccess) -> Option<LValue> {
+    fn sensor(&mut self, _: &Building, _: &LogicVM, sensor: LAccess) -> Option<LValue> {
         Some(match sensor {
             LAccess::DisplayWidth => self.size.width.into(),
             LAccess::DisplayHeight => self.size.height.into(),

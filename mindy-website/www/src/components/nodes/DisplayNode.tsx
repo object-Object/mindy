@@ -1,4 +1,4 @@
-import { Box, Card } from "@mantine/core";
+import { Box } from "@mantine/core";
 import type { Node, NodeProps } from "@xyflow/react";
 import { useEffect, useRef } from "react";
 
@@ -49,16 +49,14 @@ export default function DisplayNode(props: NodeProps<DisplayNodeType>) {
 
     return (
         <BuildingNode {...props}>
-            <Card.Section p="xs">
-                <Box
-                    className={classes.display}
-                    ref={displayRef}
-                    style={{
-                        width: displayWidth,
-                        height: displayHeight,
-                    }}
-                ></Box>
-            </Card.Section>
+            <Box
+                className={classes.display}
+                ref={displayRef}
+                style={{
+                    width: displayWidth,
+                    height: displayHeight,
+                }}
+            ></Box>
         </BuildingNode>
     );
 }

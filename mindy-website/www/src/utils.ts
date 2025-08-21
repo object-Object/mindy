@@ -1,4 +1,4 @@
-import { Position, type InternalNode } from "@xyflow/react";
+import { Position, type InternalNode, type XYPosition } from "@xyflow/react";
 
 // https://reactflow.dev/examples/nodes/easy-connect
 
@@ -80,7 +80,7 @@ export function packPoint(x: number, y: number): number {
 }
 
 export function createNode<N, D>(
-    node: N & { data: D & { position: { x: number; y: number } } },
+    node: N & { data: D & { position: XYPosition } },
 ): N & {
     id: string;
     data: D & { position: number };

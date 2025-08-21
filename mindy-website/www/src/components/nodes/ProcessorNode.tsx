@@ -1,4 +1,4 @@
-import { ActionIcon, Card, Group, Textarea } from "@mantine/core";
+import { ActionIcon, Group, Textarea } from "@mantine/core";
 import {
     useNodeConnections,
     useReactFlow,
@@ -91,43 +91,41 @@ export default function ProcessorNode(props: NodeProps<ProcessorNodeType>) {
             onUpdate={onUpdate}
             {...props}
         >
-            <Card.Section p="xs">
-                <Textarea
-                    className={`${classes.input} nodrag nopan nowheel`}
-                    value={editCode}
-                    resize="both"
-                    autosize
-                    maxRows={16}
-                    size="xs"
-                    onChange={(e) => setEditCode(e.currentTarget.value)}
-                    error={error}
-                    errorProps={{
-                        maw: "25vw",
-                        pb: 4,
-                    }}
-                />
-                <Group justify="flex-end" pt={2} gap={4}>
-                    <ActionIcon
-                        className={`${classes.button} nodrag nopan`}
-                        variant="filled"
-                        color="red"
-                        size="sm"
-                        disabled={code === editCode}
-                        onClick={() => setEditCode(code)}
-                    >
-                        <FaXmark />
-                    </ActionIcon>
-                    <ActionIcon
-                        className={`${classes.button} nodrag nopan`}
-                        variant="filled"
-                        size="sm"
-                        disabled={code === editCode}
-                        onClick={() => setCode(editCode)}
-                    >
-                        <FaCheck />
-                    </ActionIcon>
-                </Group>
-            </Card.Section>
+            <Textarea
+                className={`${classes.input} nodrag nopan nowheel`}
+                value={editCode}
+                resize="both"
+                autosize
+                maxRows={16}
+                size="xs"
+                onChange={(e) => setEditCode(e.currentTarget.value)}
+                error={error}
+                errorProps={{
+                    maw: "25vw",
+                    pb: 4,
+                }}
+            />
+            <Group justify="flex-end" pt={2} gap={4}>
+                <ActionIcon
+                    className={`${classes.button} nodrag nopan`}
+                    variant="filled"
+                    color="red"
+                    size="sm"
+                    disabled={code === editCode}
+                    onClick={() => setEditCode(code)}
+                >
+                    <FaXmark />
+                </ActionIcon>
+                <ActionIcon
+                    className={`${classes.button} nodrag nopan`}
+                    variant="filled"
+                    size="sm"
+                    disabled={code === editCode}
+                    onClick={() => setCode(editCode)}
+                >
+                    <FaCheck />
+                </ActionIcon>
+            </Group>
         </BuildingNode>
     );
 }

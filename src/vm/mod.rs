@@ -17,7 +17,10 @@ pub use self::{
 };
 #[cfg(feature = "std")]
 use crate::types::{Schematic, SchematicTile};
-use crate::{types::PackedPoint2, utils::RapidHashMap};
+use crate::{
+    types::{PackedPoint2, content::Block},
+    utils::RapidHashMap,
+};
 
 pub mod buildings;
 mod draw;
@@ -81,8 +84,11 @@ impl LogicVM {
     pub fn add_building(&mut self, building: Building, globals: &Constants) -> VMLoadResult<()> {
         // check for overlaps first, so that we don't mutate the VM until we know we can do it successfully
         for position in building.iter_positions() {
-            if self.buildings_map.contains_key(&position) {
-                return Err(VMLoadError::Overlap(position));
+            if let Some(current) = self.building(position) {
+                return Err(VMLoadError::Overlap {
+                    position,
+                    current: current.block,
+                });
             }
         }
 
@@ -334,8 +340,11 @@ impl LogicVMBuilder {
 
         for (i, building) in vm.buildings.iter().enumerate() {
             for position in building.iter_positions() {
-                if vm.buildings_map.contains_key(&position) {
-                    return Err(VMLoadError::Overlap(position));
+                if let Some(current) = vm.building(position) {
+                    return Err(VMLoadError::Overlap {
+                        position,
+                        current: current.block,
+                    });
                 }
                 vm.buildings_map.insert(position, i);
             }
@@ -391,8 +400,11 @@ pub enum VMLoadError {
     #[error("attempted to call late_init on an already-initialized instruction")]
     AlreadyInitialized,
 
-    #[error("tried to place multiple blocks at {0}")]
-    Overlap(PackedPoint2),
+    #[error("tried to place multiple blocks at {position} (current block: {})", current.name)]
+    Overlap {
+        position: PackedPoint2,
+        current: &'static Block,
+    },
 }
 
 #[cfg(all(test, not(feature = "std"), feature = "no_std"))]
@@ -1314,7 +1326,10 @@ mod tests {
         };
 
         assert!(
-            matches!(err, VMLoadError::Overlap(PackedPoint2 { x: 2, y: 2 })),
+            matches!(err, VMLoadError::Overlap {
+                position: PackedPoint2 { x: 2, y: 2 },
+                current,
+            } if current == content::blocks::FROM_NAME["hyper-processor"]),
             "{err:?}"
         );
     }

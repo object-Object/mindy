@@ -1,5 +1,5 @@
 // this is a separate file because otherwise firefox loads the worker twice
-import type { DisplayKind, ProcessorKind } from "mindy-website";
+import type { DisplayKind, MemoryKind, ProcessorKind } from "mindy-website";
 
 // main thread -> worker
 
@@ -12,10 +12,32 @@ interface AddDisplayRequest {
     canvas: OffscreenCanvas;
 }
 
+interface AddMemoryRequest {
+    type: "addMemory";
+    position: number;
+    kind: MemoryKind;
+}
+
+interface AddMessageRequest {
+    type: "addMessage";
+    position: number;
+}
+
 interface AddProcessorRequest {
     type: "addProcessor";
     position: number;
     kind: ProcessorKind;
+}
+
+interface AddSwitchRequest {
+    type: "addSwitch";
+    position: number;
+}
+
+interface SetMessageTextRequest {
+    type: "setMessageText";
+    position: number;
+    value: string;
 }
 
 interface SetProcessorCodeRequest {
@@ -23,6 +45,12 @@ interface SetProcessorCodeRequest {
     position: number;
     code: string;
     links: Uint32Array;
+}
+
+interface SetSwitchEnabledRequest {
+    type: "setSwitchEnabled";
+    position: number;
+    value: boolean;
 }
 
 interface RemoveBuildingRequest {
@@ -36,9 +64,14 @@ interface SetTargetFPSRequest {
 }
 
 export type VMWorkerRequest =
-    | AddProcessorRequest
     | AddDisplayRequest
+    | AddMemoryRequest
+    | AddMessageRequest
+    | AddProcessorRequest
+    | AddSwitchRequest
+    | SetMessageTextRequest
     | SetProcessorCodeRequest
+    | SetSwitchEnabledRequest
     | RemoveBuildingRequest
     | SetTargetFPSRequest;
 
@@ -55,7 +88,9 @@ interface BuildingAddedResponse {
 }
 
 export interface BuildingUpdateMap {
+    message: string;
     processor: { links?: Map<number, string>; error?: string };
+    switch: boolean;
 }
 
 interface BuildingUpdatedResponse<K extends keyof BuildingUpdateMap> {

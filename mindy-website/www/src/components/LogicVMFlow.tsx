@@ -18,16 +18,27 @@ import { DisplayKind, ProcessorKind } from "mindy-website";
 import { useLogicVM } from "../hooks";
 import { createNode } from "../utils";
 import AddBuildingMenu from "./AddBuildingMenu";
-import BuildingLinkConnectionLine from "./BuildingLinkConnectionLine";
-import BuildingLinkEdge from "./BuildingLinkEdge";
+import BuildingLinkConnectionLine from "./edges/BuildingLinkConnectionLine";
+import BuildingLinkEdge from "./edges/BuildingLinkEdge";
 import DisplayNode, { type DisplayNodeType } from "./nodes/DisplayNode";
+import MemoryNode, { type MemoryNodeType } from "./nodes/MemoryNode";
+import MessageNode, { type MessageNodeType } from "./nodes/MessageNode";
 import ProcessorNode, { type ProcessorNodeType } from "./nodes/ProcessorNode";
+import SwitchNode, { type SwitchNodeType } from "./nodes/SwitchNode";
 
-export type LogicVMNode = DisplayNodeType | ProcessorNodeType;
+export type LogicVMNode =
+    | DisplayNodeType
+    | MemoryNodeType
+    | MessageNodeType
+    | ProcessorNodeType
+    | SwitchNodeType;
 
 const nodeTypes = {
-    processor: ProcessorNode,
     display: DisplayNode,
+    memory: MemoryNode,
+    message: MessageNode,
+    processor: ProcessorNode,
+    switch: SwitchNode,
 };
 
 const edgeTypes = {

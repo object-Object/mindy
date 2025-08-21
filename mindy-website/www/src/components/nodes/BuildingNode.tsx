@@ -24,7 +24,7 @@ interface BuildingNodeProps<K extends keyof BuildingUpdateMap>
     linkSource?: boolean;
     buildingType?: K;
     onUpdate?: (update: BuildingUpdateMap[K]) => void;
-    children: ReactNode;
+    children?: ReactNode;
 }
 
 export default function BuildingNode<K extends keyof BuildingUpdateMap>({
@@ -107,7 +107,7 @@ export default function BuildingNode<K extends keyof BuildingUpdateMap>({
                     </Group>
                 </Card.Section>
 
-                {children}
+                {children && <Card.Section p="xs">{children}</Card.Section>}
             </Card>
         </>
     );

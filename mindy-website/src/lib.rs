@@ -1,6 +1,6 @@
 #![allow(clippy::boxed_local)]
 
-use std::time::Duration;
+use std::{borrow::Cow, time::Duration};
 
 use embedded_graphics::pixelcolor::Rgb888;
 use embedded_graphics_web_simulator::{
@@ -9,20 +9,25 @@ use embedded_graphics_web_simulator::{
 use js_sys::JsString;
 use mindy::{
     parser::LogicParser,
-    types::{PackedPoint2, ProcessorConfig, ProcessorLinkConfig, content},
+    types::{LAccess, Object, ProcessorConfig, ProcessorLinkConfig, content},
     vm::{
         Building, BuildingData, EmbeddedDisplayData, InstructionResult, LVar, LogicVM,
-        buildings::{HYPER_PROCESSOR, LOGIC_PROCESSOR, MICRO_PROCESSOR, WORLD_PROCESSOR},
+        buildings::{MESSAGE, SWITCH},
         variables::Constants,
     },
 };
 use wasm_bindgen::prelude::*;
 use web_sys::{OffscreenCanvas, Performance, WorkerGlobalScope};
 
+pub use self::enums::*;
+use self::{buildings::*, utils::*};
+
+mod buildings;
+mod enums;
+mod utils;
+
 #[global_allocator]
 static ALLOC: wee_alloc::WeeAlloc = wee_alloc::WeeAlloc::INIT;
-
-const MAX_DELTA: f64 = 6.;
 
 #[allow(unused_macros)]
 macro_rules! log {
@@ -36,30 +41,6 @@ pub fn init_logging() {
     console_error_panic_hook::set_once();
 }
 
-fn pack_point(position: PackedPoint2) -> u32 {
-    ((position.y as u32) << 16) | (position.x as u32)
-}
-
-fn unpack_point(position: u32) -> PackedPoint2 {
-    PackedPoint2 {
-        x: position as i16,
-        y: (position >> 16) as i16,
-    }
-}
-
-fn fps_to_delta(fps: f64) -> f64 {
-    // nominal 60 fps
-    // 60 / 60 -> 1
-    // 60 / 120 -> 0.5
-    // 60 / 30 -> 2
-    (60. / fps).min(MAX_DELTA)
-}
-
-fn delta_to_time(delta: f64) -> f64 {
-    // 60 ticks per second
-    delta / 60.
-}
-
 #[wasm_bindgen]
 pub struct WebLogicVM {
     vm: LogicVM,
@@ -69,12 +50,13 @@ pub struct WebLogicVM {
     delta: f64,
     tick_secs: f64,
     next_tick_end: f64,
+    on_building_change: js_sys::Function,
 }
 
 #[wasm_bindgen]
 impl WebLogicVM {
     #[wasm_bindgen(constructor)]
-    pub fn new(target_fps: f64) -> Self {
+    pub fn new(target_fps: f64, on_building_change: js_sys::Function) -> Self {
         let delta = fps_to_delta(target_fps);
         let tick_secs = delta_to_time(delta);
         Self {
@@ -89,28 +71,13 @@ impl WebLogicVM {
             delta,
             tick_secs,
             next_tick_end: 0.,
+            on_building_change,
         }
     }
 
     #[wasm_bindgen(getter)]
     pub fn time(&self) -> f64 {
         self.vm.time().as_secs_f64()
-    }
-
-    pub fn add_processor(&mut self, position: u32, kind: ProcessorKind) -> Result<(), String> {
-        let position = unpack_point(position);
-        self.vm
-            .add_building(
-                Building::from_processor_config(
-                    kind.name(),
-                    position,
-                    &ProcessorConfig::default(),
-                    &self.vm,
-                )
-                .map_err(|e| e.to_string())?,
-                &self.globals,
-            )
-            .map_err(|e| e.to_string())
     }
 
     pub fn add_display(
@@ -146,6 +113,77 @@ impl WebLogicVM {
                 &self.globals,
             )
             .map_err(|e| e.to_string())
+    }
+
+    pub fn add_memory(&mut self, position: u32, kind: MemoryKind) -> Result<(), String> {
+        self.vm
+            .add_building(
+                Building::from_config(kind.name(), unpack_point(position), &Object::Null, &self.vm)
+                    .map_err(|e| e.to_string())?,
+                &self.globals,
+            )
+            .map_err(|e| e.to_string())
+    }
+
+    pub fn add_message(&mut self, position: u32) -> Result<(), String> {
+        self.vm
+            .add_building(
+                Building::new(
+                    content::blocks::FROM_NAME[MESSAGE],
+                    unpack_point(position),
+                    WebMessageData::new(self.on_building_change.clone()).into(),
+                ),
+                &self.globals,
+            )
+            .map_err(|e| e.to_string())
+    }
+
+    pub fn add_processor(&mut self, position: u32, kind: ProcessorKind) -> Result<(), String> {
+        let position = unpack_point(position);
+        self.vm
+            .add_building(
+                Building::from_processor_config(
+                    kind.name(),
+                    position,
+                    &ProcessorConfig::default(),
+                    &self.vm,
+                )
+                .map_err(|e| e.to_string())?,
+                &self.globals,
+            )
+            .map_err(|e| e.to_string())
+    }
+
+    pub fn add_switch(&mut self, position: u32) -> Result<(), String> {
+        self.vm
+            .add_building(
+                Building::new(
+                    content::blocks::FROM_NAME[SWITCH],
+                    unpack_point(position),
+                    WebSwitchData::new(self.on_building_change.clone()).into(),
+                ),
+                &self.globals,
+            )
+            .map_err(|e| e.to_string())
+    }
+
+    pub fn set_message_text(&mut self, position: u32, value: &JsString) -> Result<(), String> {
+        let position = unpack_point(position);
+        let building = self
+            .vm
+            .building(position)
+            .ok_or_else(|| format!("building does not exist: {position}"))?;
+
+        let BuildingData::Custom(custom) = &mut *building.data.borrow_mut() else {
+            return Err(format!(
+                "expected message at {position} but got {}",
+                building.block.name
+            ));
+        };
+
+        let _ = custom.printflush(building, &self.vm, u16string_from_js(value));
+
+        Ok(())
     }
 
     pub fn set_processor_config(
@@ -197,6 +235,32 @@ impl WebLogicVM {
         Ok(names)
     }
 
+    pub fn set_switch_enabled(&mut self, position: u32, value: bool) -> Result<(), String> {
+        let position = unpack_point(position);
+        let building = self
+            .vm
+            .building(position)
+            .ok_or_else(|| format!("building does not exist: {position}"))?;
+
+        let BuildingData::Custom(custom) = &mut *building.data.borrow_mut() else {
+            return Err(format!(
+                "expected switch at {position} but got {}",
+                building.block.name
+            ));
+        };
+
+        let _ = custom.control(
+            building,
+            &self.vm,
+            LAccess::Enabled,
+            Cow::Owned(value.into()),
+            Default::default(),
+            Default::default(),
+        );
+
+        Ok(())
+    }
+
     pub fn remove_building(&mut self, position: u32) {
         self.vm.remove_building(unpack_point(position));
     }
@@ -204,7 +268,7 @@ impl WebLogicVM {
     pub fn building_name(&self, position: u32) -> Option<JsString> {
         self.vm
             .building(unpack_point(position))
-            .map(|b| JsString::from_char_code(b.block.name.as_u16str().as_slice()))
+            .map(|b| u16str_to_js(b.block.name.as_u16str()))
     }
 
     pub fn set_target_fps(&mut self, target_fps: f64) {
@@ -224,41 +288,5 @@ impl WebLogicVM {
             }
         }
         self.next_tick_end = time + self.tick_secs;
-    }
-}
-
-#[wasm_bindgen]
-pub enum ProcessorKind {
-    Micro,
-    Logic,
-    Hyper,
-    World,
-}
-
-impl ProcessorKind {
-    fn name(&self) -> &str {
-        match self {
-            Self::Micro => MICRO_PROCESSOR,
-            Self::Logic => LOGIC_PROCESSOR,
-            Self::Hyper => HYPER_PROCESSOR,
-            Self::World => WORLD_PROCESSOR,
-        }
-    }
-}
-
-#[wasm_bindgen]
-pub enum DisplayKind {
-    Logic,
-    Large,
-    Tiled,
-}
-
-impl DisplayKind {
-    fn name(&self) -> &str {
-        match self {
-            Self::Logic => "logic-display",
-            Self::Large => "large-logic-display",
-            Self::Tiled => "tile-logic-display",
-        }
     }
 }

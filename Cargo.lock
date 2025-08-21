@@ -1259,6 +1259,7 @@ dependencies = [
  "wasm-bindgen",
  "web-sys",
  "wee_alloc",
+ "widestring",
 ]
 
 [[package]]

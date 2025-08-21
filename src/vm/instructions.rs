@@ -370,7 +370,7 @@ pub struct Read {
 
 impl Read {
     #[inline(always)]
-    fn read_slice<T>(slice: &[T], address: &LValue) -> f64
+    pub fn read_slice<T>(slice: &[T], address: &LValue) -> f64
     where
         T: Copy + AsPrimitive<f64>,
     {
@@ -429,7 +429,7 @@ impl SimpleInstructionTrait for Read {
                     }
 
                     BuildingData::Custom(custom) => {
-                        if let Some(value) = custom.read(state, vm, address.into_owned()) {
+                        if let Some(value) = custom.read(building, vm, address) {
                             self.result.set(state, value);
                         }
                     }
@@ -490,7 +490,7 @@ impl InstructionTrait for Write {
                     }
 
                     BuildingData::Custom(custom) => {
-                        return custom.write(state, vm, address.into_owned(), value.into_owned());
+                        return custom.write(building, vm, address, value);
                     }
 
                     _ => {}
@@ -734,17 +734,17 @@ pub struct DrawFlush {
 
 impl InstructionTrait for DrawFlush {
     fn execute(&self, state: &mut ProcessorState, vm: &LogicVM) -> InstructionResult {
-        let result = if let Some(LObject::Building(target)) = self.target.get(state).obj()
-            && let Ok(mut data) = target.data.clone().try_borrow_mut()
+        let drawbuffer = core::mem::take(&mut state.drawbuffer);
+        state.drawbuffer_len = 0;
+
+        if let Some(LObject::Building(building)) = self.target.get(state).obj()
+            && let Ok(mut data) = building.data.clone().try_borrow_mut()
             && let BuildingData::Custom(custom) = &mut *data
         {
-            custom.drawflush(state, vm)
+            custom.drawflush(building, vm, drawbuffer)
         } else {
             InstructionResult::Ok
-        };
-        state.drawbuffer.clear();
-        state.drawbuffer_len = 0;
-        result
+        }
     }
 }
 
@@ -756,29 +756,28 @@ pub struct PrintFlush {
 
 impl InstructionTrait for PrintFlush {
     fn execute(&self, state: &mut ProcessorState, vm: &LogicVM) -> InstructionResult {
-        let result = if let Some(LObject::Building(target)) =
-            self.target.get_inner(state, &state.variables).obj()
-            && let Ok(mut data) = target.data.clone().try_borrow_mut()
-        {
-            if state.printbuffer.len() > MAX_TEXT_BUFFER {
-                state.printbuffer.drain(MAX_TEXT_BUFFER..);
-            }
+        let mut printbuffer = core::mem::take(&mut state.printbuffer);
+        if printbuffer.len() > MAX_TEXT_BUFFER {
+            printbuffer.drain(MAX_TEXT_BUFFER..);
+        }
 
+        if let Some(LObject::Building(building)) =
+            self.target.get_inner(state, &state.variables).obj()
+            && let Ok(mut data) = building.data.clone().try_borrow_mut()
+        {
             match &mut *data {
                 BuildingData::Message(message_buffer) => {
-                    core::mem::swap(&mut state.printbuffer, message_buffer);
+                    *message_buffer = printbuffer;
                     InstructionResult::Ok
                 }
 
-                BuildingData::Custom(custom) => custom.printflush(state, vm),
+                BuildingData::Custom(custom) => custom.printflush(building, vm, printbuffer),
 
                 _ => InstructionResult::Ok,
             }
         } else {
             InstructionResult::Ok
-        };
-        state.printbuffer.clear();
-        result
+        }
     }
 }
 
@@ -834,7 +833,14 @@ impl InstructionTrait for Control {
                     }
 
                     BuildingData::Custom(custom) => {
-                        return custom.control(state, vm, self.control, &self.p1, &self.p2, &self.p3);
+                        return custom.control(
+                            building,
+                            vm,
+                            self.control,
+                            self.p1.get(state),
+                            self.p2.get(state),
+                            self.p3.get(state),
+                        );
                     }
 
                     _ => {}
@@ -989,7 +995,7 @@ impl SimpleInstructionTrait for Sensor {
                             },
 
                             BuildingData::Custom(custom) => {
-                                match custom.sensor(state, vm, sensor) {
+                                match custom.sensor(building, vm, sensor) {
                                     Some(value) => {
                                         self.result.set(state, value);
                                         return;

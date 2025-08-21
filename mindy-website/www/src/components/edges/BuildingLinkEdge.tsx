@@ -5,7 +5,7 @@ import {
     type EdgeProps,
 } from "@xyflow/react";
 
-import { getEdgeParams } from "../utils";
+import { getEdgeParams } from "../../utils";
 
 // https://reactflow.dev/examples/nodes/easy-connect
 
